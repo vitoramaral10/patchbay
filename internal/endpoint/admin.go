@@ -179,11 +179,25 @@ type Linha struct {
 	URL string
 }
 
+// FerramentaExposta é uma ferramenta na tela de detalhe do endpoint: o nome
+// que o cliente vê, de onde ela veio e o que a composição fez a ela.
+//
+// regra.go:23-26 promete que a UI mostra AvisoRenomeada, AvisoColisaoDeNome e
+// AvisoNomeSaneado ao lado do nome — uma lista só de nomes não diferencia o
+// nome que o upstream deu do nome que uma regra escolheu, e normalização
+// silenciosa é indistinguível de bug quando ninguém avisa.
+type FerramentaExposta struct {
+	Nome         string
+	NomeOriginal string
+	Upstream     string
+	Avisos       []catalogo.Aviso
+}
+
 // Detalhe é a tela de um endpoint.
 type Detalhe struct {
 	Registro
 	URL         string
-	Ferramentas []string
+	Ferramentas []FerramentaExposta
 	// Lapides são os nomes das ferramentas removidas que ainda respondem só
 	// para explicar que saíram, até a janela de graça vencer.
 	Lapides    []string

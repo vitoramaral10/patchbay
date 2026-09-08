@@ -62,6 +62,10 @@ type vivo struct {
 	// origens diz de qual upstream veio cada ferramenta viva. É o que a lápide
 	// usa para escrever "saiu do upstream X" em vez de um texto genérico.
 	origens map[string]string
+	// detalhes é o que a tela de detalhe do endpoint mostra ao lado de cada
+	// nome exposto: nome original, upstream e os avisos que a composição
+	// produziu para aquela ferramenta (regra.go:23-26).
+	detalhes map[string]FerramentaExposta
 	// porUpstream é quantas ferramentas cada upstream entrega *a este endpoint*,
 	// depois de filtro, renome e prefixo. Não é a contagem do upstream: o mesmo
 	// upstream entra em vários endpoints com composições diferentes, e é a
@@ -163,6 +167,7 @@ func (s *Servidores) reconciliar(regs []Registro) (vivos []*vivo, aposentados []
 			v.handler = s.novoHandler(v.servidor)
 			v.expostos = nil
 			v.origens = nil
+			v.detalhes = nil
 			v.porUpstream = nil
 			// A instância nova nasce sem lápide: as sessões daquele endpoint
 			// foram encerradas, então não existe cliente com a lista antiga em
@@ -258,11 +263,19 @@ func (s *Servidores) rematerializar(ctx context.Context, v *vivo) error {
 	// legítima do tools/list; erro não é.
 	novos := make([]string, 0, len(ferramentas))
 	origens := make(map[string]string, len(ferramentas))
+	detalhes := make(map[string]FerramentaExposta, len(ferramentas))
 	porUpstream := make(map[int64]int)
 	for _, f := range ferramentas {
 		if s.registrar(srv, f) {
-			novos = append(novos, f.NomeExposto())
-			origens[f.NomeExposto()] = f.UpstreamNome
+			nome := f.NomeExposto()
+			novos = append(novos, nome)
+			origens[nome] = f.UpstreamNome
+			detalhes[nome] = FerramentaExposta{
+				Nome:         nome,
+				NomeOriginal: f.NomeOriginal,
+				Upstream:     f.UpstreamNome,
+				Avisos:       f.Avisos,
+			}
 			porUpstream[f.UpstreamID]++
 		}
 	}
@@ -278,6 +291,7 @@ func (s *Servidores) rematerializar(ctx context.Context, v *vivo) error {
 	if v.servidor == srv {
 		v.expostos = novos
 		v.origens = origens
+		v.detalhes = detalhes
 		v.porUpstream = porUpstream
 	}
 	s.mu.Unlock()
@@ -392,6 +406,20 @@ func (s *Servidores) Expostos(slug string) []string {
 		return nil
 	}
 	return slices.Sorted(slices.Values(v.expostos))
+}
+
+// Detalhes devolve, por nome exposto, de onde veio cada ferramenta viva do
+// endpoint e o que a composição fez a ela — o que a tela de detalhe mostra ao
+// lado do nome para renome, colisão de nome e saneamento não serem
+// indistinguíveis de bug (regra.go:23-26).
+func (s *Servidores) Detalhes(slug string) map[string]FerramentaExposta {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.porSlug[slug]
+	if !ok {
+		return nil
+	}
+	return maps.Clone(v.detalhes)
 }
 
 // Slugs devolve os endpoints no ar, em ordem.

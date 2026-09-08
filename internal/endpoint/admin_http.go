@@ -122,7 +122,7 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 	webui.Renderizar(w, r, http.StatusOK, a.log, TelaDetalhe(Detalhe{
 		Registro:    reg,
 		URL:         a.urlDo(reg.Slug),
-		Ferramentas: a.srv.Expostos(reg.Slug),
+		Ferramentas: a.ferramentasExpostas(reg.Slug),
 		Lapides:     a.srv.Lapides(reg.Slug),
 		Composicao:  composicao,
 	}, webui.Avisos(r, avisos)))
@@ -363,6 +363,26 @@ func (a *Admin) composicao(ctx context.Context, reg Registro) ([]UpstreamOpcao, 
 		opcoes[i].NoEndpoint = contagens[opcoes[i].ID]
 	}
 	return opcoes, nil
+}
+
+// ferramentasExpostas monta a lista da tela de detalhe, na mesma ordem de
+// Expostos: quem decide a ordem é o nome exposto, e Detalhes só empresta de
+// onde cada nome veio e o que a composição fez a ele.
+func (a *Admin) ferramentasExpostas(slug string) []FerramentaExposta {
+	nomes := a.srv.Expostos(slug)
+	detalhes := a.srv.Detalhes(slug)
+	out := make([]FerramentaExposta, 0, len(nomes))
+	for _, nome := range nomes {
+		if d, ok := detalhes[nome]; ok {
+			out = append(out, d)
+			continue
+		}
+		// Sem detalhe correspondente não deveria acontecer — Expostos e
+		// Detalhes vêm da mesma materialização —, mas a tela mostra o nome de
+		// qualquer forma em vez de escondê-lo.
+		out = append(out, FerramentaExposta{Nome: nome})
+	}
+	return out
 }
 
 // avisos traduz o ?aviso= da URL na caixa de resultado da ação anterior.

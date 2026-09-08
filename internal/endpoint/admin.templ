@@ -3,6 +3,7 @@ package endpoint
 import (
 	"strconv"
 
+	"github.com/vitoramaral10/patchbay/internal/catalogo"
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
 )
 
@@ -32,6 +33,38 @@ func rotuloDoEstado(estado string, habilitado bool) string {
 		return "fora da supervisão"
 	}
 	return estado
+}
+
+// rotuloDoAviso traduz o valor interno do aviso para o texto do selo na tela.
+func rotuloDoAviso(a catalogo.Aviso) string {
+	switch a {
+	case catalogo.AvisoRenomeada:
+		return "renomeada"
+	case catalogo.AvisoColisaoDeNome:
+		return "colisão de nome"
+	case catalogo.AvisoNomeSaneado:
+		return "nome saneado"
+	case catalogo.AvisoSchemaDegradado:
+		return "schema degradado"
+	case catalogo.AvisoOutputDescartado:
+		return "output descartado"
+	case catalogo.AvisoAnotacaoRemovida:
+		return "anotação removida"
+	default:
+		return string(a)
+	}
+}
+
+// tomDoAviso destaca colisão de nome e nome saneado: os dois mudam o nome
+// exposto sem o admin ter escrito uma regra para isso, o caso em que a UI
+// menos pode deixar a mudança passar em silêncio.
+func tomDoAviso(a catalogo.Aviso) webui.Tom {
+	switch a {
+	case catalogo.AvisoColisaoDeNome, catalogo.AvisoNomeSaneado:
+		return webui.TomAlerta
+	default:
+		return webui.TomInfo
+	}
 }
 
 // TelaLista é a lista de endpoints.
@@ -148,14 +181,32 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 				} else {
 					<ul class="divide-y divide-borda">
 						for _, u := range d.Composicao {
-							<li class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-								<span class="font-medium">{ u.Nome }</span>
-								<span class="flex items-center gap-3">
-									<span class="text-sm text-conteudo-suave" data-numero>
-										{ strconv.Itoa(u.Ferramentas) } ferramentas
+							<li class="flex flex-col gap-2 px-4 py-3">
+								<div class="flex flex-wrap items-center justify-between gap-3">
+									<span class="font-medium">{ u.Nome }</span>
+									<span class="flex items-center gap-3">
+										<span class="text-sm text-conteudo-suave" data-numero title="Ferramentas deste upstream que sobrevivem à composição deste endpoint, sobre as que ele expõe.">
+											{ strconv.Itoa(u.NoEndpoint) } de { strconv.Itoa(u.Ferramentas) } ferramentas
+										</span>
+										@webui.Selo(tomDoEstado(u.Estado, u.Habilitado), rotuloDoEstado(u.Estado, u.Habilitado))
 									</span>
-									@webui.Selo(tomDoEstado(u.Estado, u.Habilitado), rotuloDoEstado(u.Estado, u.Habilitado))
-								</span>
+								</div>
+								if u.Prefixo != "" || u.Regras != "" {
+									<dl class="flex flex-col gap-1 text-xs text-conteudo-suave">
+										if u.Prefixo != "" {
+											<div class="flex gap-2">
+												<dt class="text-conteudo-tenue">prefixo</dt>
+												<dd><code class="font-mono">{ u.Prefixo }</code></dd>
+											</div>
+										}
+										if u.Regras != "" {
+											<div class="flex gap-2">
+												<dt class="text-conteudo-tenue">regras</dt>
+												<dd><pre class="whitespace-pre-wrap font-mono">{ u.Regras }</pre></dd>
+											</div>
+										}
+									</dl>
+								}
 							</li>
 						}
 					</ul>
@@ -169,9 +220,9 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 						ferramentas quando algum upstream ficar pronto.
 					</p>
 				} else {
-					<ul class="flex flex-wrap gap-2 px-4 py-4">
-						for _, nome := range d.Ferramentas {
-							<li class="rounded-md bg-superficie-alta px-2 py-1 font-mono text-xs text-conteudo-suave">{ nome }</li>
+					<ul class="divide-y divide-borda">
+						for _, f := range d.Ferramentas {
+							@itemFerramentaExposta(f)
 						}
 					</ul>
 				}
@@ -200,6 +251,26 @@ templ acoesDoDetalhe(d Detalhe) {
 		</form>
 		<a href={ templ.SafeURL(rotaDo(d.ID) + "/editar") } class="pb-botao pb-botao-primario">Editar</a>
 	</div>
+}
+
+// itemFerramentaExposta é uma ferramenta na tela de detalhe: nome exposto,
+// de onde veio, e os avisos que a composição produziu para chegar nesse nome
+// — sem isso, renome, colisão de nome e saneamento silenciosos seriam
+// indistinguíveis de bug (regra.go:23-26).
+templ itemFerramentaExposta(f FerramentaExposta) {
+	<li class="flex flex-wrap items-center gap-2 px-4 py-2 text-xs">
+		<span class="rounded-md bg-superficie-alta px-2 py-1 font-mono text-conteudo-suave">{ f.Nome }</span>
+		if f.NomeOriginal != "" && f.NomeOriginal != f.Nome {
+			<span class="text-conteudo-tenue">
+				de <code class="font-mono">{ f.NomeOriginal }</code> em { f.Upstream }
+			</span>
+		} else if f.Upstream != "" {
+			<span class="text-conteudo-tenue">{ f.Upstream }</span>
+		}
+		for _, a := range f.Avisos {
+			@webui.Selo(tomDoAviso(a), rotuloDoAviso(a))
+		}
+	</li>
 }
 
 templ dado(rotulo string) {
@@ -272,26 +343,16 @@ templ TelaForm(f Form, opcoes []UpstreamOpcao) {
 						responde <code class="font-mono">tools/list</code> vazio.
 					</p>
 				} else {
-					<fieldset class="px-4 py-4">
+					<fieldset class="flex flex-col gap-2 px-4 py-4">
 						<legend class="sr-only">Upstreams deste endpoint</legend>
+						<p class="text-sm text-conteudo-tenue">
+							O prefixo e as regras valem só neste endpoint: o mesmo upstream pode entrar em
+							outro com outra composição. A ordem é filtro, renome e prefixo — e o filtro casa
+							contra o nome original no upstream, nunca contra o nome já prefixado.
+						</p>
 						<ul class="flex flex-col gap-1">
 							for _, o := range opcoes {
-								<li>
-									<label class="flex cursor-pointer flex-wrap items-center gap-3 rounded-md px-2 py-2 transition-colors duration-150 ease-out hover:bg-superficie-alta">
-										<input
-											type="checkbox"
-											name="upstream"
-											value={ strconv.FormatInt(o.ID, 10) }
-											class="h-4 w-4 accent-[var(--pb-acento)]"
-											checked?={ o.Escolhido }
-										/>
-										<span class="flex-1 font-medium">{ o.Nome }</span>
-										<span class="text-sm text-conteudo-suave" data-numero>
-											{ strconv.Itoa(o.Ferramentas) } ferramentas
-										</span>
-										@webui.Selo(tomDoEstado(o.Estado, o.Habilitado), rotuloDoEstado(o.Estado, o.Habilitado))
-									</label>
-								</li>
+								@itemDaComposicao(o)
 							}
 						</ul>
 					</fieldset>
@@ -309,6 +370,53 @@ templ TelaForm(f Form, opcoes []UpstreamOpcao) {
 			</div>
 		</form>
 	}
+}
+
+// itemDaComposicao é um upstream no formulário: entra ou não, com que prefixo e
+// com que regras.
+//
+// Os três campos ficam sempre visíveis, sem JavaScript escondendo o que está
+// desmarcado: o servidor já ignora prefixo e regra de upstream não marcado, e um
+// campo que some é um campo que a pessoa não sabe que existe.
+templ itemDaComposicao(o UpstreamOpcao) {
+	<li class="rounded-md border border-borda px-3 py-3">
+		<label class="flex cursor-pointer flex-wrap items-center gap-3">
+			<input
+				type="checkbox"
+				name="upstream"
+				value={ strconv.FormatInt(o.ID, 10) }
+				class="h-4 w-4 accent-[var(--pb-acento)]"
+				checked?={ o.Escolhido }
+			/>
+			<span class="flex-1 font-medium">{ o.Nome }</span>
+			<span class="text-sm text-conteudo-suave" data-numero>
+				{ strconv.Itoa(o.Ferramentas) } ferramentas
+			</span>
+			@webui.Selo(tomDoEstado(o.Estado, o.Habilitado), rotuloDoEstado(o.Estado, o.Habilitado))
+		</label>
+		<div class="mt-3 flex flex-col gap-4 pl-7">
+			@webui.Campo(webui.DadosCampo{
+				Nome:         ChavePrefixo(o.ID),
+				Rotulo:       "Prefixo",
+				Valor:        o.Prefixo,
+				Erro:         o.ErroPrefixo,
+				Ajuda:        "Entra no nome que o cliente vê, nunca no nome chamado no upstream. Resolve colisão entre dois upstreams que expõem search.",
+				Placeholder:  "nt_",
+				Monoespacado: true,
+			})
+			@webui.CampoTexto(webui.DadosCampo{
+				Nome:        ChaveRegras(o.ID),
+				Rotulo:      "Regras",
+				Valor:       o.Regras,
+				Erro:        o.ErroRegras,
+				Ajuda:       "Uma por linha: \"excluir write_*\", \"incluir search\", \"renomear buscar_no_notion buscar\". Vale a primeira regra que casa; o que não casa com nenhuma entra. Para deixar só um conjunto, feche a lista com \"excluir *\" no fim. O * casa qualquer trecho, inclusive vazio, e pode ser reusado no nome novo — mas padrão não aceita espaço. Comentários (#) e linhas em branco não são salvos: ao reabrir, a tela reexibe só as regras.",
+				Placeholder: "excluir write_*",
+			})
+			if o.AvisoRegras != "" {
+				<p class="text-xs text-alerta">{ o.AvisoRegras }</p>
+			}
+		</div>
+	</li>
 }
 
 func tituloDoForm(f Form) string {
