@@ -91,7 +91,7 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 	}) {
 		if len(linhas) == 0 {
 			@webui.Vazio("Nenhum upstream ainda.",
-				"Cadastre o primeiro servidor MCP que o patchbay vai agregar. Só HTTP nesta fatia; STDIO e SSE chegam depois.") {
+				"Cadastre o primeiro servidor MCP que o patchbay vai agregar: um servidor Streamable HTTP, ou um processo local que fala MCP pelo stdin e stdout.") {
 				@botaoNovo()
 			}
 		} else {
@@ -113,7 +113,10 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 								<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
 									<td class="px-4 py-3">
 										<a href={ templ.SafeURL(rotaDo(l.ID)) } class="pb-link font-medium">{ l.Nome }</a>
-										<p class="max-w-[48ch] truncate font-mono text-xs text-conteudo-tenue">{ l.URL }</p>
+										<p class="mt-0.5 flex items-center gap-2">
+											@webui.Selo(webui.TomNeutro, rotuloDoTipo(l.Tipo))
+										</p>
+										<p class="max-w-[48ch] truncate font-mono text-xs text-conteudo-tenue" title={ l.Descricao() }>{ l.Descricao() }</p>
 									</td>
 									<td class="px-4 py-3">
 										@webui.Selo(tomDoEstado(l.Estado, l.Habilitado, l.Supervisionado),
@@ -144,15 +147,35 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 	}
 }
 
+// botaoNovo oferece os dois tipos como ações separadas.
+//
+// O tipo é escolhido aqui e não dentro do formulário porque ele não muda depois:
+// HTTP e STDIO pedem campos diferentes, e um formulário com os dois conjuntos ao
+// mesmo tempo obrigaria o admin a adivinhar quais valem.
 templ botaoNovo() {
-	<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo") } class="pb-botao pb-botao-primario">Novo upstream</a>
+	<div class="flex items-center gap-2">
+		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoSTDIO) } class="pb-botao pb-botao-secundario">Novo processo STDIO</a>
+		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoHTTP) } class="pb-botao pb-botao-primario">Novo upstream HTTP</a>
+	</div>
+}
+
+// rotuloDoTipo nomeia o transporte na tela.
+func rotuloDoTipo(tipo string) string {
+	switch tipo {
+	case TipoSTDIO:
+		return "processo stdio"
+	case TipoSSE:
+		return "sse"
+	default:
+		return "streamable http"
+	}
 }
 
 // TelaDetalhe mostra o estado atual e as ferramentas descobertas.
 templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    d.Nome,
-		Subtitulo: d.URL,
+		Subtitulo: rotuloDoTipo(d.Tipo) + " · " + d.Descricao(),
 		Secao:     webui.SecaoUpstreams,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Acao:      acoesDoDetalhe(d),
@@ -210,6 +233,52 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 							quando o backoff vencer — exponencial com jitter e teto, para que a frequência de
 							tentativa caia enquanto o servidor não volta. O erro vive em memória: o banco
 							guarda só a intenção de habilitar.
+						</p>
+					</div>
+				}
+			}
+			if d.STDIO() {
+				@webui.Cartao("Processo") {
+					<div class="flex flex-col gap-4 px-4 py-4">
+						<p class="max-w-[65ch] text-sm text-conteudo-suave">
+							Um processo por upstream, compartilhado por todas as sessões de cliente. Ele nasce
+							numa árvore própria do sistema operacional — <em>process group</em> no Linux e no
+							macOS, <em>Job Object</em> no Windows —, e ao encerrar morre a árvore inteira,
+							inclusive o neto que o programa tenha lançado. Matar só o filho direto é o que
+							vaza processo até esgotar os PIDs da máquina.
+						</p>
+						<dl class="grid gap-x-6 gap-y-4">
+							@dado("Linha de comando") {
+								<code class="block max-w-[80ch] break-all font-mono text-sm">{ LinhaDeComando(d.Comando, d.Args) }</code>
+							}
+							@dado("Argumentos") {
+								if len(d.Args) == 0 {
+									<span class="text-conteudo-tenue">nenhum</span>
+								} else {
+									<ol class="flex flex-col gap-1">
+										for _, a := range d.Args {
+											<li><code class="font-mono text-xs">{ a }</code></li>
+										}
+									</ol>
+								}
+							}
+							@dado("Variáveis de ambiente") {
+								if len(d.VariaveisEmClaro()) == 0 {
+									<span class="text-conteudo-tenue">nenhuma além do ambiente do patchbay</span>
+								} else {
+									<ul class="flex flex-col gap-1">
+										for _, p := range d.VariaveisEmClaro() {
+											<li><code class="font-mono text-xs">{ p.Nome }={ p.Valor }</code></li>
+										}
+									</ul>
+								}
+							}
+						</dl>
+						<p class="max-w-[65ch] text-sm text-conteudo-tenue">
+							O processo herda o ambiente do patchbay e recebe estas variáveis por cima, mais as
+							cifradas listadas abaixo. Sem a herança, um servidor lançado por
+							<code class="font-mono">npx</code> ou <code class="font-mono">uvx</code> não acharia
+							nem o próprio interpretador.
 						</p>
 					</div>
 				}
@@ -275,30 +344,47 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 			@webui.Cartao("Credenciais apresentadas ao upstream") {
 				<div class="flex flex-col gap-4 px-4 py-4">
 					<p class="max-w-[65ch] text-sm text-conteudo-suave">
-						Bearer e headers estáticos ficam cifrados em repouso (AES-256-GCM, chave derivada da
-						chave mestra). O valor não volta para esta tela nem para o log — o que aparece aqui é
-						só se ele está definido. Para trocar, edite o upstream.
+						O que o patchbay apresenta ao upstream fica cifrado em repouso (AES-256-GCM, chave
+						derivada da chave mestra). O valor não volta para esta tela nem para o log — o que
+						aparece aqui é só se ele está definido. Para trocar, edite o upstream.
 					</p>
 					<dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2">
-						@dado("Bearer") {
-							if d.TemBearer() {
-								@webui.Selo(webui.TomSucesso, "definido")
-							} else {
-								@webui.Selo(webui.TomNeutro, "não definido")
+						if d.STDIO() {
+							@dado("Variáveis de ambiente cifradas") {
+								if len(d.VariaveisSecretas()) == 0 {
+									<span class="text-conteudo-tenue">nenhuma</span>
+								} else {
+									<ul class="flex flex-wrap gap-2">
+										for _, v := range d.VariaveisSecretas() {
+											<li class="flex items-center gap-2 rounded-md bg-superficie-alta px-2 py-1">
+												<code class="font-mono text-xs">{ v.Nome }</code>
+												@webui.Selo(webui.TomSucesso, "definida")
+											</li>
+										}
+									</ul>
+								}
 							}
-						}
-						@dado("Headers estáticos") {
-							if len(d.HeadersEstaticos()) == 0 {
-								<span class="text-conteudo-tenue">nenhum</span>
-							} else {
-								<ul class="flex flex-wrap gap-2">
-									for _, h := range d.HeadersEstaticos() {
-										<li class="flex items-center gap-2 rounded-md bg-superficie-alta px-2 py-1">
-											<code class="font-mono text-xs">{ h.Nome }</code>
-											@webui.Selo(webui.TomSucesso, "definido")
-										</li>
-									}
-								</ul>
+						} else {
+							@dado("Bearer") {
+								if d.TemBearer() {
+									@webui.Selo(webui.TomSucesso, "definido")
+								} else {
+									@webui.Selo(webui.TomNeutro, "não definido")
+								}
+							}
+							@dado("Headers estáticos") {
+								if len(d.HeadersEstaticos()) == 0 {
+									<span class="text-conteudo-tenue">nenhum</span>
+								} else {
+									<ul class="flex flex-wrap gap-2">
+										for _, h := range d.HeadersEstaticos() {
+											<li class="flex items-center gap-2 rounded-md bg-superficie-alta px-2 py-1">
+												<code class="font-mono text-xs">{ h.Nome }</code>
+												@webui.Selo(webui.TomSucesso, "definido")
+											</li>
+										}
+									</ul>
+								}
 							}
 						}
 					</dl>
@@ -365,16 +451,21 @@ templ dado(rotulo string) {
 	</div>
 }
 
-// TelaForm serve a criação e a edição de upstream HTTP.
+// TelaForm serve a criação e a edição de upstream, HTTP ou STDIO.
+//
+// O tipo viaja em campo escondido e não em seletor: ele é escolhido na criação e
+// não muda depois. Trocar o transporte de um upstream vivo não é editá-lo, é
+// substituí-lo — outras ferramentas, outras credenciais, outro modo de falha.
 templ TelaForm(f Form) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    tituloDoForm(f),
-		Subtitulo: "Upstream MCP Streamable HTTP. Bearer e headers estáticos são cifrados em repouso e nunca voltam para esta tela.",
+		Subtitulo: subtituloDoForm(f),
 		Secao:     webui.SecaoUpstreams,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 	}) {
 		<form method="post" action={ templ.SafeURL(acaoDoForm(f)) } class="flex max-w-2xl flex-col gap-8">
-			@webui.Cartao("Conexão") {
+			<input type="hidden" name="tipo" value={ f.TipoEfetivo() }/>
+			@webui.Cartao(tituloDaConexao(f)) {
 				<div class="flex flex-col gap-6 px-4 py-5">
 					@webui.Campo(webui.DadosCampo{
 						Nome:        "nome",
@@ -384,17 +475,46 @@ templ TelaForm(f Form) {
 						Erro:        f.Erros["nome"],
 						Obrigatorio: true,
 					})
-					@webui.Campo(webui.DadosCampo{
-						Nome:         "url",
-						Rotulo:       "URL do endpoint MCP",
-						Tipo:         "url",
-						Valor:        f.URL,
-						Ajuda:        "O endereço Streamable HTTP do servidor, normalmente terminando em /mcp.",
-						Erro:         f.Erros["url"],
-						Obrigatorio:  true,
-						Monoespacado: true,
-						Placeholder:  "https://exemplo.com/mcp",
-					})
+					if f.STDIO() {
+						@webui.Campo(webui.DadosCampo{
+							Nome:         "comando",
+							Rotulo:       "Comando",
+							Valor:        f.Comando,
+							Ajuda:        "O programa a executar, resolvido pelo PATH do processo patchbay. Por exemplo npx, uvx, node ou um caminho completo.",
+							Erro:         f.Erros["comando"],
+							Obrigatorio:  true,
+							Monoespacado: true,
+							Placeholder:  "npx",
+						})
+						@webui.CampoTexto(webui.DadosCampo{
+							Nome:        "args",
+							Rotulo:      "Argumentos",
+							Valor:       f.ArgsTexto,
+							Ajuda:       "Um argumento por linha. Nada de linha de comando partida por espaço: argumento com espaço dentro é normal, e um separador escolhido aqui viraria uma regra de escape para você descobrir errando.",
+							Erro:        f.Erros["args"],
+							Placeholder: "-y\n@modelcontextprotocol/server-filesystem\nC:\\dados",
+						})
+						@webui.CampoTexto(webui.DadosCampo{
+							Nome:        "env",
+							Rotulo:      "Variáveis de ambiente (não sensíveis)",
+							Valor:       f.EnvTexto,
+							Ajuda:       "NOME=valor, uma por linha. Vão em claro no banco e aparecem na tela — é o lugar de PATH extra e nível de log, nunca de token. Segredo vai no bloco cifrado abaixo.",
+							Erro:        f.Erros["env"],
+							Placeholder: "NODE_ENV=production",
+						})
+					} else {
+						@webui.Campo(webui.DadosCampo{
+							Nome:         "url",
+							Rotulo:       "URL do endpoint MCP",
+							Tipo:         "url",
+							Valor:        f.URL,
+							Ajuda:        "O endereço Streamable HTTP do servidor, normalmente terminando em /mcp.",
+							Erro:         f.Erros["url"],
+							Obrigatorio:  true,
+							Monoespacado: true,
+							Placeholder:  "https://exemplo.com/mcp",
+						})
+					}
 					@webui.Campo(webui.DadosCampo{
 						Nome:         "timeout_ms",
 						Rotulo:       "Timeout (ms)",
@@ -429,55 +549,24 @@ templ TelaForm(f Form) {
 						AES-256-GCM e nunca é reexibido aqui. Campo em branco mantém o valor gravado;
 						para tirar a credencial, marque <em>limpar</em>.
 					</p>
-					<div class="flex flex-col gap-1.5">
-						<div class="flex items-center gap-2">
-							<label for="bearer" class="text-sm font-medium text-conteudo">Bearer token</label>
-							if f.BearerDefinido {
-								@webui.Selo(webui.TomSucesso, "definido")
-							} else {
-								@webui.Selo(webui.TomNeutro, "não definido")
+					if f.STDIO() {
+						<fieldset class="flex flex-col gap-3">
+							<legend class="text-sm font-medium text-conteudo">Variáveis de ambiente sensíveis</legend>
+							if f.Erros["env_secreto"] != "" {
+								<p class="text-sm text-perigo">{ f.Erros["env_secreto"] }</p>
 							}
-						</div>
-						<input
-							class="pb-campo font-mono"
-							id="bearer"
-							name="bearer"
-							type="password"
-							autocomplete="new-password"
-							placeholder={ marcadorDeSegredo(f.BearerDefinido) }
-							if f.Erros["bearer"] != "" {
-								aria-invalid="true"
+							for i, e := range f.EnvSecretos {
+								@linhaEnv(i, e)
 							}
-							aria-describedby="bearer-ajuda"
-						/>
-						if f.Erros["bearer"] != "" {
-							<p id="bearer-ajuda" class="text-sm text-perigo">{ f.Erros["bearer"] }</p>
-						} else {
-							<p id="bearer-ajuda" class="text-sm text-conteudo-tenue">
-								Vai como <code class="font-mono">Authorization: Bearer …</code> em toda requisição
-								para este upstream.
+							<p class="text-sm text-conteudo-tenue">
+								O token de um servidor lançado por linha de comando é a mesma classe de segredo
+								que o bearer de um servidor HTTP: vai cifrado, e entra no bloco de ambiente do
+								processo na hora de iniciá-lo.
 							</p>
-						}
-						if f.BearerDefinido {
-							<label class="mt-1 flex items-center gap-2">
-								<input type="checkbox" name="bearer_limpar" value="1" class="h-4 w-4 accent-[var(--pb-acento)]"/>
-								<span class="text-sm text-conteudo-suave">Limpar o bearer gravado</span>
-							</label>
-						}
-					</div>
-					<fieldset class="flex flex-col gap-3">
-						<legend class="text-sm font-medium text-conteudo">Headers estáticos</legend>
-						if f.Erros["headers"] != "" {
-							<p class="text-sm text-perigo">{ f.Erros["headers"] }</p>
-						}
-						for i, h := range f.Headers {
-							@linhaHeader(i, h)
-						}
-						<p class="text-sm text-conteudo-tenue">
-							Um par nome/valor por linha, enviado em toda requisição.
-							<code class="font-mono">Authorization</code> não entra aqui: use o campo de bearer acima.
-						</p>
-					</fieldset>
+						</fieldset>
+					} else {
+						@credenciaisHTTP(f)
+					}
 				</div>
 			}
 			<div class="flex items-center gap-3">
@@ -492,6 +581,107 @@ templ TelaForm(f Form) {
 			</div>
 		</form>
 	}
+}
+
+// credenciaisHTTP é o bloco de bearer e headers estáticos.
+templ credenciaisHTTP(f Form) {
+	<div class="flex flex-col gap-6">
+		<div class="flex flex-col gap-1.5">
+			<div class="flex items-center gap-2">
+				<label for="bearer" class="text-sm font-medium text-conteudo">Bearer token</label>
+				if f.BearerDefinido {
+					@webui.Selo(webui.TomSucesso, "definido")
+				} else {
+					@webui.Selo(webui.TomNeutro, "não definido")
+				}
+			</div>
+			<input
+				class="pb-campo font-mono"
+				id="bearer"
+				name="bearer"
+				type="password"
+				autocomplete="new-password"
+				placeholder={ marcadorDeSegredo(f.BearerDefinido) }
+				if f.Erros["bearer"] != "" {
+					aria-invalid="true"
+				}
+				aria-describedby="bearer-ajuda"
+			/>
+			if f.Erros["bearer"] != "" {
+				<p id="bearer-ajuda" class="text-sm text-perigo">{ f.Erros["bearer"] }</p>
+			} else {
+				<p id="bearer-ajuda" class="text-sm text-conteudo-tenue">
+					Vai como <code class="font-mono">Authorization: Bearer …</code> em toda requisição
+					para este upstream.
+				</p>
+			}
+			if f.BearerDefinido {
+				<label class="mt-1 flex items-center gap-2">
+					<input type="checkbox" name="bearer_limpar" value="1" class="h-4 w-4 accent-[var(--pb-acento)]"/>
+					<span class="text-sm text-conteudo-suave">Limpar o bearer gravado</span>
+				</label>
+			}
+		</div>
+		<fieldset class="flex flex-col gap-3">
+			<legend class="text-sm font-medium text-conteudo">Headers estáticos</legend>
+			if f.Erros["headers"] != "" {
+				<p class="text-sm text-perigo">{ f.Erros["headers"] }</p>
+			}
+			for i, h := range f.Headers {
+				@linhaHeader(i, h)
+			}
+			<p class="text-sm text-conteudo-tenue">
+				Um par nome/valor por linha, enviado em toda requisição.
+				<code class="font-mono">Authorization</code> não entra aqui: use o campo de bearer acima.
+			</p>
+		</fieldset>
+	</div>
+}
+
+// linhaEnv é uma linha da tabela de variáveis de ambiente cifradas.
+//
+// Mesma regra do linhaHeader: o nome de uma variável já gravada vai em campo
+// escondido e aparece como texto, porque ele é a chave da linha no banco e do
+// AAD da cifra — editá-lo criaria outra variável em vez de renomear esta.
+templ linhaEnv(indice int, e CampoEnv) {
+	<div class="flex flex-col gap-1.5 rounded-md border border-borda px-3 py-3">
+		<div class="flex flex-wrap items-center gap-2">
+			if e.Definido {
+				<input type="hidden" name="env_nome" value={ e.Nome }/>
+				<code class="font-mono text-sm text-conteudo">{ e.Nome }</code>
+				@webui.Selo(webui.TomSucesso, "definida")
+			} else {
+				<input
+					class="pb-campo font-mono sm:max-w-64"
+					name="env_nome"
+					type="text"
+					value={ e.Nome }
+					placeholder="GITHUB_TOKEN"
+					aria-label={ "Nome da variável " + strconv.Itoa(indice+1) }
+				/>
+			}
+		</div>
+		<input
+			class="pb-campo font-mono"
+			name="env_valor"
+			type="password"
+			autocomplete="new-password"
+			placeholder={ marcadorDeSegredo(e.Definido) }
+			aria-label={ "Valor da variável " + strconv.Itoa(indice+1) }
+			if e.Erro != "" {
+				aria-invalid="true"
+			}
+		/>
+		if e.Erro != "" {
+			<p class="text-sm text-perigo">{ e.Erro }</p>
+		}
+		if e.Definido {
+			<label class="flex items-center gap-2">
+				<input type="checkbox" name="env_limpar" value={ e.Nome } class="h-4 w-4 accent-[var(--pb-acento)]"/>
+				<span class="text-sm text-conteudo-suave">Limpar esta variável</span>
+			</label>
+		}
+	</div>
 }
 
 // marcadorDeSegredo é o placeholder de um campo de segredo. Nunca o valor: o
@@ -550,10 +740,30 @@ templ linhaHeader(indice int, h CampoHeader) {
 }
 
 func tituloDoForm(f Form) string {
+	acao := "Editar"
 	if f.ID == 0 {
-		return "Novo upstream"
+		acao = "Novo"
 	}
-	return "Editar upstream"
+	if f.STDIO() {
+		return acao + " upstream STDIO"
+	}
+	return acao + " upstream HTTP"
+}
+
+func subtituloDoForm(f Form) string {
+	if f.STDIO() {
+		return "Um processo local que fala MCP pelo stdin e stdout. O patchbay mantém um processo por upstream, " +
+			"compartilhado por todas as sessões, e mata a árvore inteira ao encerrar. " +
+			"Variáveis sensíveis são cifradas em repouso e nunca voltam para esta tela."
+	}
+	return "Upstream MCP Streamable HTTP. Bearer e headers estáticos são cifrados em repouso e nunca voltam para esta tela."
+}
+
+func tituloDaConexao(f Form) string {
+	if f.STDIO() {
+		return "Processo"
+	}
+	return "Conexão"
 }
 
 func acaoDoForm(f Form) string {
