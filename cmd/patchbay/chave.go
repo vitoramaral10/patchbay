@@ -46,8 +46,16 @@ func cofreDe(texto string) (*cripto.Cofre, error) {
 }
 
 // cofreDoAmbiente é o caminho de boot: lê PATCHBAY_MASTER_KEY e nada mais.
+//
+// A chave sai do ambiente do processo assim que é lida. Um upstream stdio
+// herda o ambiente do patchbay por conveniência (stdioproc.AmbienteHerdado),
+// e o filtro de prefixo PATCHBAY_ em stdioproc já barra a travessia como
+// primeira camada — isto é a segunda, e vale mesmo se algum caminho futuro
+// vier a montar o ambiente do filho sem passar por AmbienteHerdado.
 func cofreDoAmbiente() (*cripto.Cofre, error) {
-	return cofreDe(os.Getenv(cripto.VarChaveMestra))
+	texto := os.Getenv(cripto.VarChaveMestra)
+	_ = os.Unsetenv(cripto.VarChaveMestra)
+	return cofreDe(texto)
 }
 
 // verificarCanario grava o canário no primeiro boot e confere nos seguintes.
