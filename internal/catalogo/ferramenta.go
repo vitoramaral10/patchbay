@@ -28,12 +28,17 @@ const (
 	AvisoAnotacaoRemovida Aviso = "anotacao_removida"
 )
 
-// Origem é um upstream dentro de um endpoint, com o prefixo daquela composição
-// e o que ele expôs no último tools/list bem-sucedido.
+// Origem é um upstream dentro de um endpoint, com o prefixo e as regras daquela
+// composição e o que ele expôs no último tools/list bem-sucedido.
+//
+// Prefixo e Regras são por origem e não por upstream: o mesmo upstream entra em
+// vários endpoints com composições diferentes, e é isto que faz cada endpoint
+// ver um catálogo próprio a partir do mesmo snapshot.
 type Origem struct {
 	UpstreamID  int64
 	Nome        string
 	Prefixo     string
+	Regras      []Regra
 	Ferramentas []*mcp.Tool
 }
 

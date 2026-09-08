@@ -8,11 +8,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Vinculo é uma linha da composição endpoint↔upstream.
+// Vinculo é uma linha da composição endpoint↔upstream, com o prefixo e as
+// regras que valem só naquele endpoint.
 type Vinculo struct {
 	UpstreamID   int64
 	UpstreamNome string
 	Prefixo      string
+	Regras       []Regra
 }
 
 // Composicao é o que o Servico precisa da persistência.
@@ -61,6 +63,7 @@ func (s *Servico) Materializar(ctx context.Context, endpointID int64) ([]Ferrame
 			UpstreamID:  v.UpstreamID,
 			Nome:        v.UpstreamNome,
 			Prefixo:     v.Prefixo,
+			Regras:      v.Regras,
 			Ferramentas: s.desc.Ferramentas(v.UpstreamID),
 		})
 	}
