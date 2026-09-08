@@ -10,12 +10,21 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/platform/cripto"
 )
 
-// Tipos de credencial estática que o patchbay apresenta a um upstream HTTP.
+// Tipos de credencial estática que o patchbay apresenta a um upstream.
 const (
 	// CredencialBearer vira o header Authorization: Bearer <valor>.
 	CredencialBearer = "bearer"
 	// CredencialHeader vira um header estático de nome escolhido pelo admin.
 	CredencialHeader = "header"
+	// CredencialEnv vira uma variável de ambiente do processo de um upstream
+	// stdio.
+	//
+	// Mesma tabela e mesma cifra do bearer, e não a coluna env em claro: o
+	// token de um servidor MCP lançado por linha de comando é a mesma classe de
+	// segredo que o bearer de um servidor HTTP, e guardá-lo em claro só porque
+	// ele viaja por outro canal seria a distinção errada. A coluna env continua
+	// existindo para o que não é segredo — e que o admin precisa poder reler.
+	CredencialEnv = "env"
 )
 
 // tabelaSegredo e colunaSegredo entram no AAD da cifra. São constantes e não
@@ -88,10 +97,19 @@ func (g *Gerente) clienteDe(ctx context.Context, cfg Config) (*http.Client, erro
 	ctxLeitura, cancelar := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancelar()
 
-	creds, err := g.credenciais(ctxLeitura, cfg.ID)
+	todas, err := g.credenciais(ctxLeitura, cfg.ID)
 	if err != nil {
 		// A mensagem diz qual upstream falhou, nunca o que ele guarda.
 		return nil, fmt.Errorf("upstream %s: ler credenciais: %w", cfg.Nome, err)
+	}
+	// Só o que vira header entra no transporte. Variável de ambiente de upstream
+	// stdio mora na mesma tabela e sai pelo mesmo LerCredenciais, e mandá-la
+	// como header seria vazar um segredo por um canal que ninguém pediu.
+	creds := make([]Credencial, 0, len(todas))
+	for _, c := range todas {
+		if c.Tipo == CredencialBearer || c.Tipo == CredencialHeader {
+			creds = append(creds, c)
+		}
 	}
 	if len(creds) == 0 {
 		return g.cliente, nil
