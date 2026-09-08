@@ -1,0 +1,127 @@
+version: "3"
+
+vars:
+  BINARIO: patchbay{{if eq OS "windows"}}.exe{{end}}
+  DADOS: '{{.DADOS | default "./dados"}}'
+
+  # Versões das duas ferramentas de front-end, fixadas. Bump é edição aqui e
+  # `task ui` de novo — nada é resolvido "na última versão" em tempo de build.
+  TEMPL_VERSAO: v0.3.1020
+  TAILWIND_VERSAO: v4.3.3
+
+  # O Tailwind é o CLI standalone: um binário por plataforma, sem Node em
+  # nenhum lugar. Fica em ferramentas/, que o git ignora.
+  TAILWIND_ALVO: '{{if eq OS "windows"}}windows-x64.exe{{else if eq OS "darwin"}}macos-{{if eq ARCH "arm64"}}arm64{{else}}x64{{end}}{{else}}linux-{{if eq ARCH "arm64"}}arm64{{else}}x64{{end}}{{end}}'
+  TAILWIND: ferramentas/tailwindcss-{{.TAILWIND_ALVO}}
+
+  CSS_ENTRADA: internal/platform/webui/estatico/css/entrada.css
+  CSS_SAIDA: internal/platform/webui/estatico/css/patchbay.css
+
+tasks:
+  default:
+    desc: lista as tarefas
+    cmds:
+      - task --list
+
+  build:
+    desc: compila o binário patchbay
+    # Sem dependência de ui:gen nem de ui:css de propósito: os artefatos gerados
+    # (*_templ.go e o CSS) são commitados, então `go build ./...` funciona numa
+    # máquina que nunca viu templ nem Tailwind.
+    cmds:
+      - go build -o {{.BINARIO}} ./cmd/patchbay
+
+  run:
+    desc: sobe o patchbay em 127.0.0.1:8787 (administração em /admin/)
+    deps: [build]
+    env:
+      PATCHBAY_LISTEN: 127.0.0.1:8787
+      PATCHBAY_DATA_DIR: "{{.DADOS}}"
+      PATCHBAY_PUBLIC_URL: http://127.0.0.1:8787
+    cmds:
+      - ./{{.BINARIO}} serve
+
+  seed:
+    desc: cria endpoint e upstream de desenvolvimento por SQL (a UI faz o mesmo)
+    deps: [build]
+    env:
+      PATCHBAY_DATA_DIR: "{{.DADOS}}"
+    cmds:
+      - ./{{.BINARIO}} seed {{.CLI_ARGS}}
+
+  # --- front-end -------------------------------------------------------------
+
+  ui:
+    desc: instala as ferramentas de UI e regenera templ e CSS
+    cmds:
+      - task: ui:ferramentas
+      - task: ui:gen
+      - task: ui:css
+
+  ui:ferramentas:
+    desc: instala o templ e baixa o Tailwind CLI standalone em ferramentas/
+    status:
+      - test -x "$(go env GOPATH)/bin/templ" || test -x "$(go env GOPATH)/bin/templ.exe"
+      - test -f {{.TAILWIND}}
+    cmds:
+      - go install github.com/a-h/templ/cmd/templ@{{.TEMPL_VERSAO}}
+      - '{{if eq OS "windows"}}powershell -NoProfile -Command "New-Item -ItemType Directory -Force ferramentas | Out-Null"{{else}}mkdir -p ferramentas{{end}}'
+      # O binário oficial, baixado da release: é o que dispensa Node.
+      - curl -sSfL -o {{.TAILWIND}} https://github.com/tailwindlabs/tailwindcss/releases/download/{{.TAILWIND_VERSAO}}/tailwindcss-{{.TAILWIND_ALVO}}
+      - '{{if ne OS "windows"}}chmod +x {{.TAILWIND}}{{else}}echo ok{{end}}'
+
+  ui:gen:
+    desc: gera os *_templ.go a partir dos .templ
+    cmds:
+      - templ generate
+
+  ui:css:
+    desc: compila o CSS do Tailwind a partir dos .templ
+    cmds:
+      - '{{.TAILWIND}} -i {{.CSS_ENTRADA}} -o {{.CSS_SAIDA}} --minify'
+
+  dev:
+    desc: regenera templ e CSS a cada salvamento (rode `task run` noutro terminal)
+    deps: [ui:gen-watch, ui:css-watch]
+
+  ui:gen-watch:
+    internal: true
+    cmds:
+      - templ generate --watch
+
+  ui:css-watch:
+    internal: true
+    cmds:
+      - '{{.TAILWIND}} -i {{.CSS_ENTRADA}} -o {{.CSS_SAIDA}} --watch'
+
+  # --- verificação -----------------------------------------------------------
+
+  test:
+    desc: testes unitários e de integração em processo, com -race
+    cmds:
+      - go test ./... -race -count=1
+
+  test-integracao:
+    desc: testes que precisam de processo ou rede reais (build tag integration)
+    cmds:
+      - go test -tags=integration ./... -race -count=1
+
+  vet:
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: golangci-lint
+    cmds:
+      - golangci-lint run
+
+  verifica:
+    desc: o que precisa estar verde antes de dar por pronto
+    cmds:
+      - task: vet
+      - task: lint
+      - task: test
+
+  tidy:
+    cmds:
+      - go mod tidy

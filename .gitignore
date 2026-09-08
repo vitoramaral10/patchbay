@@ -1,0 +1,13 @@
+/patchbay
+/patchbay.exe
+/dist/
+/dados/
+*.db
+*.db-wal
+*.db-shm
+
+# Binários de ferramenta baixados por `task ui:ferramentas` (Tailwind CLI
+# standalone). Os artefatos que eles geram — *_templ.go e o CSS compilado —
+# ficam versionados, para que `go build ./...` não precise de toolchain de
+# front-end.
+/ferramentas/
