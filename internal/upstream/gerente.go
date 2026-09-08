@@ -17,12 +17,6 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/platform/versao"
 )
 
-// IntervaloTentativaPadrao existe só para a UI antiga compilar entre este
-// commit e o que a atualiza (poucos commits à frente, mesmo PR): o backoff
-// exponencial com jitter e teto deste arquivo já não a usa. Removida assim que
-// a tela para de referenciá-la.
-const IntervaloTentativaPadrao = 5 * time.Second
-
 // ErrGerenteParado indica operação de ciclo de vida pedida a um gerente que
 // nunca iniciou ou que já desligou.
 var ErrGerenteParado = errors.New("upstream: gerente não está em execução")

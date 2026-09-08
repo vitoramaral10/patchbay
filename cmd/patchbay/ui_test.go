@@ -844,3 +844,36 @@ func TestUI_TelaDeUpstreamMostraFerramentasDescobertas(t *testing.T) {
 		}
 	}
 }
+
+// TestUI_ReconectarUpstreamRearmaASupervisao cobre o botão que a seção 11 exige
+// ao lado do estado: o admin tem como agir sobre o upstream que a tela mostra
+// como degradado ou desabilitado por autoproteção, sem editar um campo que ele
+// não quer mudar e sem reiniciar o processo.
+func TestUI_ReconectarUpstreamRearmaASupervisao(t *testing.T) {
+	t.Parallel()
+
+	u := subirUI(t)
+	u.setup(t)
+
+	upstreamID := u.criarUpstream(t, "falso", upstreamFalso(t))
+	u.criarEndpoint(t, "pessoal", "Pessoal", upstreamID)
+	esperarFerramentas(t, u, "pessoal", 2)
+
+	rota := webui.RotaUpstreams + "/" + strconv.FormatInt(upstreamID, 10)
+	res := u.enviarForm(t, rota+"/reconectar", url.Values{})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("reconectar: status = %d, quer %d", res.StatusCode, http.StatusOK)
+	}
+
+	// A sessão antiga foi descartada e uma nova subiu: o catálogo volta sozinho.
+	esperarFerramentas(t, u, "pessoal", 2)
+
+	// A tela de estado carrega o resíduo do watchdog e o agendamento do backoff:
+	// sem esses dois números, o admin não distingue "está tentando" de "desistiu".
+	tela := corpo(t, u.abrir(t, rota))
+	for _, trecho := range []string{"Próxima tentativa", "Connects abandonados", "Falhas consecutivas"} {
+		if !strings.Contains(tela, trecho) {
+			t.Errorf("tela de detalhe não mostra %q", trecho)
+		}
+	}
+}

@@ -21,9 +21,9 @@ func tomDoEstado(e Estado, habilitado, supervisionado bool) webui.Tom {
 	switch e {
 	case EstadoPronto:
 		return webui.TomSucesso
-	case EstadoDegradado:
+	case EstadoDegradado, EstadoSondaFalhou, EstadoDesabilitado:
 		return webui.TomPerigo
-	case EstadoConectando, EstadoNovo:
+	case EstadoConectando, EstadoNovo, EstadoSemConsentimento:
 		return webui.TomAlerta
 	default:
 		return webui.TomNeutro
@@ -46,6 +46,12 @@ func rotuloDoEstado(e Estado, habilitado, supervisionado bool) string {
 		return "conectando"
 	case EstadoNovo:
 		return "iniciando"
+	case EstadoDesabilitado:
+		return "desabilitado por autoproteção"
+	case EstadoSondaFalhou:
+		return "sonda falhou"
+	case EstadoSemConsentimento:
+		return "sem consentimento"
 	default:
 		return string(e)
 	}
@@ -56,6 +62,21 @@ func instante(t time.Time) string {
 		return "—"
 	}
 	return t.Local().Format("02/01/2006 15:04:05")
+}
+
+// proximaTentativa descreve o agendamento do backoff em texto curto.
+//
+// Prazo relativo e não só o horário: "em 8s" responde a pergunta que o admin
+// tem na frente da tela sem ele precisar calcular a diferença.
+func proximaTentativa(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	falta := time.Until(t).Round(time.Second)
+	if falta <= 0 {
+		return "agora"
+	}
+	return "em " + falta.String() + " (" + instante(t) + ")"
 }
 
 // TelaLista é a lista de upstreams.
@@ -83,6 +104,7 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 								<th scope="col" class="px-4 py-2.5 font-semibold">Estado</th>
 								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Ferramentas</th>
 								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Endpoints</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Próxima tentativa</th>
 								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Timeout</th>
 							</tr>
 						</thead>
@@ -102,6 +124,15 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 									</td>
 									<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Ferramentas) }</td>
 									<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Endpoints) }</td>
+									<td class="px-4 py-3 text-sm text-conteudo-suave">
+										{ proximaTentativa(l.ProximaEm) }
+										if l.Abandonos > 0 {
+											<p class="mt-1 text-xs text-conteudo-tenue">{ strconv.Itoa(l.Abandonos) } connect(s) abandonado(s)</p>
+										}
+										if l.AbandonosTotais > l.Abandonos {
+											<p class="text-xs text-conteudo-tenue">{ strconv.Itoa(l.AbandonosTotais) } no total</p>
+										}
+									</td>
 									<td class="px-4 py-3" data-numero>{ strconv.FormatInt(l.TimeoutMS, 10) } ms</td>
 								</tr>
 							}
@@ -143,15 +174,42 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 					@dado("Última tentativa") {
 						{ instante(d.TentativaEm) }
 					}
+					@dado("Próxima tentativa") {
+						{ proximaTentativa(d.ProximaEm) }
+					}
+					@dado("Falhas consecutivas") {
+						<span data-numero>{ strconv.Itoa(d.Falhas) }</span>
+					}
+					@dado("Connects abandonados") {
+						<span data-numero>{ strconv.Itoa(d.Abandonos) }</span>
+						if d.TetoAbandonos > 0 {
+							<span class="text-conteudo-tenue">de { strconv.Itoa(d.TetoAbandonos) }</span>
+						}
+						if d.AbandonosTotais > d.Abandonos {
+							<span class="ml-2 text-xs text-conteudo-tenue">({ strconv.Itoa(d.AbandonosTotais) } no total acumulado)</span>
+						}
+					}
 				</dl>
+				if d.Motivo != "" {
+					<div class="border-t border-borda px-4 py-4">
+						<p class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Por que a supervisão parou</p>
+						<p class="mt-1 max-w-[80ch] text-sm text-perigo">{ d.Motivo }</p>
+						<p class="mt-2 max-w-[65ch] text-sm text-conteudo-suave">
+							Nada disso foi gravado no banco: o único estado persistido é o de
+							<em>habilitado</em>. Reiniciar o patchbay, ou clicar em Reconectar, recomeça a
+							máquina em <em>novo</em>.
+						</p>
+					</div>
+				}
 				if d.UltimoErro != "" {
 					<div class="border-t border-borda px-4 py-4">
 						<p class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Último erro</p>
 						<p class="mt-1 max-w-[80ch] break-words font-mono text-sm text-perigo">{ d.UltimoErro }</p>
 						<p class="mt-2 max-w-[65ch] text-sm text-conteudo-suave">
 							O upstream continua na lista com o motivo à vista, e a supervisão tenta de novo
-							a cada { strconv.Itoa(int(IntervaloTentativaPadrao.Seconds())) } segundos.
-							Backoff com jitter e a hora da próxima tentativa são da fatia 3.
+							quando o backoff vencer — exponencial com jitter e teto, para que a frequência de
+							tentativa caia enquanto o servidor não volta. O erro vive em memória: o banco
+							guarda só a intenção de habilitar.
 						</p>
 					</div>
 				}
@@ -165,6 +223,11 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 						} else if d.Estado == EstadoDegradado {
 							O upstream está degradado: as ferramentas saem do catálogo enquanto ele não responde,
 							porque ferramenta que não funciona custa contexto no cliente sem entregar nada.
+							Os endpoints continuam servindo o que os outros upstreams trazem, e as ferramentas
+							que saíram ainda respondem por uma janela de graça explicando que saíram.
+						} else if d.Estado == EstadoDesabilitado {
+							A supervisão se desligou sozinha ao passar do teto de connects abandonados.
+							Use Reconectar quando o servidor voltar a responder.
 						} else {
 							A supervisão ainda está conectando.
 						}
@@ -261,6 +324,16 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 
 templ acoesDoDetalhe(d Detalhe) {
 	<div class="flex items-center gap-2">
+		if d.Habilitado {
+			<form
+				method="post"
+				action={ templ.SafeURL(rotaDo(d.ID) + "/reconectar") }
+				hx-post={ rotaDo(d.ID) + "/reconectar" }
+				hx-disabled-elt="find button"
+			>
+				<button type="submit" class="pb-botao pb-botao-secundario">Reconectar</button>
+			</form>
+		}
 		<form
 			method="post"
 			action={ templ.SafeURL(rotaDo(d.ID) + "/remover") }

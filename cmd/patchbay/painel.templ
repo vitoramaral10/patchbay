@@ -13,6 +13,11 @@ type dadosPainel struct {
 	UpstreamsRuins   int
 	Endpoints        int
 	Ferramentas      int
+	// Lapides é quantas ferramentas removidas ainda respondem explicando que
+	// saíram, somando todos os endpoints. Elas custam o mesmo orçamento de
+	// contexto que uma ferramenta viva, e por isso aparecem ao lado da
+	// contagem (seção 08.3).
+	Lapides          int
 	Chaves           int
 	ChavesAtivas     int
 	URLPublica       string
@@ -38,7 +43,7 @@ templ telaPainel(d dadosPainel, alerta *webui.Alerta) {
 				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 					@indicador("Upstreams", strconv.Itoa(d.Upstreams), rodapeUpstreams(d), webui.RotaUpstreams)
 					@indicador("Endpoints", strconv.Itoa(d.Endpoints), "no ar", webui.RotaEndpoints)
-					@indicador("Ferramentas expostas", strconv.Itoa(d.Ferramentas), "somando todos os endpoints", webui.RotaEndpoints)
+					@indicador("Ferramentas expostas", valorFerramentas(d), "somando todos os endpoints", webui.RotaEndpoints)
 					@indicador("Chaves ativas", strconv.Itoa(d.ChavesAtivas), rodapeChaves(d), webui.RotaChaves)
 				</div>
 				@webui.Cartao("URL pública") {
@@ -54,6 +59,16 @@ templ telaPainel(d dadosPainel, alerta *webui.Alerta) {
 			</div>
 		}
 	}
+}
+
+// valorFerramentas é o número que o indicador mostra: a contagem de
+// ferramentas vivas, e as lápides ao lado quando houver, porque as duas
+// custam o mesmo orçamento de contexto do cliente (seção 08.3).
+func valorFerramentas(d dadosPainel) string {
+	if d.Lapides == 0 {
+		return strconv.Itoa(d.Ferramentas)
+	}
+	return strconv.Itoa(d.Ferramentas) + " + " + strconv.Itoa(d.Lapides) + " lápides"
 }
 
 func rodapeUpstreams(d dadosPainel) string {

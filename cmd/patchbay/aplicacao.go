@@ -268,6 +268,7 @@ func (a *Aplicacao) painel(w http.ResponseWriter, r *http.Request) {
 	d.Endpoints = len(slugs)
 	for _, slug := range slugs {
 		d.Ferramentas += a.endpoints.Contagem(slug)
+		d.Lapides += len(a.endpoints.Lapides(slug))
 	}
 
 	chaves, err := a.repoChave.Todas(r.Context())
