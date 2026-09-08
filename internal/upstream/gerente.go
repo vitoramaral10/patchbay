@@ -41,10 +41,11 @@ var ErrGerenteParado = errors.New("upstream: gerente não está em execução")
 //     mesmo upstream em ordem trocada, e o resultado é um upstream sem ninguém
 //     supervisionando — ou dois.
 type Gerente struct {
-	log       *slog.Logger
-	cliente   *http.Client
-	intervalo time.Duration
-	aoMudar   func(context.Context)
+	log         *slog.Logger
+	cliente     *http.Client
+	intervalo   time.Duration
+	aoMudar     func(context.Context)
+	credenciais LerCredenciais
 
 	comandos  chan comando
 	encerrado chan struct{}
@@ -342,9 +343,15 @@ func (g *Gerente) conectar(ctx context.Context, cfg Config) (*mcp.ClientSession,
 	cliente := mcp.NewClient(&mcp.Implementation{Name: "patchbay", Version: versao.Numero}, &mcp.ClientOptions{
 		Logger: g.log.With("componente", "cliente_upstream", "upstream", cfg.Nome),
 	})
+	// As credenciais estáticas são lidas do banco a cada conexão e entram no
+	// transporte, nunca na URL nem na Config: Config alimenta a UI e o log.
+	clienteHTTP, err := g.clienteDe(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
 	transporte := &mcp.StreamableClientTransport{
 		Endpoint:   cfg.URL,
-		HTTPClient: g.cliente,
+		HTTPClient: clienteHTTP,
 	}
 
 	ctxConexao, cancelar := context.WithTimeout(ctx, cfg.Timeout)

@@ -55,7 +55,7 @@ func subirUI(t *testing.T) uiDeTeste {
 	ctx, cancelar := context.WithCancel(context.Background())
 	t.Cleanup(cancelar)
 
-	app, err := montar(ctx, cfg, slog.New(slog.DiscardHandler))
+	app, err := montar(ctx, cfg, cofreDeTeste(t), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("montar: erro = %v, quer nil", err)
 	}

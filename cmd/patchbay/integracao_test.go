@@ -134,7 +134,7 @@ func subirPatchbay(t *testing.T, urlUpstream string, timeoutMS int64) patchbayDe
 		t.Fatalf("fechar banco do seed: erro = %v, quer nil", err)
 	}
 
-	app, err := montar(ctx, cfg, log)
+	app, err := montar(ctx, cfg, cofreDeTeste(t), log)
 	if err != nil {
 		t.Fatalf("montar: erro = %v, quer nil", err)
 	}

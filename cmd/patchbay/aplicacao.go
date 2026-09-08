@@ -14,6 +14,7 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/apikey"
 	"github.com/vitoramaral10/patchbay/internal/catalogo"
 	"github.com/vitoramaral10/patchbay/internal/endpoint"
+	"github.com/vitoramaral10/patchbay/internal/platform/cripto"
 	"github.com/vitoramaral10/patchbay/internal/platform/store"
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
 	"github.com/vitoramaral10/patchbay/internal/upstream"
@@ -57,7 +58,10 @@ type Aplicacao struct {
 }
 
 // montar abre o banco, aplica as migrações e liga os componentes.
-func montar(ctx context.Context, cfg Config, log *slog.Logger) (*Aplicacao, error) {
+//
+// O cofre entra por parâmetro e não pela Config: a Config é impressa em log de
+// boot e vai inteira para os testes, e a chave mestra não pode passar por lá.
+func montar(ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logger) (*Aplicacao, error) {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("criar diretório de dados %s: %w", cfg.DataDir, err)
 	}
@@ -69,7 +73,14 @@ func montar(ctx context.Context, cfg Config, log *slog.Logger) (*Aplicacao, erro
 	a := &Aplicacao{cfg: cfg, log: log, st: st}
 	leitura, escrita := st.Leitura(), st.Escrita()
 
-	a.repoUpstream = upstream.NovoRepositorioSQLite(leitura, escrita)
+	// Antes de qualquer componente: se o canário não confere, a chave mestra
+	// mudou e nada do que está cifrado neste banco volta.
+	if err := verificarCanario(ctx, cofre, leitura, escrita, log); err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+
+	a.repoUpstream = upstream.NovoRepositorioSQLite(leitura, escrita, cofre)
 	a.repoEndpoint = endpoint.NovoRepositorioSQLite(leitura, escrita)
 	a.repoChave = apikey.NovoRepositorioSQLite(leitura, escrita)
 
@@ -87,6 +98,11 @@ func montar(ctx context.Context, cfg Config, log *slog.Logger) (*Aplicacao, erro
 	a.gerente = upstream.NovoGerente(
 		log.With("componente", "upstream"), cfgs,
 		upstream.AoMudar(a.sincronizar),
+		// As credenciais estáticas são lidas do banco a cada conexão, e não
+		// guardadas na Config: assim trocar o bearer pela tela vale na
+		// reconexão seguinte, sem cache a invalidar e sem segredo passeando
+		// pela estrutura que alimenta a UI.
+		upstream.ComCredenciais(a.repoUpstream.Credenciais),
 	)
 
 	cat := catalogo.NovoServico(
@@ -295,7 +311,11 @@ func (a *Aplicacao) sincronizar(ctx context.Context) {
 
 // servir sobe o servidor HTTP e desliga limpo no cancelamento do ctx.
 func servir(ctx context.Context, cfg Config, log *slog.Logger) error {
-	a, err := montar(ctx, cfg, log)
+	cofre, err := cofreDoAmbiente()
+	if err != nil {
+		return err
+	}
+	a, err := montar(ctx, cfg, cofre, log)
 	if err != nil {
 		return err
 	}

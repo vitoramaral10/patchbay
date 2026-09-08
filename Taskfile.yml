@@ -31,9 +31,19 @@ tasks:
     cmds:
       - go build -o {{.BINARIO}} ./cmd/patchbay
 
-  run:
-    desc: sobe o patchbay em 127.0.0.1:8787 (administração em /admin/)
+  chave-mestra:
+    desc: gera a chave de PATCHBAY_MASTER_KEY (imprime uma vez; guarde-a)
     deps: [build]
+    cmds:
+      - ./{{.BINARIO}} chave-mestra gerar
+
+  run:
+    desc: sobe o patchbay em 127.0.0.1:8787 (exige PATCHBAY_MASTER_KEY no ambiente)
+    deps: [build]
+    # PATCHBAY_MASTER_KEY não entra aqui de propósito: uma chave escrita no
+    # Taskfile seria uma chave versionada, e o processo passaria a subir com um
+    # segredo que todo mundo conhece. Ela vem do ambiente de quem roda —
+    # `task chave-mestra` gera a primeira.
     env:
       PATCHBAY_LISTEN: 127.0.0.1:8787
       PATCHBAY_DATA_DIR: "{{.DADOS}}"
@@ -44,6 +54,7 @@ tasks:
   seed:
     desc: cria endpoint e upstream de desenvolvimento por SQL (a UI faz o mesmo)
     deps: [build]
+    # Mesmo portão do serve: sem PATCHBAY_MASTER_KEY o seed não abre o banco.
     env:
       PATCHBAY_DATA_DIR: "{{.DADOS}}"
     cmds:
@@ -98,6 +109,8 @@ tasks:
 
   test:
     desc: testes unitários e de integração em processo, com -race
+    # Sem PATCHBAY_MASTER_KEY: cada teste sorteia a própria chave efêmera. Se o
+    # teste lesse o ambiente, ele passaria ou falharia conforme a máquina.
     cmds:
       - go test ./... -race -count=1
 
