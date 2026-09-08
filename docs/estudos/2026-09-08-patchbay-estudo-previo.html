@@ -1,0 +1,1717 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>patchbay — estudo prévio</title>
+<style>
+:root{
+  --paper:#F4F6F8; --surface:#FFFFFF; --surface-2:#EDF1F4; --sunken:#E4E9ED;
+  --ink:#131A22; --ink-2:#31404E; --muted:#66788A; --faint:#93A3B2;
+  --line:#D5DDE4; --line-2:#C2CDD6;
+  --accent:#0F6A72; --accent-soft:#DDEDEE; --accent-ink:#0A4A50;
+  --amber:#B4690E; --amber-soft:#F8EBD8;
+  --green:#1F7A4D; --green-soft:#DDEEE4;
+  --red:#A3302B;   --red-soft:#F7E2E0;
+  --slate:#5C6B7A; --slate-soft:#E5EAEF;
+  --serif:Charter,"Bitstream Charter","Iowan Old Style",Georgia,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0E1318; --surface:#151C23; --surface-2:#1B242C; --sunken:#101720;
+    --ink:#E7EDF2; --ink-2:#C3CFD9; --muted:#8B9BAA; --faint:#68798A;
+    --line:#2A353F; --line-2:#3A4854;
+    --accent:#4EC5C9; --accent-soft:#12313A; --accent-ink:#9BE1E4;
+    --amber:#E5A54B; --amber-soft:#3A2C15;
+    --green:#5FC98D; --green-soft:#15301F;
+    --red:#EE8177;   --red-soft:#3A1C19;
+    --slate:#9AAABA; --slate-soft:#212C35;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0E1318; --surface:#151C23; --surface-2:#1B242C; --sunken:#101720;
+  --ink:#E7EDF2; --ink-2:#C3CFD9; --muted:#8B9BAA; --faint:#68798A;
+  --line:#2A353F; --line-2:#3A4854;
+  --accent:#4EC5C9; --accent-soft:#12313A; --accent-ink:#9BE1E4;
+  --amber:#E5A54B; --amber-soft:#3A2C15;
+  --green:#5FC98D; --green-soft:#15301F;
+  --red:#EE8177;   --red-soft:#3A1C19;
+  --slate:#9AAABA; --slate-soft:#212C35;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.shell{display:grid;grid-template-columns:230px minmax(0,1fr);max-width:1340px;margin:0 auto}
+.rail{position:sticky;top:0;align-self:start;max-height:100vh;overflow-y:auto;
+  padding:26px 16px 40px 20px;font-family:var(--sans);font-size:12.5px;border-right:1px solid var(--line)}
+.rail-tag{margin:0 0 10px;text-transform:uppercase;letter-spacing:.12em;font-size:10px;color:var(--faint)}
+.rail a{display:block;padding:3px 0 3px 8px;color:var(--muted);text-decoration:none;border-left:2px solid transparent}
+.rail a:hover{color:var(--accent);border-left-color:var(--accent)}
+main{padding:26px 34px 90px;min-width:0}
+.masthead{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:34px}
+.eyebrow{font-family:var(--sans);font-size:11px;text-transform:uppercase;letter-spacing:.14em;
+  color:var(--accent-ink);margin:0 0 8px}
+.masthead h1{font-size:2.5rem;line-height:1.1;margin:0 0 14px;letter-spacing:-.02em}
+.meta{display:flex;flex-wrap:wrap;gap:18px;font-family:var(--sans);font-size:12px;color:var(--muted)}
+.meta b{color:var(--ink-2);font-weight:600;margin-right:5px}
+.standfirst{margin:16px 0 0;font-size:1.02rem;color:var(--ink-2);max-width:76ch;
+  border-left:3px solid var(--accent);padding-left:14px}
+section{margin:0 0 54px;scroll-margin-top:16px}
+.col{max-width:78ch}
+h2{font-size:1.42rem;margin:0 0 4px;letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px}
+.num{font-family:var(--sans);font-size:11px;color:var(--faint);letter-spacing:.1em;font-weight:600}
+.rule{border:0;border-top:1px solid var(--line-2);margin:0 0 18px}
+h3{font-size:1.1rem;margin:30px 0 8px}
+h4{font-size:.95rem;margin:22px 0 6px;font-family:var(--sans);color:var(--ink-2)}
+p{margin:0 0 13px}
+ul,ol{margin:0 0 13px;padding-left:22px;max-width:78ch}
+li{margin:0 0 6px}
+code{font-family:var(--mono);font-size:.855em;background:var(--surface-2);
+  border:1px solid var(--line);border-radius:3px;padding:.06em .32em;color:var(--ink-2)}
+a{color:var(--accent-ink)}
+:root[data-theme="dark"] a{color:var(--accent)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) a{color:var(--accent)}}
+.scroller{overflow-x:auto;margin:0 0 18px;border:1px solid var(--line);border-radius:5px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-family:var(--sans);font-size:12.9px;line-height:1.45}
+th,td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--surface-2);font-weight:650;color:var(--ink-2);white-space:nowrap;
+  font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+tbody tr:last-child td{border-bottom:0}
+td code{font-size:.9em}
+.callout{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--slate);
+  border-radius:4px;padding:13px 16px;margin:0 0 18px;max-width:78ch}
+.callout.warn{border-left-color:var(--red);background:var(--red-soft)}
+.callout.note{border-left-color:var(--amber);background:var(--amber-soft)}
+.callout p:last-child{margin-bottom:0}
+.lede{display:block;font-weight:700;margin-bottom:6px;color:var(--ink)}
+.pill{font-family:var(--sans);font-size:10.5px;font-weight:650;padding:.12em .5em;border-radius:9px;
+  border:1px solid;white-space:nowrap;display:inline-block;line-height:1.5}
+.pill.pending{color:var(--slate);border-color:var(--slate);background:var(--slate-soft)}
+.pill.generating{color:var(--accent-ink);border-color:var(--accent);background:var(--accent-soft)}
+.pill.ready{color:var(--green);border-color:var(--green);background:var(--green-soft)}
+.pill.empty{color:var(--muted);border-color:var(--line-2);background:var(--surface-2)}
+.pill.failed{color:var(--red);border-color:var(--red);background:var(--red-soft)}
+.pill.rejected{color:var(--red);border-color:var(--red);background:var(--red-soft)}
+.pill.expired{color:var(--amber);border-color:var(--amber);background:var(--amber-soft)}
+.open{color:var(--amber);font-weight:700;background:var(--amber-soft);
+  border:1px solid var(--amber);border-radius:3px;padding:.04em .35em;font-family:var(--sans);font-size:.88em}
+.decided{color:var(--green);font-weight:700;background:var(--green-soft);
+  border:1px solid var(--green);border-radius:3px;padding:.04em .35em;font-family:var(--sans);font-size:.88em}
+.panel{border:1px solid var(--line);border-radius:5px;background:var(--surface);margin:0 0 18px;overflow:hidden}
+.panel-head{background:var(--surface-2);border-bottom:1px solid var(--line);padding:6px 12px}
+.panel-title{font-family:var(--sans);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.panel pre{margin:0;padding:13px;overflow-x:auto;font-family:var(--mono);font-size:12.4px;line-height:1.6}
+.panel pre code{background:none;border:0;padding:0}
+.k{color:var(--accent-ink)}.s{color:var(--green)}.n{color:var(--amber)}
+:root[data-theme="dark"] .k{color:var(--accent)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .k{color:var(--accent)}}
+.canvas{border:1px solid var(--line);border-radius:5px;background:var(--surface);padding:12px;margin:0 0 10px;overflow-x:auto}
+.canvas svg{display:block;width:100%;min-width:660px;height:auto}
+.readout{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--surface);
+  border-radius:4px;padding:11px 14px;margin:0 0 8px;font-size:.95rem;min-height:3.6em}
+.readout b{font-family:var(--sans);font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--accent-ink);display:block;margin-bottom:4px}
+:root[data-theme="dark"] .readout b{color:var(--accent)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .readout b{color:var(--accent)}}
+.trace{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 20px;align-items:center}
+.step{font-family:var(--sans);font-size:11.5px;padding:3px 9px;border:1px solid var(--line-2);
+  border-radius:3px;background:var(--surface);color:var(--muted);cursor:pointer}
+.step:hover{border-color:var(--accent);color:var(--accent-ink)}
+.step[aria-current="true"]{background:var(--accent);border-color:var(--accent);color:#042124;font-weight:650}
+.phase{font-family:var(--sans);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--faint);padding:0 4px 0 10px}
+.theme-toggle{position:fixed;right:14px;top:14px;z-index:20;width:32px;height:32px;border-radius:50%;
+  border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);cursor:pointer;font-size:15px}
+@media (max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line);
+    display:flex;flex-wrap:wrap;gap:2px 12px;padding:14px}
+  .rail-tag{width:100%}
+  main{padding:20px 16px 70px}
+  .masthead h1{font-size:1.9rem}
+}
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="themeBtn" aria-label="Alternar tema">&#9686;</button>
+<div class="shell">
+<nav class="rail" aria-label="Seções">
+  <p class="rail-tag">Sumário</p>
+  <a href="#resumo">01 · Em uma tela</a>
+  <a href="#produto">02 · O que o produto é</a>
+  <a href="#arquitetura">03 · Arquitetura e componentes</a>
+  <a href="#fluxo">04 · O fluxo de uma tools/call</a>
+  <a href="#estados">05 · Os estados de um upstream</a>
+  <a href="#oauth-up">06 · Consentimento upstream</a>
+  <a href="#oauth-down">07 · OAuth dos clientes</a>
+  <a href="#propostas">08 · Propostas</a>
+  <a href="#alternativas">09 · Alternativas avaliadas</a>
+  <a href="#repo">10 · Repositório e bibliotecas</a>
+  <a href="#interface">11 · O que a interface garante</a>
+  <a href="#decidido">12 · Decidido</a>
+  <a href="#testes">13 · Estratégia de testes</a>
+  <a href="#riscos">14 · Riscos</a>
+  <a href="#preciso">15 · O que eu preciso de você</a>
+  <a href="#epico">16 · Épico e tasks</a>
+</nav>
+<main>
+<header class="masthead">
+  <p class="eyebrow">Estudo prévio · para o dono do projeto, antes da primeira linha de código</p>
+  <h1>patchbay — gateway MCP self-hosted</h1>
+  <div class="meta">
+    <span><b>Autor</b> Vitor Melo</span>
+    <span><b>Data</b> 2026-09-08</span>
+    <span><b>Para</b> decidir a arquitetura e abrir o épico</span>
+    <span><b>Módulo</b> <code>github.com/vitoramaral10/patchbay</code></span>
+  </div>
+  <p class="standfirst">Stack fechada pelo dono. A investigação mudou três decisões de
+  desenho e achou um <code>panic</code> alcançável por dado de servidor upstream. O
+  repositório está vazio — não há código do patchbay para citar, então toda evidência
+  <code>arquivo:linha</code> desta página aponta para o <code>go-sdk v1.7.0</code>, o
+  <code>zitadel/oidc v3.49.6</code> e o <code>golang.org/x/oauth2 v0.37.0</code>, lidos no
+  cache de módulos desta máquina, e para o dossiê de pesquisa de 2026-09-08. As cinco escolhas
+  que ficavam com o dono foram respondidas em 2026-09-08 — o registro do pedido está na seção 15,
+  a decisão em si na seção 12.</p>
+</header>
+
+<section id="resumo">
+  <div class="col">
+    <h2><span class="num">01</span>Em uma tela</h2>
+    <hr class="rule">
+    <p>Hoje cada um dos oito clientes de IA — claude.ai (web, desktop, mobile), Claude Code,
+    Claude Desktop, ChatGPT em developer mode, Codex CLI, Cursor, VS Code Copilot, Gemini CLI —
+    é configurado servidor por servidor, cada um com o seu arquivo de configuração e o seu
+    modelo de credencial. Um servidor MCP novo custa oito edições. Uma credencial que expira
+    custa oito reautenticações. E o inventário de "o que eu tenho ligado" não existe em lugar
+    nenhum.</p>
+    <p>O gateway que resolvia isso — o MetaMCP — foi abandonado por três motivos concretos, e
+    são eles que definem o escopo deste projeto: ele <strong>nunca renovava o token OAuth</strong>
+    de upstream, <strong>vazava um processo STDIO vivo por reconexão</strong> até esgotar PIDs, e
+    <strong>deixava um upstream pendurado derrubar o endpoint inteiro</strong>. Nenhum dos três é
+    um bug de detalhe: são as três coisas que um gateway existe para fazer.</p>
+    <p>O patchbay é um binário único, self-hosted, que agrega N servidores MCP upstream e os
+    expõe como <strong>um único servidor MCP</strong> por endpoint, com UI web embutida para
+    administrar tudo. O nome vem do <em>patch bay</em> de áudio: entradas ligadas a saídas.</p>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Antes (como está hoje)</th><th>Depois</th></tr></thead>
+    <tbody>
+      <tr><td>Cada cliente configurado servidor por servidor; oito arquivos de configuração divergindo</td>
+          <td>Uma URL por endpoint, uma credencial por cliente; o catálogo muda no patchbay e os clientes recebem <code>tools/list_changed</code></td></tr>
+      <tr><td>Token OAuth de upstream expira e a ferramenta passa a falhar sem explicação</td>
+          <td>Refresh automático serializado por upstream, par renovado gravado na hora; consentimento revogado vira estado visível <span class="pill expired">sem_consentimento</span>, nunca falha silenciosa</td></tr>
+      <tr><td>Um processo STDIO por sessão de cliente; reconexão vaza processo</td>
+          <td>Um processo por servidor configurado, compartilhado por todas as sessões; morte da árvore por process group (Linux) e Job Object (Windows)</td></tr>
+      <tr><td>Upstream que pendura atrasa ou derruba o endpoint; estado <code>ERROR</code> persistido trava a reconexão</td>
+          <td>Endpoint serve catálogo parcial; upstream pendurado fica <span class="pill failed">degradado</span> e reconecta com backoff. Nenhum estado de erro é persistido</td></tr>
+      <tr><td>Saúde medida por <code>tools/list</code>: o Google Drive lista 8 ferramentas sem auth e falha em toda chamada</td>
+          <td>Sonda funcional opcional que executa um <code>tools/call</code> real por servidor; falhar na sonda <em>remove</em> as ferramentas do catálogo</td></tr>
+      <tr><td>Sem inventário: quantas ferramentas cada cliente recebe é desconhecido</td>
+          <td>Contagem de ferramentas por endpoint visível na UI — é custo de contexto no cliente, e cresce sem ninguém ver</td></tr>
+    </tbody>
+  </table></div>
+  <div class="col">
+    <p>Para quem usa: adicionar um servidor MCP passa a ser um formulário na UI, e todos os oito
+    clientes ganham a ferramenta nova sem reconfigurar nada.</p>
+  </div>
+</section>
+
+<section id="produto">
+  <div class="col">
+    <h2><span class="num">02</span>O que o produto é</h2>
+    <hr class="rule">
+    <p><strong>Um agregador MCP com painel.</strong> Fala MCP dos dois lados: é servidor para os
+    clientes de IA e é cliente para os servidores upstream, e a única coisa que ele acrescenta ao
+    protocolo é <em>composição</em> — quais servidores e quais ferramentas entram em cada endpoint.</p>
+
+    <div class="callout warn">
+      <span class="lede">Não é um proxy de segurança, nem um policy engine.</span>
+      <p>A leitura errada mais provável, porque quase todo gateway MCP do mercado se vende assim
+      (ToolHive com Cedar, Lasso com scanner de prompt injection, ContextForge com PII masking).
+      O patchbay não inspeciona argumento de ferramenta, não mascara PII, não tem RBAC e não
+      isola upstream STDIO em container — a lista completa de não-objetivos está na seção 12. A
+      razão técnica: o único usuário é o admin, e ele é a mesma pessoa que escolheu cada upstream.
+      Um policy engine aqui protegeria o dono de si mesmo, ao custo de um mecanismo permanente.</p>
+    </div>
+
+    <p><strong>Não é multiusuário.</strong> Existe um admin, com uma senha. O
+    <em>usuário</em> do authorization server embutido é esse mesmo admin — a tela de
+    consentimento OAuth de cliente exige a sessão dele. Essa definição é o que justifica a
+    decisão mais econômica do documento: o AS embutido precisa de exatamente um grant
+    (<code>authorization_code</code> + PKCE), sem <code>client_credentials</code>, sem ID token,
+    sem userinfo, sem JWKS — e é por isso que a biblioteca de OIDC recomendada pela pesquisa
+    prévia deixa de ser vantagem e passa a ser peso (seção 09).</p>
+
+    <p><strong>Não é um registry nem um marketplace.</strong> Não descobre servidores; o admin
+    cadastra. Não há catálogo público a espelhar.</p>
+  </div>
+</section>
+
+<section id="arquitetura">
+  <div class="col">
+    <h2><span class="num">03</span>Arquitetura e componentes</h2>
+    <hr class="rule">
+    <p>Dez componentes, cada um um pacote Go. A coluna da direita não é decoração: é a regra que
+    obriga o componente a existir separado. Componente sem regra própria vira função dentro de
+    outro.</p>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Pacote</th><th>Responsabilidade</th><th>Por que é um componente separado</th></tr></thead>
+    <tbody>
+      <tr><td><code>internal/endpoint</code></td>
+          <td>Um <code>*mcp.Server</code> vivo por endpoint; registra as ferramentas materializadas e serve o Streamable HTTP</td>
+          <td>É o único ponto que pode disparar <code>tools/list_changed</code> — a notificação sai de <code>AddTool</code>/<code>RemoveTools</code> (<code>mcp/server.go:320</code>, <code>mcp/server.go:572</code>), e essas são operações de instância, não de função</td></tr>
+      <tr><td><code>internal/catalogo</code></td>
+          <td>Normaliza a ferramenta descoberta, aplica filtro/prefixo/renome, materializa a tabela de roteamento por endpoint</td>
+          <td>É a fronteira de confiança: tudo que vem de upstream passa por aqui antes de chegar ao SDK, porque <code>(*Server).AddTool</code> entra em <code>panic</code> com schema inválido (seção 08.2)</td></tr>
+      <tr><td><code>internal/upstream</code></td>
+          <td>Uma sessão MCP por servidor configurado; máquina de estados, backoff, watchdog de conexão, descoberta de ferramentas</td>
+          <td>É o dono do ciclo de vida. Se a conexão fosse aberta no caminho da requisição, o <em>hang</em> do upstream viraria latência do endpoint</td></tr>
+      <tr><td><code>internal/stdioproc</code></td>
+          <td>Supervisor de processo: process group no Linux, Job Object no Windows, restart, detecção de <em>hang</em></td>
+          <td>Só ele importa <code>syscall</code>/<code>golang.org/x/sys/windows</code>. Manter isso fora de <code>upstream</code> é o que permite testar o supervisor com um processo que pendura de propósito, sem MCP no meio</td></tr>
+      <tr><td><code>internal/upauth</code></td>
+          <td>Broker OAuth de upstream: <strong>exatamente um</strong> <code>auth.AuthorizationCodeHandler</code> e um <code>oauth2.TokenSource</code> por upstream, para o processo inteiro</td>
+          <td>A serialização do refresh <em>é</em> a unicidade da instância (seção 08.5). Um componente que pode ser instanciado duas vezes por acidente não cumpre o requisito</td></tr>
+      <tr><td><code>internal/authsrv</code></td>
+          <td>Authorization server OAuth 2.1 downstream: metadata RFC 8414/9728, <code>/authorize</code>, <code>/token</code>, DCR, CIMD, rotação, revogação</td>
+          <td>É a peça sem prior art em Go (seção 09). Isolada atrás de interface própria para o bump de uma dependência experimental não vazar para o resto</td></tr>
+      <tr><td><code>internal/apikey</code></td>
+          <td>Chave por cliente/dispositivo, com escopo de endpoints; verificação por hash</td>
+          <td>Compartilha o middleware com o AS (<code>auth.RequireBearerToken</code>, <code>auth/auth.go:97</code>) mas não o modelo de dados: chave de API é <em>hash</em>, token de upstream é cifra reversível</td></tr>
+      <tr><td><code>internal/admin</code></td>
+          <td>UI web: sessão do admin, CSRF, todas as telas, logs ao vivo por SSE</td>
+          <td>É a fonte de edição da configuração. Nenhum outro componente escreve no store por decisão de admin</td></tr>
+      <tr><td><code>internal/config</code></td>
+          <td>Export/import do YAML versionável, com <em>dry-run</em> e trava otimista</td>
+          <td>O YAML nunca é lido no boot (seção 08.9). Separar deixa isso estruturalmente verdadeiro, não uma promessa de documentação</td></tr>
+      <tr><td><code>internal/platform/store</code></td>
+          <td>SQLite: dois pools (leitura livre, escrita <code>SetMaxOpenConns(1)</code>), migrações embutidas, cifra de campo</td>
+          <td>É infraestrutura compartilhada por toda feature — por isso vive em <code>platform/</code> e não pode importar nenhuma feature</td></tr>
+    </tbody>
+  </table></div>
+  <div class="col">
+    <p>A regra de dependência segue a skill <code>go-idiomatico</code>: feature não importa
+    feature, cada consumidor declara a interface mínima do que usa, e só <code>main</code> conhece
+    o grafo. A única exceção tolerada é importar <em>tipos</em> de outra feature quando não cria
+    ciclo — <code>endpoint</code> usa <code>catalogo.Ferramenta</code>, mas declara
+    <code>type Catalogo interface { Materializar(ctx, endpointID) ([]Ferramenta, error) }</code>
+    no próprio pacote em vez de importar o <code>Service</code> de <code>catalogo</code>.</p>
+  </div>
+</section>
+
+<section id="fluxo">
+  <div class="col">
+    <h2><span class="num">04</span>O fluxo de uma <code>tools/call</code></h2>
+    <hr class="rule">
+    <p>O mapa abaixo são os dez componentes; a sequência por cima é uma chamada de ferramenta
+    ponta a ponta, de um cliente autenticado até um upstream HTTP com OAuth. Cada passo carrega a
+    razão de ser assim.</p>
+  </div>
+  <div class="canvas">
+    <svg id="dgFluxo" role="img" aria-label="Mapa dos componentes do patchbay com o passo ativo da chamada de ferramenta destacado"></svg>
+  </div>
+  <div class="readout" id="outFluxo" aria-live="polite"></div>
+  <div class="trace" id="trFluxo"></div>
+  <div class="col">
+    <p><strong>Fora do fluxo principal:</strong> o <em>boot</em> (ler <code>upstream</code>
+    habilitados, subir uma goroutine de supervisão por servidor, materializar cada endpoint com o
+    catálogo que der para materializar), a descoberta de ferramentas (só na supervisão, nunca no
+    caminho da requisição), a sonda de saúde (idem), o refresh proativo de token (idem) e a
+    rotina de limpeza de <code>oauth_code</code>/<code>upstream_oauth_flow</code> expirados.</p>
+
+    <p>Três coisas que o diagrama torna discutíveis. Primeira: <strong>o caminho da requisição não
+    conecta, não descobre e não autoriza nada</strong> — ele lê um <em>snapshot</em> pronto. É a
+    forma de garantir que um upstream lento não vire latência do endpoint. Segunda: <strong>a
+    resolução do nome da ferramenta não é uma busca</strong> — o handler registrado em
+    <code>AddTool</code> já fecha sobre o upstream e o nome original, então prefixo e renome
+    custam zero por chamada e colisão de nome é impossível por construção. Terceira: <strong>a
+    trilha é gravada depois de responder</strong>, porque o SQLite tem um único escritor e a
+    trilha é a escrita mais frequente do sistema.</p>
+
+    <div class="callout">
+      <span class="lede">Por que uma sessão de upstream por servidor, e não uma por sessão de cliente: o multiplexador STDIO cai fora de graça.</span>
+      <p>A pesquisa concluiu que compartilhar um processo STDIO entre N sessões de cliente exigiria
+      um multiplexador próprio — reescrever o <code>id</code> do JSON-RPC de cada requisição e
+      manter uma tabela <code>id_interno → (sessão, id_original)</code>. Não exige: o
+      <code>jsonrpc2</code> do SDK já é um multiplexador, e o próprio código documenta que
+      "a writer must be safe for concurrent use, as writes may occur concurrently"
+      (<code>internal/jsonrpc2/conn.go:195</code>). Uma única <code>*mcp.ClientSession</code> sobre
+      um <code>CommandTransport</code> (<code>mcp/cmd.go:20</code>) atende chamadas concorrentes de
+      quantos endpoints quiserem. <strong>O que sobra para escrever é o ciclo de vida do processo,
+      não o protocolo</strong> — e isso tira um componente inteiro do escopo da v1.</p>
+    </div>
+  </div>
+</section>
+
+<section id="estados">
+  <div class="col">
+    <h2><span class="num">05</span>Os estados de um upstream</h2>
+    <hr class="rule">
+    <p>Sete estados, e o gatilho está no rótulo de cada transição. Este diagrama é a resposta
+    direta à segunda dor do MetaMCP.</p>
+  </div>
+  <div class="canvas">
+    <svg id="dgEstados" role="img" aria-label="Máquina de estados de um upstream do patchbay"></svg>
+  </div>
+  <div class="readout" id="outEstados" aria-live="polite"></div>
+  <div class="trace" id="trEstados"></div>
+  <div class="col">
+    <div class="callout note">
+      <span class="lede">Nenhum estado de erro aparece no banco.</span>
+      <p>O que o SQLite guarda de um upstream é a <em>intenção</em> do admin
+      (<code>habilitado</code>) e o último erro como texto, para a UI exibir. O estado da máquina
+      vive em memória, no <code>Manager</code>. Reiniciar o patchbay sempre recomeça em
+      <span class="pill pending">novo</span> → <span class="pill generating">conectando</span>.
+      Persistir <code>ERROR</code> é exatamente o que travava a reconexão no MetaMCP: o estado
+      passa a ser uma decisão gravada, e não a leitura de uma tentativa.</p>
+    </div>
+
+    <div class="callout note">
+      <span class="lede"><span class="pill failed">sonda_falhou</span> não é um sabor de <span class="pill failed">degradado</span>.</span>
+      <p><span class="pill failed">degradado</span> significa "não consigo falar com ele";
+      <span class="pill failed">sonda_falhou</span> significa "falo com ele, ele lista ferramentas,
+      e a chamada de verdade não funciona" — o caso do Google Drive sem auth. Nos dois o efeito no
+      catálogo é o mesmo: <strong>as ferramentas saem do endpoint</strong>, porque ferramenta que
+      não funciona custa contexto no cliente sem entregar nada. O que difere é a mensagem na UI, e
+      ela precisa carregar a requisição e a resposta exatas da sonda — sem isso o admin não
+      distingue "minha sonda está mal configurada" de "o servidor está quebrado".</p>
+    </div>
+
+    <p><strong>O que não está no diagrama:</strong> não existe transição direta
+    <span class="pill failed">degradado</span> → <span class="pill ready">pronto</span>. Voltar
+    passa obrigatoriamente por <span class="pill generating">conectando</span>, porque a conexão
+    pode estar envenenada por um erro transitório (issue <code>#683</code> do go-sdk) e a única
+    correção conhecida é descartar o transporte e criar outro. Reaproveitar a sessão antiga é o
+    atalho que reintroduz o bug.</p>
+  </div>
+</section>
+
+<section id="oauth-up">
+  <div class="col">
+    <h2><span class="num">06</span>Consentimento OAuth de upstream</h2>
+    <hr class="rule">
+    <p>É o motivo número um do abandono do MetaMCP, e o fluxo tem uma dificuldade estrutural: o
+    patchbay roda como serviço, mas o consentimento é dado pelo navegador do admin, que está em
+    outra máquina.</p>
+  </div>
+  <div class="canvas">
+    <svg id="dgOAuthUp" role="img" aria-label="Fluxo de consentimento OAuth de um servidor upstream"></svg>
+  </div>
+  <div class="readout" id="outOAuthUp" aria-live="polite"></div>
+  <div class="trace" id="trOAuthUp"></div>
+  <div class="col">
+    <p><strong>Fora do fluxo principal:</strong> o refresh, que nunca passa pela UI — roda na
+    supervisão, com a instância única de <code>TokenSource</code> daquele upstream (seção 08.5). E
+    a revogação: quando o refresh devolve <code>invalid_grant</code>, o upstream vai para
+    <span class="pill expired">sem_consentimento</span> e a UI mostra um botão "reautorizar", que
+    reinicia este mesmo fluxo.</p>
+
+    <div class="callout note">
+      <span class="lede">O provedor que só aceita loopback não tem solução limpa, e isso é uma decisão de produto.</span>
+      <p>A Canva só aceita <code>http://127.0.0.1:&lt;porta&gt;</code> como <code>redirect_uri</code>
+      até a integração ser submetida a revisão — não aceita <code>localhost</code> como hostname
+      nem domínio próprio. Um serviço remoto não tem loopback que o navegador do admin alcance. As
+      duas saídas são um binário auxiliar na máquina do admin
+      (<code>patchbay-loopback-auth</code>) que sobe o listener onde o navegador está e devolve o
+      <code>code</code> ao gateway por chamada autenticada, ou colar o <code>code</code> à mão numa
+      caixa de texto da UI. Nenhuma fonte da pesquisa cobre esse cenário: é inferência de desenho,
+      e precisa de um teste real contra a Canva antes de fechar — está proposto como
+      <em>spike</em> na seção 15.</p>
+    </div>
+  </div>
+</section>
+
+<section id="oauth-down">
+  <div class="col">
+    <h2><span class="num">07</span>OAuth dos clientes (claude.ai e Claude Code)</h2>
+    <hr class="rule">
+    <p>O mesmo authorization server atende as duas superfícies, e elas diferem em duas regras que
+    convivem no mesmo endpoint: o claude.ai redireciona para uma URI fixa e hospedada, o Claude
+    Code para loopback em porta efêmera que precisa casar <em>ignorando a porta</em>.</p>
+  </div>
+  <div class="canvas">
+    <svg id="dgOAuthDown" role="img" aria-label="Fluxo OAuth 2.1 de um cliente de IA contra o authorization server embutido"></svg>
+  </div>
+  <div class="readout" id="outOAuthDown" aria-live="polite"></div>
+  <div class="trace" id="trOAuthDown"></div>
+  <div class="col">
+    <p><strong>Fora do fluxo principal:</strong> o <em>step-up</em> de escopo (403 com
+    <code>insufficient_scope</code>) não entra na v1 porque o patchbay não tem escopo além de
+    "acessa este endpoint" — a fronteira de autorização é o endpoint, e ela é resolvida na emissão
+    do token, não em runtime.</p>
+
+    <div class="callout">
+      <span class="lede">Por que <code>resource</code> identifica o endpoint e não o gateway: o isolamento entre endpoints cai fora de graça.</span>
+      <p>Se o <code>resource</code> do RFC 8707 fosse a URL do gateway, um token emitido para o
+      endpoint <em>pessoal</em> valeria no endpoint <em>trabalho</em> — e a composição por endpoint,
+      que é a razão de existir do produto, perderia sentido como fronteira. Fazendo cada endpoint
+      ser um <em>protected resource</em> distinto, com metadata RFC 9728 no caminho com sufixo
+      (<code>/.well-known/oauth-protected-resource/mcp/{slug}</code>), o <code>aud</code> do token
+      já carrega o endpoint e a verificação é uma comparação de string, <strong>sem tabela de
+      permissão nem policy engine</strong>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="propostas">
+  <div class="col">
+    <h2><span class="num">08</span>Propostas</h2>
+    <hr class="rule">
+    <p>Dez peças. As três primeiras mudaram por causa da investigação — a primeira encolheu, a
+    segunda apareceu do nada, a terceira ficou mais feia do que o desenho inicial admitia.</p>
+  </div>
+
+  <div class="col">
+    <h3>08.1 · Tradução de era — <em>não é uma lacuna, é a resposta certa</em></h3>
+    <p><strong>O patchbay não escreve tradutor de era.</strong> O <code>go-sdk v1.7.0</code> declara
+    suporte às cinco revisões do protocolo em <code>mcp/shared.go:58-64</code>
+    (<code>2026-07-28</code>, <code>2025-11-25</code>, <code>2025-06-18</code>,
+    <code>2025-03-26</code>, <code>2024-11-05</code>) e negocia a versão nos dois papéis:</p>
+    <ul>
+      <li>Como <strong>cliente</strong>, tenta o <code>server/discover</code> da era nova quando a
+      versão alvo é ≥ <code>2026-07-28</code> (<code>mcp/client.go:318</code>) e, ao receber erro
+      não reconhecido, cai para o <code>initialize</code> legado
+      (<code>mcp/client.go:376</code>) — é literalmente o algoritmo de <em>dual-era</em> descrito
+      pela spec.</li>
+      <li>Como <strong>servidor</strong>, atende o RPC <code>server/discover</code>
+      (<code>mcp/server.go:878</code>) e o <code>initialize</code> legado
+      (<code>mcp/server.go:1784</code>) no mesmo handler.</li>
+      <li>Nas notificações, <code>notifySessions</code> já bifurca por era: sessão pré-SEP-2575
+      recebe no canal compartilhado, sessão moderna só se tiver um
+      <code>subscriptions/listen</code> aberto com <em>opt-in</em>
+      (<code>mcp/server.go:727-745</code>).</li>
+    </ul>
+    <p>Esta é a pergunta que volta todo trimestre, então fica registrada com a evidência: o
+    componente "tradutor de era" do desenho original <strong>não deve ser construído</strong>. O que
+    o patchbay faz é uma coisa muito menor e muito mais importante: <strong>não deixar a era do
+    lado downstream vazar para o lado upstream</strong>. Cada <code>*mcp.ClientSession</code> de
+    upstream negocia a sua própria versão, independente da versão que o cliente de IA está falando.
+    Acoplar as duas é o erro que faz um cliente antigo quebrar um upstream novo.</p>
+
+    <div class="callout warn">
+      <span class="lede">O que não se traduz de volta: MRTR.</span>
+      <p>A revisão <code>2026-07-28</code> substituiu <code>elicitation</code>,
+      <code>sampling</code> e <code>roots</code> pelo padrão <em>Multi Round-Trip Requests</em>: o
+      servidor devolve <code>InputRequiredResult</code> (<code>resultType: "input_required"</code>)
+      e o cliente reenvia a requisição com <code>inputResponses</code>. Um cliente da era antiga
+      não tem esse mecanismo. Se um upstream moderno pedir <code>input_required</code> para uma
+      chamada originada de um cliente legado, <strong>não existe tradução possível</strong> — o
+      patchbay tem que devolver um erro de ferramenta explícito dizendo isso, e a UI tem que
+      registrar o evento. Está na lista de não-objetivos da v1 (seção 12) porque não é falta de
+      esforço: é impossibilidade.</p>
+    </div>
+  </div>
+
+  <div class="col">
+    <h3>08.2 · Materialização do catálogo — proposta</h3>
+    <p><strong>Um <code>*mcp.Server</code> vivo por endpoint, com as ferramentas registradas uma a
+    uma, e um normalizador obrigatório entre o upstream e o SDK.</strong> A primeira metade vem da
+    forma do SDK; a segunda é o achado mais importante deste estudo.</p>
+
+    <p>O ponto de extensão para multi-endpoint é o callback de
+    <code>NewStreamableHTTPHandler(getServer func(*http.Request) *Server, opts)</code>
+    (<code>mcp/streamable.go:232</code>): o patchbay resolve o <em>slug</em> pelo path e devolve o
+    <code>*mcp.Server</code> daquele endpoint. E a lista de ferramentas do SDK é um conjunto
+    estático em memória — <code>listTools</code> pagina <code>s.tools</code> e não tem callback
+    dinâmico (<code>mcp/server.go:929-946</code>). Logo, o catálogo precisa ser
+    <em>materializado</em>: para cada endpoint, cada ferramenta aceita entra com
+    <code>(*Server).AddTool</code> (<code>mcp/server.go:273</code>), a versão não-genérica que
+    aceita o <code>*Tool</code> como veio do upstream. O efeito colateral é o que o produto
+    precisa: <code>AddTool</code>/<code>RemoveTools</code> passam por <code>changeAndNotify</code>,
+    que dispara <code>tools/list_changed</code> com <em>debounce</em>
+    (<code>mcp/server.go:700-724</code>).</p>
+
+    <div class="callout warn">
+      <span class="lede"><code>(*Server).AddTool</code> entra em <code>panic</code> com dado que vem de upstream — em sete lugares.</span>
+      <p>Lendo <code>mcp/server.go:273-313</code>: <code>InputSchema</code> nulo
+      (<code>:282</code>), ponteiro de schema tipado nulo (<code>:286</code>), schema cujo
+      <code>type</code> não é <code>"object"</code> (<code>:289</code> e <code>:297</code>), schema
+      que não serializa para JSON (<code>:294</code>), <code>OutputSchema</code> nulo
+      (<code>:303</code>) ou não serializável (<code>:308</code>), anotação de header de parâmetro
+      inválida (<code>:313</code>). Todos esses valores vêm do <code>tools/list</code> de um
+      servidor de terceiro. E o nome da ferramenta é pior: <code>validateToolName</code> só
+      <em>loga</em> o erro (<code>mcp/server.go:274-276</code>) e a ferramenta é registrada mesmo
+      assim, então um nome inválido chega ao cliente. <strong>O requisito "um upstream ruim não
+      derruba o endpoint" é violado não por um upstream pendurado, mas por um schema
+      malformado</strong> — e o exemplo oficial de proxy do próprio SDK
+      (<code>examples/server/proxy/main.go:86</code>) usa a variante genérica com schema escrito à
+      mão, então não exercita esse caminho nenhuma vez.</p>
+    </div>
+
+    <p>Daí o normalizador, em <code>internal/catalogo</code>, aplicado a toda ferramenta descoberta
+    antes de qualquer <code>AddTool</code>:</p>
+  </div>
+
+  <div class="scroller"><table>
+    <thead><tr><th>Regra</th><th>Por quê</th></tr></thead>
+    <tbody>
+      <tr><td>Nome validado contra as mesmas regras do SDK (não vazio, ≤ 128 caracteres, conjunto de runes permitido) e <em>sanitizado</em> se falhar; a ferramenta entra com o nome corrigido e marcada <span class="pill expired">renomeada</span> na UI</td>
+          <td><code>validateToolName</code> só loga (<code>mcp/server.go:275</code>); confiar nele deixa nome inválido chegar ao cliente</td></tr>
+      <tr><td><code>InputSchema</code> ausente, nulo ou com <code>type</code> diferente de <code>"object"</code> é substituído por <code>{"type":"object"}</code> permissivo, e a ferramenta é marcada <span class="pill failed">schema degradado</span></td>
+          <td>Qualquer um dos quatro casos é <code>panic</code> (<code>mcp/server.go:282-297</code>). Substituir é a única alternativa a excluir a ferramenta</td></tr>
+      <tr><td><code>OutputSchema</code> que não serializa é descartado</td>
+          <td><code>panic</code> em <code>mcp/server.go:308</code>; o output schema é opcional no protocolo, então descartar não quebra nada</td></tr>
+      <tr><td>Prefixo aplicado ao nome registrado, não ao nome chamado no upstream</td>
+          <td>Colisão entre dois upstreams que expõem <code>search</code> é o caso mais comum; resolver por prefixo no registro faz a resolução custar zero por chamada</td></tr>
+      <tr><td>A materialização de cada ferramenta roda dentro de um <code>defer recover()</code> individual</td>
+          <td>Cinturão além do suspensório: se um oitavo caminho de <code>panic</code> aparecer num bump do SDK, o custo é uma ferramenta, não o processo</td></tr>
+      <tr><td>Ferramenta removida do catálogo deixa uma <em>lápide</em> por uma janela de graça: continua registrada e devolve erro de ferramenta explicando que ela saiu</td>
+          <td>Sem a lápide, o cliente que ainda não relistou recebe <code>unknown tool</code> (<code>mcp/server.go:955-960</code>), que ele interpreta como servidor quebrado</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="col">
+    <p><strong>Precedente do stack:</strong> nenhum. O único proxy MCP em Go do survey que agrega
+    catálogos (<code>TBXark/mcp-proxy</code>) não teve o tratamento de schema inválido confirmado em
+    código-fonte pela pesquisa. Isto é território próprio, e é a primeira coisa que precisa de teste.</p>
+  </div>
+
+  <div class="col">
+    <h3>08.3 · Isolamento por upstream — proposta</h3>
+    <p><strong>Nenhuma operação de upstream acontece no caminho da requisição, e a conexão é feita
+    por uma goroutine que o supervisor tem permissão para abandonar.</strong> A segunda metade é
+    desagradável e é a consequência direta de uma issue aberta.</p>
+
+    <p>A issue <code>#1189</code> do go-sdk registra que <code>Connect</code> do cliente Streamable
+    bloqueia além do <em>deadline</em> contra um servidor que não responde. Um <code>context</code>
+    com timeout não resolve, porque quem ignora o context é a chamada. E Go não tem como matar uma
+    goroutine. Então o desenho é: o supervisor dispara <code>Connect</code> em goroutine própria com
+    um canal de resultado, e espera com <code>select</code> sobre um timer. Se o timer vence, o
+    supervisor marca <span class="pill failed">degradado</span>, agenda o backoff e
+    <strong>deixa a goroutine presa para trás</strong>.</p>
+
+    <div class="callout warn">
+      <span class="lede">A mitigação do #1189 é um vazamento de goroutine deliberado — e o resíduo tem que ser visível.</span>
+      <p>Cada tentativa pendurada custa uma goroutine e um socket que ninguém vai recolher enquanto
+      o SDK não corrigir. Sem teto, um upstream que pendura sempre acumula uma goroutine por ciclo
+      de backoff até o processo morrer de exaustão — trocando o modo de falha do MetaMCP por um
+      novo. Três limites, e todos aparecem na UI: backoff exponencial com jitter e teto (a
+      frequência de tentativa cai), contador de <em>connects abandonados</em> por upstream, e
+      desabilitação automática do upstream quando o contador passa de um limite configurável, com
+      o motivo escrito na tela. <strong>Upstream desabilitado por conta própria é pior que
+      upstream degradado</strong> — por isso é um estado explícito, e não um silêncio.</p>
+    </div>
+
+    <p>O resto do isolamento: timeout em <em>toda</em> operação de upstream (conexão, descoberta,
+    chamada, sonda), configurável por servidor e visível na configuração; catálogo parcial servido
+    sem hesitar (endpoint com três upstreams e um degradado serve as ferramentas dos dois); e
+    <code>tools/list</code> vazio como resposta legítima quando nenhum upstream está pronto —
+    nunca erro, porque erro no <code>tools/list</code> faz o cliente marcar o endpoint inteiro como
+    quebrado.</p>
+  </div>
+
+  <div class="col">
+    <h3>08.4 · Supervisor de processo STDIO — proposta</h3>
+    <p><strong>Um processo por servidor configurado, compartilhado por todas as sessões de cliente,
+    com morte de árvore garantida pelo sistema operacional.</strong> A parte de protocolo cai fora
+    de graça (seção 04); o que sobra é o ciclo de vida, e ele é específico por plataforma.</p>
+  </div>
+
+  <div class="scroller"><table>
+    <thead><tr><th>Regra</th><th>Por quê</th></tr></thead>
+    <tbody>
+      <tr><td>Linux/macOS: <code>SysProcAttr{Setpgid:true}</code> antes de <code>Start()</code>; matar com <code>syscall.Kill(-pid, SIGTERM)</code> e escalar para <code>SIGKILL</code></td>
+          <td>Sem <code>Setpgid</code> o filho herda o grupo do gateway, e matar o grupo mataria o gateway. O PID negativo é a convenção POSIX para "o grupo"</td></tr>
+      <tr><td>Windows: Job Object com <code>JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE</code>, atribuído imediatamente após <code>Start()</code></td>
+          <td>Windows não tem process group POSIX. A janela entre <code>Start()</code> e <code>AssignProcessToJobObject</code> é por onde um neto escapa do job</td></tr>
+      <tr><td>Wrapper próprio e fino sobre <code>golang.org/x/sys/windows</code>, em arquivo com <em>build tag</em> explícita — nunca sufixo <code>_windows.go</code> acidental</td>
+          <td>O sufixo de arquivo é build constraint implícito: um arquivo mal nomeado desaparece da build silenciosamente. E as libs públicas de Job Object têm porte mínimo (<code>go-winjob</code>: 21 estrelas) ou são <code>internal/</code> e não importáveis (<code>hcsshim</code>)</td></tr>
+      <tr><td>Timeout de chamada não mata o processo; só a chamada falha</td>
+          <td>O processo é compartilhado. Matá-lo por uma chamada lenta derruba as outras N sessões — a troca de um problema pequeno por um grande</td></tr>
+      <tr><td>Morte do processo detectada pelo <code>Wait()</code>, com <code>WaitDelay</code> configurado; restart com backoff exponencial e jitent, com circuito que abre depois de N crashes consecutivos</td>
+          <td><code>WaitDelay</code> cobre o caso do processo que saiu mas deixou pipes abertos, que trava o <code>Wait()</code> indefinidamente</td></tr>
+      <tr><td><em>Hang</em> (vivo e mudo) é detectado por N timeouts consecutivos de resposta, não por liveness de PID</td>
+          <td>Liveness de PID não detecta <em>hang</em>: no Unix <code>os.FindProcess</code> sempre devolve sucesso (golang/go#34396) e no Windows não há equivalente de sinal 0. O processo pendurado não morre sozinho, então o supervisor de restart nunca é acionado — precisa de política própria</td></tr>
+      <tr><td>Frame JSON malformado no stdout não pode matar o gateway; a sessão daquele upstream é descartada e recriada</td>
+          <td>Issue <code>#1209</code> do go-sdk: um frame malformado derruba a sessão stdio inteira. Se essa sessão for compartilhada, o dano precisa parar na borda do upstream</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="col">
+    <p><strong>Precedente:</strong> o Docker MCP Gateway evita o problema inteiro subindo um
+    container por chamada de ferramenta; o ToolHive isola cada servidor em container. Os dois pagam
+    latência por chamada e exigem um runtime de container. Contêiner por servidor STDIO está nos
+    não-objetivos da v1 (seção 12), então o patchbay fica com o processo nu — e por isso a morte de
+    árvore é obrigatória, não opcional.</p>
+  </div>
+
+  <div class="col">
+    <h3>08.5 · Broker OAuth de upstream — proposta</h3>
+    <p><strong>Exatamente uma instância de <code>auth.AuthorizationCodeHandler</code> e uma de
+    <code>oauth2.TokenSource</code> por upstream, para toda a vida do processo.</strong> A
+    unicidade da instância <em>é</em> o mutex que o requisito pede.</p>
+
+    <p>A corrida que o requisito quer evitar — duas requisições detectando 401 ao mesmo tempo e
+    correndo para dar refresh com o mesmo refresh token, disparando detecção de replay em provedor
+    com rotação — é a issue <code>#1760</code> do SDK de TypeScript. Em Go ela não existe
+    <em>dentro de uma instância</em>: <code>oauth2.reuseTokenSource</code> guarda o token atrás de
+    um <code>sync.Mutex</code> (<code>golang.org/x/oauth2@v0.37.0/oauth2.go:297-304</code>) e o
+    refresh do handler do MCP usa esse caminho
+    (<code>auth/authorization_code.go:645-651</code>). Ela reaparece na hora em que o patchbay cria
+    duas instâncias para o mesmo upstream — por exemplo uma por endpoint que o inclui. Daí a regra:
+    o <code>Manager</code> é o único dono, a instância nasce com o upstream e morre com ele.</p>
+
+    <div class="callout">
+      <span class="lede">Grave o token que o <code>TokenSource</code> devolve, nunca o corpo da resposta HTTP — o <em>merge</em> cai fora de graça.</span>
+      <p>O requisito diz que a resposta do refresh às vezes não traz <code>refresh_token</code> e
+      que sobrescrever apaga o único item irrecuperável. O <code>x/oauth2</code> já resolve isso:
+      <em>"Don't overwrite <code>RefreshToken</code> with an empty value if this was a token
+      refreshing request"</em>
+      (<code>golang.org/x/oauth2@v0.37.0/internal/token.go:250-253</code>). Então o
+      <code>*oauth2.Token</code> que sai do <code>TokenSource</code> já vem mesclado. O ponto de
+      persistência correto é o hook <code>NewTokenSource</code>
+      (<code>auth/authorization_code.go:139</code>), envolvendo a source devolvida para gravar cada
+      token novo no SQLite. <strong>Se o patchbay parsear a resposta do token endpoint por conta
+      própria, ele reintroduz o bug que a biblioteca já não tem</strong> — e essa é a única forma
+      de errar aqui.</p>
+    </div>
+
+    <p>O registro de cliente também vem pronto, na ordem que a spec pede: CIMD → pré-registrado →
+    DCR, implementada em <code>auth/authorization_code.go:526-556</code>. O que o produto acrescenta
+    é que <strong>o pré-registrado tem que ser um caminho de primeira classe na UI, não um fallback
+    de erro</strong>: o Google não anuncia <code>registration_endpoint</code> nem
+    <code>client_id_metadata_document_supported</code>, então o formulário de upstream precisa
+    aceitar <code>client_id</code> e <code>client_secret</code> colados à mão desde a v1. O handler
+    valida o <code>issuer</code> gravado contra o do AS descoberto
+    (<code>auth/authorization_code.go:538-540</code>), o que é a proteção correta contra reusar
+    credencial de um AS em outro.</p>
+  </div>
+
+  <div class="col">
+    <h3>08.6 · Authorization server embutido — proposta</h3>
+    <p><strong>Código próprio, sobre <code>net/http</code> e <code>crypto/*</code>, na ordem de 900
+    a 1.400 linhas.</strong> A pesquisa prévia recomendou <code>zitadel/oidc</code> como base; a
+    leitura do código da biblioteca contradisse a recomendação, e a justificativa está na
+    seção 09.</p>
+
+    <p>O subconjunto que a spec MCP exige é deliberadamente pequeno — e é <em>pequeno de um jeito
+    que não é o pequeno de uma biblioteca de OIDC</em>:</p>
+  </div>
+
+  <div class="scroller"><table>
+    <thead><tr><th>Peça</th><th>Regra que a exige</th></tr></thead>
+    <tbody>
+      <tr><td><code>authorization_code</code> + PKCE <code>S256</code> obrigatório, sem nenhum outro grant</td><td>OAuth 2.1 remove implicit e ROPC; o claude.ai sempre manda PKCE S256 e exige <code>code_challenge_methods_supported: ["S256"]</code>; <code>client_credentials</code> não é suportado pelo Claude, que exige consentimento de usuário</td></tr>
+      <tr><td>Metadata RFC 8414 em <code>/.well-known/oauth-authorization-server</code>, anunciando <code>client_id_metadata_document_supported: true</code> <strong>e</strong> <code>"none"</code> em <code>token_endpoint_auth_methods_supported</code></td><td>O claude.ai só escolhe CIMD se os dois campos estiverem presentes; faltando um, cai para DCR e registra um cliente novo a cada conexão fresca</td></tr>
+      <tr><td>Metadata RFC 9728 por endpoint, no caminho com sufixo <code>/.well-known/oauth-protected-resource/mcp/{slug}</code>, com fallback na raiz, e <code>authorization_servers</code> com <strong>uma</strong> entrada</td><td>Cliente DEVE suportar os dois mecanismos de descoberta; o Claude usa apenas a primeira entrada de <code>authorization_servers</code> e não faz fallback</td></tr>
+      <tr><td><code>resource</code> (RFC 8707) validado na requisição de autorização <strong>e</strong> na de token, gravado no <code>aud</code></td><td>É o que faz o token valer para um endpoint só (seção 07)</td></tr>
+      <tr><td>Refresh com rotação, família de tokens e revogação da família ao ver um token já rotacionado</td><td>OAuth 2.1 exige rotação ou sender-constraining para cliente público, que é o caso de CIMD e DCR</td></tr>
+      <tr><td><code>/token</code> aceitando <code>application/x-www-form-urlencoded</code>; erros no formato RFC 6749 (<code>invalid_grant</code> no refresh expirado)</td><td>É a falha mais comum de implementação — framework que só parseia JSON devolve 415 e o cliente desiste. O claude.ai decide reautenticar a partir do código de erro</td></tr>
+      <tr><td>Allowlist de <code>redirect_uri</code> com <strong>duas</strong> regras de comparação: exata para <code>https://claude.ai/api/mcp/auth_callback</code>, e loopback ignorando a porta para <code>http://localhost/callback</code> e <code>http://127.0.0.1/callback</code></td><td>Claude Code é cliente nativo RFC 8252 em porta efêmera e declara essas duas URIs no próprio CIMD</td></tr>
+      <tr><td>DCR (RFC 7591) mantido, mesmo deprecado</td><td>Deprecado em favor de CIMD, mas a remoção mais cedo possível é a primeira revisão publicada em ou após 2027-07-28 — e há cliente que só tem DCR</td></tr>
+      <tr><td>CIMD com <em>guard</em> de SSRF: só HTTPS, sem seguir redirect, faixas privadas e de metadata bloqueadas antes e depois da resolução de DNS, corpo limitado, timeout curto, <em>single-flight</em>, cache que nunca guarda erro e serve <em>last-known-good</em></td><td>O AS busca uma URL escolhida por quem chama, de dentro da rede onde estão a chave mestra e o banco. É o risco de segunda ordem da adoção de CIMD (seção 13)</td></tr>
+      <tr><td>Revogação RFC 7009 e <code>iss</code> (RFC 9207) na resposta de autorização</td><td><code>iss</code> passou de opcional a SHOULD em <code>2026-07-28</code>, com validação obrigatória no cliente, contra mix-up attack</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="col">
+    <p>Metade de uma dessas linhas já vem de graça: <code>auth.ProtectedResourceMetadataHandler</code>
+    serve o JSON do RFC 9728 com CORS <code>*</code> (<code>auth/auth.go:188</code>), e
+    <code>auth.RequireBearerToken</code> escreve o 401 com
+    <code>WWW-Authenticate: Bearer resource_metadata="..."</code>
+    (<code>auth/auth.go:97</code>, <code>auth/auth.go:114</code>) recebendo um
+    <code>TokenVerifier</code> plugável (<code>auth/auth.go:41</code>) — é o mesmo middleware para
+    chave de API e para token do AS.</p>
+  </div>
+
+  <div class="col">
+    <h3>08.7 · Sonda de saúde funcional — proposta</h3>
+    <p><strong>Uma sonda por servidor que executa um <code>tools/call</code> real, configurada à mão
+    e desligada por padrão.</strong> Nenhum gateway do survey confirma fazer isso — é o diferencial
+    do produto, e é também a peça com o pior potencial de dano se for automática.</p>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Campo</th><th>Regra que o exige</th></tr></thead>
+    <tbody>
+      <tr><td><code>habilitada</code> (padrão falso)</td><td>Uma sonda escolhe uma ferramenta e a executa. O patchbay não tem como saber se <code>send_message</code> é segura de chamar — inferir a ferramenta é a forma de mandar mensagem para alguém sem querer</td></tr>
+      <tr><td><code>tool</code>, <code>args</code> (JSON)</td><td>Quem sabe qual chamada é inócua é o admin. <code>search_files</code> com um termo bobo é seguro; nada garante isso para uma ferramenta arbitrária</td></tr>
+      <tr><td><code>intervalo_s</code></td><td>A sonda consome cota da API do provedor. Sem intervalo configurável, o diagnóstico vira o problema</td></tr>
+      <tr><td><code>timeout_ms</code></td><td>Sonda sem timeout pendura o supervisor daquele upstream</td></tr>
+      <tr><td><code>ultimo_run_em</code>, <code>ultimo_ok_em</code>, <code>ultimo_erro</code> (com requisição e resposta)</td><td>Sem a requisição e a resposta exatas na tela, o admin não distingue "minha sonda está errada" de "o servidor está quebrado" — e vai desligar a sonda em vez de consertar o servidor</td></tr>
+    </tbody>
+  </table></div>
+  <div class="col">
+    <p>Critério de falha: erro de transporte, timeout, ou resultado com <code>isError</code>
+    verdadeiro. Falhar leva o upstream a <span class="pill failed">sonda_falhou</span> e
+    <strong>remove as ferramentas dele do catálogo</strong> de todos os endpoints, com
+    <code>tools/list_changed</code>. O resíduo, nomeado: <strong>uma sonda mal configurada apaga as
+    ferramentas de um servidor saudável</strong>. A defesa é a sonda ser opt-in, o estado "sonda
+    desligada" ser explícito na UI (nunca verde), e o erro carregar a evidência.</p>
+  </div>
+
+  <div class="col">
+    <h3>08.8 · Modelo de dados — proposta</h3>
+    <p><strong>SQLite é a única fonte de verdade.</strong> Aberto com
+    <code>_journal_mode=WAL</code>, <code>_busy_timeout=5000</code>,
+    <code>_synchronous=NORMAL</code>, <code>_txlock=immediate</code>, e dois pools: leitura sem
+    limite, escrita com <code>SetMaxOpenConns(1)</code> — o padrão que a documentação do River
+    valida em produção. Migrações versionadas em <code>embed.FS</code>, aplicadas no boot pelo
+    <code>goose.NewProvider</code>, sem CLI externo no deploy.</p>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Tabela</th><th>Campos que importam</th><th>Regra que a exige</th></tr></thead>
+    <tbody>
+      <tr><td><code>settings</code></td><td><code>chave</code>, <code>valor</code>, <code>canario_cifrado</code>, <code>generation</code></td><td>URL pública é obrigatória para o AS anunciar <code>issuer</code> e aceitar o callback; o canário detecta chave mestra trocada no boot; <code>generation</code> é a trava otimista do import de YAML</td></tr>
+      <tr><td><code>admin</code>, <code>admin_session</code></td><td>senha em argon2id; sessão com expiração</td><td>O consentimento OAuth de cliente exige sessão de admin — o "usuário" do AS é o admin</td></tr>
+      <tr><td><code>upstream</code></td><td><code>tipo</code> (<code>http</code>/<code>sse</code>/<code>stdio</code>), <code>url</code>, <code>comando</code>, <code>args</code>, <code>env</code>, <code>timeout_ms</code>, <code>habilitado</code>, <code>ultimo_erro</code></td><td><code>habilitado</code> é intenção do admin e é o <strong>único</strong> estado persistido; <code>ultimo_erro</code> é texto para a UI, nunca gatilho de lógica</td></tr>
+      <tr><td><code>upstream_secret</code></td><td><code>tipo</code>, <code>nome</code>, <code>valor_cifrado</code>, <code>nonce</code></td><td>Bearer e header estático de upstream são credenciais que o patchbay <em>apresenta</em> — cifra reversível, AES-256-GCM, nonce por linha</td></tr>
+      <tr><td><code>upstream_oauth</code></td><td><code>issuer</code>, <code>registro</code>, <code>client_id</code>, <code>client_secret_cifrado</code>, <code>access_token_cifrado</code>, <code>refresh_token_cifrado</code>, <code>expira_em</code>, <code>ultimo_refresh_em</code></td><td><code>issuer</code> gravado é o que permite recusar credencial de outro AS (<code>auth/authorization_code.go:538</code>); <code>registro</code> distingue CIMD, pré-registrado e DCR, que é o que faz o Google funcionar</td></tr>
+      <tr><td><code>upstream_oauth_flow</code></td><td><code>state</code>, <code>pkce_verifier_cifrado</code>, <code>redirect_uri</code>, <code>expira_em</code></td><td>Uso único, apagada no callback. Sem ela o callback não valida que o <code>code</code> pertence àquela tentativa</td></tr>
+      <tr><td><code>upstream_probe</code></td><td>ver 08.7</td><td>—</td></tr>
+      <tr><td><code>tool_cache</code></td><td><code>upstream_id</code>, <code>nome</code>, <code>input_schema</code>, <code>output_schema</code>, <code>descoberto_em</code>, <code>normalizacao</code></td><td>Permite materializar um endpoint no boot antes de o upstream responder, e mostrar na UI o que foi normalizado e por quê</td></tr>
+      <tr><td><code>endpoint</code>, <code>endpoint_upstream</code>, <code>endpoint_tool_rule</code></td><td><code>slug</code>, <code>prefixo</code>, <code>padrao</code>, <code>acao</code>, <code>renome</code></td><td>O <code>slug</code> entra na URL e no <code>resource</code> do token — <strong>é contrato, e mudá-lo invalida credencial de cliente</strong></td></tr>
+      <tr><td><code>api_key</code>, <code>api_key_endpoint</code></td><td><code>hash</code>, <code>prefixo_visivel</code>, <code>revogado_em</code>, <code>ultimo_uso_em</code></td><td>Credencial que o patchbay <em>verifica</em> → hash, nunca reversível. O prefixo visível é o que permite a UI dizer qual chave é qual sem guardá-la</td></tr>
+      <tr><td><code>oauth_client</code></td><td><code>client_id</code>, <code>tipo</code> (<code>dcr</code>/<code>cimd_cache</code>/<code>prereg</code>), <code>redirect_uris</code>, <code>expira_em</code></td><td>CIMD não persiste cliente — só cacheia o documento com TTL; DCR persiste. Misturar os dois numa tabela sem <code>tipo</code> faz o cache virar registro permanente</td></tr>
+      <tr><td><code>oauth_code</code></td><td><code>code_hash</code>, <code>endpoint_id</code>, <code>resource</code>, <code>code_challenge</code>, <code>usado_em</code></td><td>Uso único; segundo uso revoga a família. Guardar hash e não o código é o mesmo motivo da chave de API</td></tr>
+      <tr><td><code>oauth_token</code></td><td><code>hash</code>, <code>tipo</code>, <code>familia_id</code>, <code>substituido_por</code>, <code>resource</code>, <code>revogado_em</code></td><td><code>familia_id</code> + <code>substituido_por</code> são a rotação com detecção de replay que o OAuth 2.1 exige de cliente público</td></tr>
+      <tr><td><code>call_log</code></td><td><code>ts</code>, credencial, <code>endpoint_id</code>, <code>upstream_id</code>, <code>tool</code>, <code>duracao_ms</code>, <code>erro</code>, <code>era</code></td><td>É a trilha por chamada de ferramenta que o requisito pede; <code>era</code> entra porque diagnosticar "funciona no Claude Code e não no claude.ai" começa por saber qual versão do protocolo cada um falou</td></tr>
+    </tbody>
+  </table></div>
+  <div class="col">
+    <div class="callout note">
+      <span class="lede">Duas classes de segredo, dois tratamentos — e confundi-las é irreversível.</span>
+      <p>O que o patchbay <strong>apresenta</strong> (token de upstream, client secret, API key de
+      upstream) precisa voltar em claro: cifra simétrica reversível. O que o patchbay
+      <strong>verifica</strong> (chave de API do cliente, code, access e refresh token que ele
+      mesmo emitiu) nunca precisa voltar: hash. Guardar a segunda classe de forma reversível é
+      criar um cofre de credenciais alheias sem necessidade nenhuma; guardar a primeira como hash
+      simplesmente não funciona. As duas colunas na mesma tabela é como isso dá errado.</p>
+    </div>
+    <p>Índices, cada um puxado por uma regra já decidida: <code>api_key(hash)</code> e
+    <code>oauth_token(hash)</code> únicos, porque toda requisição faz esse lookup;
+    <code>oauth_token(familia_id)</code>, porque revogar a família é uma operação de escrita em
+    lote; <code>call_log(ts)</code> e <code>call_log(endpoint_id, ts)</code>, porque a tela de
+    trilha filtra por endpoint e ordena por tempo; <code>tool_cache(upstream_id)</code>, porque a
+    rematerialização de um endpoint lê por upstream.</p>
+  </div>
+
+  <div class="col">
+    <h3>08.9 · Configuração em YAML — proposta</h3>
+    <p><strong>O YAML é artefato de export/import, e nunca é lido no boot.</strong> É a proposta que
+    resolve a pergunta "como conciliar UI e arquivo sem deriva" eliminando a pergunta.</p>
+    <p>O import é uma operação explícita — <code>patchbay config import arquivo.yaml</code> ou o
+    botão equivalente na UI — transacional, com <code>--dry-run</code> obrigatório na primeira
+    execução mostrando o plano, e com trava otimista: o export grava o <code>generation</code> do
+    banco de onde saiu, e a trava detecta se o banco avançou desde então. Decisão do dono em
+    2026-09-08 (seção 12): quando isso acontece, o import <strong>mescla</strong> — aplica o que
+    não conflita e reporta item a item o que conflitou (valor do YAML vs valor do banco), sem
+    aplicar esses. Segredo nunca sai em claro: o export escreve
+    <code>${PATCHBAY_UPSTREAM_NOTION_TOKEN}</code> e o import resolve do ambiente.</p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><span class="panel-title">patchbay.yaml (export) — forma proposta</span></div>
+<pre><code><span class="k">generation</span>: <span class="n">47</span>
+<span class="k">upstreams</span>:
+  - <span class="k">nome</span>: <span class="s">notion</span>
+    <span class="k">tipo</span>: <span class="s">http</span>
+    <span class="k">url</span>: <span class="s">https://mcp.notion.com/mcp</span>
+    <span class="k">timeout_ms</span>: <span class="n">15000</span>
+    <span class="k">oauth</span>:
+      <span class="k">registro</span>: <span class="s">dcr</span>
+      <span class="k">issuer</span>: <span class="s">https://mcp.notion.com</span>
+      <span class="k">consentimento</span>: <span class="s">"não exportável — reautorizar na UI"</span>
+    <span class="k">sonda</span>:
+      <span class="k">habilitada</span>: <span class="s">true</span>
+      <span class="k">tool</span>: <span class="s">notion-search</span>
+      <span class="k">args</span>: { <span class="k">query</span>: <span class="s">"ping"</span> }
+      <span class="k">intervalo_s</span>: <span class="n">900</span>
+  - <span class="k">nome</span>: <span class="s">filesystem</span>
+    <span class="k">tipo</span>: <span class="s">stdio</span>
+    <span class="k">comando</span>: <span class="s">npx</span>
+    <span class="k">args</span>: [<span class="s">"-y"</span>, <span class="s">"@modelcontextprotocol/server-filesystem"</span>, <span class="s">"/dados"</span>]
+    <span class="k">env</span>: { <span class="k">TOKEN</span>: <span class="s">"${PATCHBAY_FS_TOKEN}"</span> }
+<span class="k">endpoints</span>:
+  - <span class="k">slug</span>: <span class="s">pessoal</span>
+    <span class="k">upstreams</span>:
+      - { <span class="k">nome</span>: <span class="s">notion</span>, <span class="k">prefixo</span>: <span class="s">nt_</span> }
+      - { <span class="k">nome</span>: <span class="s">filesystem</span>, <span class="k">prefixo</span>: <span class="s">fs_</span>,
+          <span class="k">regras</span>: [{ <span class="k">acao</span>: <span class="s">excluir</span>, <span class="k">padrao</span>: <span class="s">"write_*"</span> }] }
+</code></pre>
+  </div>
+  <div class="col">
+    <p><strong>Os números do exemplo são ilustrativos.</strong> Não existe default medido para
+    intervalo de sonda nem para timeout de upstream: o timeout entra no formulário com um valor
+    proposto e editável, e o intervalo da sonda é parte da pergunta 4 da
+    <a href="#preciso">seção 15</a> — ele consome cota da API do provedor, então quem escolhe
+    é quem paga a cota.</p>
+  </div>
+  <div class="col">
+    <div class="callout">
+      <span class="lede">Por que o YAML não é lido no boot: a pergunta "quem ganha" deixa de existir.</span>
+      <p>Se o arquivo fosse lido na inicialização, existiria uma configuração em vigor que a UI não
+      mostra, e a deriva seria invisível até alguém reiniciar o serviço. Sendo só export/import, a
+      divergência é um <em>diff que o admin pede quando quer</em>, e nunca um comportamento que
+      entra em efeito sozinho. O custo: reconstruir a instância exige rodar o import, e o
+      consentimento OAuth de upstream <strong>não é reconstruível</strong> — ele volta como
+      <span class="pill expired">sem_consentimento</span> e exige clicar "autorizar" em cada
+      upstream. Isso é resíduo aceito: o refresh token é a única coisa no banco que não se
+      recria a partir de configuração.</p>
+    </div>
+  </div>
+
+  <div class="col">
+    <h3>08.10 · UI web — proposta</h3>
+    <p><strong><code>templ</code> + <code>htmx</code> + Tailwind CLI standalone, tudo em
+    <code>embed.FS</code>.</strong> Nenhum Node em produção nem em CI além de baixar dois binários
+    (o <code>templ</code> e o Tailwind CLI), o que casa com a entrega em binário único. O SSE dos
+    logs ao vivo vem da extensão oficial <code>htmx-ext-sse</code>, servida por um
+    <code>http.Flusher</code> comum — sem cliente JS escrito à mão.</p>
+    <p>Sessão do admin em cookie <code>httpOnly</code>; CSRF pela proteção nativa do
+    <code>net/http</code> a partir do Go 1.25 (<code>http.NewCrossOriginProtection</code>, presente
+    no <code>GOROOT</code> desta máquina em <code>src/net/http/csrf.go:36-44</code>), o que dispensa
+    <code>gorilla/csrf</code>. Telas: servidores (CRUD, estado, ferramentas descobertas com o que
+    foi normalizado, sonda), endpoints (composição, prefixo, regras, <strong>contagem de
+    ferramentas</strong>), chaves de API, clientes OAuth registrados, consentimento de upstream,
+    logs ao vivo, configuração geral. Prompts e resources <strong>espelhados, sem edição</strong> —
+    está nos não-objetivos.</p>
+  </div>
+</section>
+
+<section id="alternativas">
+  <div class="col">
+    <h2><span class="num">09</span>Alternativas avaliadas</h2>
+    <hr class="rule">
+
+    <h3>Adotar um gateway existente — recomendação: não adotar</h3>
+    <p>Dez projetos foram levantados. O critério de decisão, declarado antes das opções: o produto
+    é definido por três requisitos que já falharam na prática — <strong>refresh de OAuth upstream
+    confiável</strong>, <strong>um processo STDIO compartilhado sem vazar</strong>, e
+    <strong>saúde medida por chamada real</strong>. Um candidato que falhe em qualquer um dos três
+    não resolve o problema que motivou o projeto.</p>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Candidato</th><th>Por que não paga</th></tr></thead>
+    <tbody>
+      <tr><td><strong>MetaMCP</strong> (TypeScript, MIT, 946★)</td><td>É o ponto de partida: UI boa, namespaces com override de tool, e os três defeitos que originaram este documento. Refresh automático de OAuth não confirmado; gestão de processo STDIO não encontrada na pesquisa</td></tr>
+      <tr><td><strong>MCPJungle</strong> (Go, MPL-2.0, ~1,2k★, binário único)</td><td>O mais parecido com o desenho desejado — <em>tool groups</em> com endpoint próprio, modo stateful/stateless para stdio, dashboard. Mas a doc diz "OAuth flow support coming soon": hoje só bearer estático. Sem OAuth upstream, ele falha no requisito número um, e sem OAuth downstream o ChatGPT não conecta (issue <code>#128</code>)</td></tr>
+      <tr><td><strong>ToolHive</strong> (Go, Apache 2.0, 2,1k★ — o mais ativo)</td><td>Tem broker de OAuth upstream de verdade e validação de token com fallback para introspection. Mas isola cada servidor em container (Docker/Podman), o que contraria "binário único autônomo", e a autorização passa por Cedar + IdP externo — é um produto de porte enterprise cuja premissa é ter um IdP</td></tr>
+      <tr><td><strong>Docker MCP Gateway</strong> (Go, MIT)</td><td>Sobe um container por chamada de ferramenta. Elimina o problema de multiplexação pagando latência por chamada e exigindo Docker como dependência de runtime</td></tr>
+      <tr><td><strong>IBM ContextForge</strong> (Python)</td><td>O mais completo em OAuth upstream (PKCE, DCR, tokens por usuário). Python, e o <em>session pool</em> dele reaproveita sessões HTTP/SSE, não processos stdio — o problema do patchbay não é o que ele resolve</td></tr>
+      <tr><td><strong>TBXark/mcp-proxy</strong> (Go)</td><td>Único do survey que cita explicitamente guardar e renovar token de upstream. Sem UI, sem authorization server, e o compartilhamento de processo stdio não foi confirmado em código-fonte</td></tr>
+      <tr><td><strong>Lasso mcp-gateway</strong>, <strong>1mcp</strong>, <strong>pluggedin-mcp-proxy</strong>, <strong>sparfenyuk/mcp-proxy</strong></td><td>Escopos adjacentes: gateway de segurança com scanner, agregador sem gestão de processo confirmada, proxy que depende de um app companion, e bridge de transporte. Nenhum é agregador com painel e broker de OAuth</td></tr>
+    </tbody>
+  </table></div>
+  <div class="col">
+    <p><strong>Custo operacional de adotar</strong>, que é o gargalo real: qualquer um deles vira
+    uma dependência de longo prazo em um projeto de terceiro para uma peça que roda 24×7 na infra
+    pessoal, com credencial de longa duração de todos os provedores dentro. Para o MCPJungle —
+    o candidato mais próximo — o caminho honesto seria contribuir o OAuth upstream, o que é
+    aproximadamente o mesmo trabalho de escrevê-lo aqui, mais o custo de negociar o desenho num
+    projeto que não é meu.</p>
+    <h4>O que mudaria essa resposta</h4>
+    <ul>
+      <li>MCPJungle entregar OAuth upstream com refresh serializado <em>e</em> OAuth downstream com CIMD.</li>
+      <li>ToolHive passar a suportar servidor STDIO sem container.</li>
+      <li>Qualquer um deles implementar sonda funcional por <code>tools/call</code>.</li>
+      <li>O tempo disponível cair ao ponto de "um gateway com dois dos três requisitos" passar a ser melhor que nada.</li>
+    </ul>
+    <p>Nenhum vale hoje. <strong>Construir.</strong></p>
+  </div>
+
+  <div class="col">
+    <h3><code>zitadel/oidc</code> como base do AS — recomendação: não adotar agora</h3>
+    <p>A pesquisa prévia recomendou <code>zitadel/oidc</code> (ativa, certificada pela OpenID
+    Foundation, PKCE nativo) complementada por 400-600 linhas próprias. Duas leituras do código da
+    biblioteca <code>v3.49.6</code> invertem a conta.</p>
+    <p><strong>Primeira:</strong> <code>op.Storage</code> não é uma interface pequena. Ela é
+    <code>AuthStorage</code> + <code>OPStorage</code> + <code>Health</code>
+    (<code>pkg/op/storage.go:165-169</code>), somando <strong>28 métodos</strong>. Entre eles:
+    <code>SetUserinfoFromScopes</code>, <code>SetUserinfoFromToken</code>,
+    <code>SetIntrospectionFromToken</code>, <code>GetPrivateClaimsFromScopes</code>,
+    <code>ValidateJWTProfileScopes</code>, <code>GetKeyByIDAndClientID</code>,
+    <code>SigningKey</code>, <code>SignatureAlgorithms</code>, <code>KeySet</code>
+    (<code>pkg/op/storage.go:126-139</code> e <code>:67-69</code>) — userinfo, introspection, JWT
+    profile e material de assinatura JWKS, <strong>nenhum dos quais o patchbay usa</strong>. São
+    implementações vazias que existem para satisfazer o compilador, e cada uma é um lugar onde
+    alguém no futuro vai se perguntar o que deveria estar ali.</p>
+    <p><strong>Segunda, e decisiva:</strong> o parâmetro <code>resource</code> do RFC 8707
+    simplesmente não existe nas estruturas da biblioteca. <code>oidc.AuthRequest</code>
+    (<code>pkg/oidc/authorization.go:69-93</code>) tem <code>scope</code>,
+    <code>response_type</code>, <code>nonce</code>, <code>code_challenge</code>,
+    <code>acr_values</code>, <code>ui_locales</code> — e nenhum <code>resource</code>. E
+    <code>oidc.AccessTokenRequest</code> (<code>pkg/oidc/token_request.go</code>) também não tem. O
+    único <code>schema:"resource"</code> do pacote está em
+    <code>TokenExchangeRequest</code> (<code>pkg/oidc/token_request.go:254</code>), que é RFC 8693,
+    outra coisa. Como esses structs são decodificados internamente pela biblioteca, injetar
+    <code>resource</code> nos dois lados significa parsear a requisição em paralelo e costurar o
+    valor por fora — trabalhando <em>contra</em> a biblioteca no requisito que define a fronteira de
+    autorização do produto inteiro (seção 07).</p>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Critério</th><th><code>zitadel/oidc</code></th><th><code>ory/fosite</code></th><th>Código próprio</th></tr></thead>
+    <tbody>
+      <tr><td>Grants que preciso / que a lib traz</td><td>1 de ~6, mais OIDC inteiro</td><td>1 de ~8, mais toda a matriz de Hydra</td><td>1 de 1</td></tr>
+      <tr><td>Storage a implementar</td><td>28 métodos de <code>op.Storage</code></td><td>Storage abstrato por handler; sem backend SQLite pronto</td><td>As minhas 4 tabelas</td></tr>
+      <tr><td>PKCE S256</td><td>Nativo</td><td><code>OAuth2PKCEFactory</code> no <code>compose</code></td><td>~40 linhas com <code>crypto/sha256</code></td></tr>
+      <tr><td><code>resource</code> (RFC 8707)</td><td>Ausente do <code>AuthRequest</code> e do <code>AccessTokenRequest</code>; issue <code>#794</code> aberta</td><td>Não encontrado</td><td>Um campo, validado em dois handlers</td></tr>
+      <tr><td>DCR + CIMD</td><td>Não tem nenhum dos dois</td><td>DCR só no Hydra, não na lib; CIMD não tem</td><td>Precisa escrever — igual às outras duas</td></tr>
+      <tr><td>Superfície a aprender e manter</td><td>Provider OIDC completo</td><td>Framework de IdP</td><td>~900-1400 linhas de <code>net/http</code></td></tr>
+      <tr><td>Como saio disso</td><td>Reescrever o AS</td><td>Reescrever o AS</td><td>Trocar a implementação atrás da interface de <code>internal/authsrv</code></td></tr>
+    </tbody>
+  </table></div>
+  <div class="col">
+    <p><strong>Recomendação: código próprio, com <code>internal/authsrv</code> atrás de uma interface
+    estreita.</strong> Gatilho de revisão, qualquer um bastando: alguma biblioteca Go passar a
+    implementar CIMD nativamente; o patchbay precisar de um segundo grant ou de ID token; a
+    manutenção do AS próprio consumir mais de um dia por trimestre em correção de conformidade; ou
+    aparecer um cliente de IA cujo fluxo o AS próprio não atenda.</p>
+    <p><strong>O que se perde e está sendo aceito:</strong> PKCE, rotação e descoberta testados em
+    produção por uma lib madura. O que compra a segurança de volta é teste — o AS é exercitado por
+    um cliente OAuth real, o <code>auth.AuthorizationCodeHandler</code> do próprio go-sdk, apontado
+    contra ele em teste de integração (seção 15). Sem revisor humano, o teste é o revisor.</p>
+
+    <h3>Outras duas escolhas em que este documento contraria a pesquisa prévia</h3>
+    <p><strong><code>koanf</code> para configuração — não adotar.</strong> A pesquisa recomendou
+    <code>koanf</code> para sobrepor arquivo + env + flag. Mas a proposta 08.9 elimina a camada de
+    arquivo: a fonte de verdade é o SQLite, e o que sobra de "configuração de processo" é uma
+    dezena de variáveis de ambiente de bootstrap (caminho do banco, chave mestra, bind, URL
+    pública). Isso se lê em <code>main</code> com <code>os.Getenv</code> e vira um struct passado
+    adiante. <code>gopkg.in/yaml.v3</code> entra só para serializar o export.
+    Gatilho de revisão: se aparecerem mais de ~20 opções de bootstrap, ou a necessidade de
+    precedência entre flag e env.</p>
+    <p><strong><code>cenkalti/backoff/v5</code> — não adotar.</strong> A biblioteca é um
+    <em>driver de laço</em> (<code>Retry</code> executa a operação até acertar). O supervisor precisa
+    do oposto: um estado de backoff <em>por upstream</em>, que sobrevive entre tentativas, é
+    inspecionável ("próxima tentativa em 8s") e aparece na UI. Isso são ~25 linhas de expo + jitter
+    com teto, e nasce testável com um relógio injetado. Gatilho de revisão: se surgir um segundo
+    lugar no código precisando de retry com política diferente.</p>
+  </div>
+</section>
+
+<section id="repo">
+  <div class="col">
+    <h2><span class="num">10</span>Repositório, bibliotecas, e o que fica congelado</h2>
+    <hr class="rule">
+    <h3>Layout</h3>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><span class="panel-title">estrutura proposta — package by feature</span></div>
+<pre><code>patchbay/
+  cmd/<span class="k">patchbay</span>/main.go            <span class="s"># o binário. o nome da pasta É o nome do executável</span>
+  internal/endpoint/                <span class="s"># *mcp.Server por endpoint, handler Streamable HTTP</span>
+  internal/catalogo/                <span class="s"># normalizador, regras, materialização, lápides</span>
+  internal/upstream/                <span class="s"># Manager, máquina de estados, backoff, watchdog</span>
+  internal/stdioproc/               <span class="s"># supervisor de processo (build tags por SO)</span>
+  internal/upauth/                  <span class="s"># um TokenSource por upstream + fluxo de consentimento</span>
+  internal/authsrv/                 <span class="s"># authorization server OAuth 2.1 + CIMD + DCR</span>
+  internal/apikey/
+  internal/admin/                   <span class="s"># handlers da UI, sessão, CSRF, SSE de log</span>
+  internal/config/                  <span class="s"># export/import YAML, dry-run, trava otimista</span>
+  internal/platform/store/          <span class="s"># SQLite: pools, migrações embutidas, cifra de campo</span>
+  internal/platform/cripto/         <span class="s"># AES-256-GCM + HKDF + argon2id</span>
+  internal/platform/httpx/          <span class="s"># Origin, CORS, recover, log de acesso</span>
+  web/                              <span class="s"># .templ + CSS gerado + htmx (embed.FS)</span>
+  migrations/                       <span class="s"># .sql versionadas (embed.FS)</span>
+  Taskfile.yml  .golangci.yml  .goreleaser.yaml  Dockerfile
+</code></pre>
+  </div>
+  <div class="col">
+    <p>Um teste de arquitetura quebra o build se alguma <code>internal/&lt;feature&gt;</code> importar
+    outra feature, ou se <code>internal/platform/*</code> importar qualquer feature. Sem
+    <code>pkg/</code>: não existe consumidor externo real. Se um dia existir um binário auxiliar, o
+    nome é <code>cmd/patchbay-loopback-auth</code> — a pasta em <code>cmd/</code> vira o nome do
+    executável sem nenhuma flag, e <code>helper</code>, <code>agent</code>, <code>client</code> ou
+    <code>auth</code> soltos violam a regra de nomenclatura de binários. O
+    <code>ENTRYPOINT</code> do Dockerfile é <code>["/patchbay"]</code>.</p>
+
+    <h3>Bibliotecas — com a versão e a alternativa recusada</h3>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Decisão</th><th>Escolha (versão verificada em 2026-09-08)</th><th>Alternativa recusada, e o motivo</th></tr></thead>
+    <tbody>
+      <tr><td>SDK MCP</td><td><code>github.com/modelcontextprotocol/go-sdk v1.7.0</code></td><td><code>mark3labs/mcp-go</code>: só lado resource-server, sem cliente OAuth e sem negociação de era. Versão pinada exata: o OAuth de cliente é declarado experimental e já há <code>v1.8.0-pre.2</code></td></tr>
+      <tr><td>Driver SQLite</td><td><code>modernc.org/sqlite v1.58.0</code> (puro Go)</td><td><code>mattn/go-sqlite3 v1.14.52</code>: mais rápido e mais usado, mas cgo trava o cross-compile Windows→Linux e a imagem distroless. <code>ncruces/go-sqlite3</code>: mesma vantagem de puro-Go, comunidade bem menor</td></tr>
+      <tr><td>Migrações</td><td><code>github.com/pressly/goose/v3 v3.28.0</code></td><td><code>golang-migrate</code>: CLI-first, API embutida menos idiomática. <code>ariga/atlas</code>: schema declarativo é peso desnecessário para ~16 tabelas</td></tr>
+      <tr><td>Queries</td><td><code>database/sql</code> com helpers de scan</td><td><code>sqlc</code>: suporte a SQLite com lacunas documentadas (mutação em CTE, <em>batch</em> executado linha a linha) que colidem com upsert de token</td></tr>
+      <tr><td>Authorization server</td><td>Código próprio</td><td><code>zitadel/oidc v3.49.6</code>: 28 métodos de storage e sem <code>resource</code>. <code>ory/fosite</code>: superfície de Hydra. <code>go-oauth2/oauth2</code>: sem PKCE/DCR/CIMD no perfil OAuth 2.1</td></tr>
+      <tr><td>Cliente OAuth de upstream</td><td><code>go-sdk/auth</code> + <code>golang.org/x/oauth2 v0.37.0</code></td><td>Cliente próprio: jogaria fora a ordem CIMD→pré-registrado→DCR já implementada (<code>auth/authorization_code.go:526</code>) e o <em>merge</em> de refresh token (<code>internal/token.go:250</code>)</td></tr>
+      <tr><td>UI</td><td><code>github.com/a-h/templ v0.3.1020</code> + htmx + Tailwind CLI standalone</td><td>SPA React/Vite: Node no CI, duas bases de dependência, bundle maior, e cliente SSE escrito à mão. <code>html/template</code> + Alpine: sem checagem em tempo de compilação e sem equivalente pronto de <code>htmx-ext-sse</code></td></tr>
+      <tr><td>Router HTTP</td><td><code>net/http.ServeMux</code></td><td><code>chi</code>/<code>gorilla/mux</code>: método e wildcard estão na stdlib desde Go 1.22; poucas rotas não justificam dependência</td></tr>
+      <tr><td>CSRF</td><td><code>net/http.NewCrossOriginProtection</code> (nativo, <code>GOROOT/src/net/http/csrf.go:44</code>)</td><td><code>gorilla/csrf</code>, <code>justinas/nosurf</code>: dependência para o que a stdlib passou a fazer</td></tr>
+      <tr><td>Configuração de bootstrap</td><td><code>os.Getenv</code> em <code>main</code> + <code>gopkg.in/yaml.v3</code> só no export</td><td><code>koanf</code>/<code>viper</code>: resolvem camadas de config que a proposta 08.9 elimina</td></tr>
+      <tr><td>Cifra de segredo</td><td><code>crypto/aes</code> + <code>crypto/cipher</code> (AES-256-GCM), chave derivada por HKDF de um segredo de 32 bytes</td><td><code>filippo.io/age</code>: formato de arquivo para destinatários, não campo de linha com chave única</td></tr>
+      <tr><td>Senha do admin</td><td><code>golang.org/x/crypto/argon2</code> (argon2id)</td><td>bcrypt: teto de 72 bytes e sem resistência a GPU comparável</td></tr>
+      <tr><td>Log</td><td><code>log/slog</code></td><td><code>zerolog</code>/<code>zap</code>: mais rápidos, irrelevante num gateway de I/O; zero dependência pesa mais</td></tr>
+      <tr><td>Backoff</td><td>~25 linhas próprias com relógio injetado</td><td><code>cenkalti/backoff/v5 v5.0.3</code>: driver de laço, não estado inspecionável por upstream</td></tr>
+      <tr><td>Job Object no Windows</td><td><code>golang.org/x/sys/windows</code> cru, wrapper próprio</td><td><code>kolesnikovae/go-winjob</code>: 21 estrelas. <code>hcsshim/internal/jobobject</code>: pacote <code>internal/</code>, não importável</td></tr>
+      <tr><td>Tarefas de build</td><td><code>go-task/task v3.53.1</code></td><td><code>make</code>: exige shell POSIX no Windows, que é a máquina de desenvolvimento</td></tr>
+      <tr><td>Lint</td><td><code>golangci-lint v2.13.2</code> — preset <code>default</code> + <code>gosec</code>, <code>bodyclose</code>, <code>contextcheck</code>, <code>noctx</code>, <code>sloglint</code>, <code>errorlint</code>, <code>paralleltest</code>, <code>tparallel</code>, <code>containedctx</code>, <code>forbidigo</code></td><td>Instalado nesta máquina: <code>v2.12.2</code> — precisa de bump antes do primeiro CI</td></tr>
+      <tr><td>Release</td><td><code>goreleaser</code> + <code>gcr.io/distroless/static-debian12:nonroot</code>, manifest multi-arch</td><td>Build no Docker: com <code>CGO_ENABLED=0</code> e driver puro-Go não há motivo para compilar dentro da imagem</td></tr>
+    </tbody>
+  </table></div>
+  <div class="col">
+    <p><strong>Entra:</strong> Go 1.26 (verificado nesta máquina: <code>go1.26.1</code>; o
+    <code>go.mod</code> do go-sdk exige <code>go 1.25.0</code>), <code>templ</code> e
+    <code>task</code> — nenhum dos dois está no <code>PATH</code> hoje, então instalar é parte da
+    primeira fatia.</p>
+    <p><strong>Não muda — e é o que precisa ficar congelado desde a primeira fatia:</strong> o
+    <em>slug</em> do endpoint, porque ele entra na URL, no caminho da metadata RFC 9728 e no
+    <code>resource</code> gravado no <code>aud</code> de todo token — renomear um slug invalida
+    silenciosamente as credenciais de todos os clientes daquele endpoint. O nome de ferramenta
+    exposto (prefixo + nome) pelo mesmo motivo, um nível abaixo: o cliente pode ter o nome em
+    cache de prompt. E o formato do YAML de export, que é o contrato do próprio dono com o próprio
+    dono no futuro.</p>
+    <p><strong>Pré-requisito de tudo:</strong> a chave mestra de cifra, que vem exclusivamente de
+    <code>PATCHBAY_MASTER_KEY</code> (decisão do dono em 2026-09-08, seção 12). Sem ela o patchbay
+    não sobe (por decisão — ver riscos); nenhum arquivo de chave em disco, nenhuma entrada pela UI.</p>
+  </div>
+</section>
+
+<section id="interface">
+  <div class="col">
+    <h2><span class="num">11</span>O comportamento que a interface garante</h2>
+    <hr class="rule">
+    <p>É desta tabela que saem os critérios de aceite.</p>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Regra</th><th>Por quê</th></tr></thead>
+    <tbody>
+      <tr><td>A contagem de ferramentas aparece ao lado de cada endpoint, sempre, e ao lado de cada upstream dentro do endpoint</td><td>É custo de contexto no cliente. Um endpoint que passa de 40 ferramentas degrada todos os clientes de uma vez, e sem o número na tela isso acontece sem ninguém ver</td></tr>
+      <tr><td>Upstream <span class="pill failed">degradado</span> não desaparece da lista: aparece com o motivo, o horário da última tentativa e o da próxima</td><td>"Sumiu" é indistinguível de "eu apaguei". E sem a próxima tentativa na tela o admin fica clicando em "reconectar" sem saber que o backoff já está agendado</td></tr>
+      <tr><td><span class="pill empty">sonda desligada</span> é um estado próprio, nunca verde</td><td>Um verde que significa "não sei" é exatamente a mentira que a sonda existe para acabar. O Google Drive lista 8 ferramentas sem auth</td></tr>
+      <tr><td>O erro da sonda mostra a requisição e a resposta exatas</td><td>Sem isso o admin não distingue "minha sonda está mal configurada" de "o servidor está quebrado", e a saída mais fácil passa a ser desligar a sonda</td></tr>
+      <tr><td>Consentimento expirado ou revogado é estado <span class="pill expired">sem_consentimento</span> na tela, com botão "reautorizar" — nunca uma falha de <code>tools/call</code></td><td>Falha silenciosa na chamada faz o admin culpar o gateway e procurar no lugar errado. Foi assim que o MetaMCP foi abandonado</td></tr>
+      <tr><td>Endpoint sem nenhum upstream pronto devolve <code>tools/list</code> <strong>vazio</strong>, e mostra <span class="pill empty">sem ferramentas</span> na UI</td><td>Erro no <code>tools/list</code> faz o cliente marcar o servidor inteiro como quebrado e parar de tentar. Lista vazia é degradação legível</td></tr>
+      <tr><td>Ferramenta removida do catálogo continua respondendo por uma janela de graça, com erro explicando que ela saiu</td><td>Sem a lápide, o cliente que ainda não relistou recebe <code>unknown tool</code> (<code>mcp/server.go:960</code>) e não tem como saber que a causa foi uma mudança de configuração</td></tr>
+      <tr><td>Chave de API aparece em texto claro <strong>uma vez</strong>, na criação; depois só o prefixo</td><td>Ela é guardada como hash. Prometer reexibição obrigaria a guardar reversível, criando um cofre sem necessidade</td></tr>
+      <tr><td>Cada chave e cada token OAuth mostra a quais endpoints dá acesso</td><td>Sem isso, "revogar" é adivinhação — e revogar a credencial errada derruba um cliente que estava funcionando</td></tr>
+      <tr><td>Chave de API em query string vem desligada, e ligar exige confirmação com o motivo escrito</td><td>Query string vaza em log de proxy, em histórico de navegador e em referer</td></tr>
+      <tr><td>Log ao vivo nunca imprime token, segredo ou header de autorização — os valores saem redigidos com o prefixo visível</td><td>A tela de log é a via mais fácil de vazar exatamente o que a cifra em repouso protege</td></tr>
+      <tr><td>Todo timeout de upstream aparece no formulário do upstream, com o valor em vigor</td><td>Timeout invisível é o que transforma "está lento" numa investigação de meia hora</td></tr>
+      <tr><td>O <code>import</code> de YAML mostra o plano antes de aplicar, e mescla item a item quando o banco avançou desde o export, reportando o que conflitou (YAML vs banco) sem aplicar esses itens</td><td>Import sem plano visível é a forma de perder configuração feita na UI sem perceber</td></tr>
+      <tr><td>O contador de <em>connects abandonados</em> por upstream é visível, e o upstream é desabilitado automaticamente ao passar do teto, com o motivo na tela</td><td>É o resíduo do vazamento deliberado de goroutine (08.3). Resíduo invisível volta como exaustão de memória três meses depois</td></tr>
+      <tr><td>Se a trilha de chamadas descartar linhas por rajada, o número de descartes aparece na tela</td><td>Trilha que mente é pior que trilha faltando</td></tr>
+      <tr><td>A UI espelha prompts e resources dos upstreams, sem nenhuma edição</td><td>Editar prompt e resource é não-objetivo da v1. Espelhar sem editar deixa isso explícito em vez de parecer bug</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="decidido">
+  <div class="col">
+    <h2><span class="num">12</span>Decidido</h2>
+    <hr class="rule">
+    <p>A primeira metade veio do dono antes deste estudo e não é relitigada aqui. A segunda são as
+    decisões que a investigação fechou.</p>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>O quê</th><th>Decisão</th></tr></thead>
+    <tbody>
+      <tr><td>Linguagem e SDK</td><td>Go (1.26 local; go-sdk exige ≥ 1.25) com <code>github.com/modelcontextprotocol/go-sdk</code>, versão pinada exata</td></tr>
+      <tr><td>UI</td><td>Web, embutida no binário, desde a v1</td></tr>
+      <tr><td>Estado mutável</td><td>SQLite embutido, única fonte de verdade</td></tr>
+      <tr><td>Autonomia</td><td>Nenhuma dependência de stack, túnel ou banco existente. Entrega em binário único (Linux/macOS/Windows) + imagem Docker. Desenvolvimento no Windows, deploy em Linux</td></tr>
+      <tr><td>Nome do binário</td><td><code>patchbay</code>; auxiliar futuro é <code>patchbay-loopback-auth</code>. <code>ENTRYPOINT ["/patchbay"]</code></td></tr>
+      <tr><td>Tradução de era</td><td><strong>Não se constrói.</strong> O go-sdk negocia as cinco revisões nos dois papéis (<code>mcp/shared.go:58-64</code>). O patchbay só garante que a era do downstream não vaze para o upstream — <em>e aceita que MRTR não tem tradução de volta: chamada de upstream moderno que pede <code>input_required</code> a um cliente legado falha com erro explícito</em></td></tr>
+      <tr><td>Catálogo</td><td>Um <code>*mcp.Server</code> vivo por endpoint, catálogo materializado, normalizador obrigatório antes de todo <code>AddTool</code></td></tr>
+      <tr><td>Sessão downstream</td><td>Com sessão retida (não <code>Stateless: true</code>) e <code>SessionTimeout</code> para reciclar as ociosas — <em>e por isso o gateway carrega estado de sessão em memória, o que impede rodar duas réplicas atrás de um balanceador sem trabalho adicional</em></td></tr>
+      <tr><td>STDIO</td><td>Um processo por servidor configurado, compartilhado por todas as sessões. Morte de árvore por process group / Job Object. Sem container</td></tr>
+      <tr><td>OAuth de upstream</td><td>Uma instância de <code>TokenSource</code> por upstream para o processo inteiro; persistir o token que a source devolve, nunca o corpo da resposta HTTP. Pré-registrado é caminho de primeira classe na UI</td></tr>
+      <tr><td>Authorization server</td><td>Código próprio, atrás de interface própria, exercitado em teste pelo cliente OAuth real do go-sdk</td></tr>
+      <tr><td>Fronteira de autorização</td><td>O endpoint. Cada endpoint é um <em>protected resource</em> distinto, com <code>resource</code> RFC 8707 próprio — <em>e portanto o slug do endpoint é contrato: renomear invalida toda credencial daquele endpoint</em></td></tr>
+      <tr><td>Sonda de saúde</td><td>Funcional, por <code>tools/call</code>, opt-in por servidor, desligada por padrão. Falhar remove as ferramentas do catálogo</td></tr>
+      <tr><td>YAML</td><td>Export/import explícito, nunca lido no boot — <em>e o consentimento OAuth de upstream não é reconstruível pelo import: volta como <code>sem_consentimento</code></em></td></tr>
+      <tr><td>Chave mestra ausente ou trocada</td><td>Falhar duro no boot, com mensagem explícita, detectado por canário cifrado — <em>indisponibilidade preferida a corrupção silenciosa</em></td></tr>
+      <tr><td>TLS (2026-09-08)</td><td>Terminado por proxy reverso/túnel na frente do patchbay. O patchbay escuta HTTP simples e recebe a URL pública por configuração (<code>issuer</code> OAuth, <code>resource</code>, validação de <code>Origin</code>) — <em>sem TLS próprio na v1</em></td></tr>
+      <tr><td>Chave mestra — origem (2026-09-08)</td><td>Vem exclusivamente de variável de ambiente (<code>PATCHBAY_MASTER_KEY</code>). Sem ela o processo não sobe, com erro claro — <em>nenhum arquivo de chave em disco e nenhuma entrada pela UI</em></td></tr>
+      <tr><td>Import de YAML quando o banco avançou (2026-09-08)</td><td><strong>Mescla</strong>: aplica o que não conflita, reporta item a item o que conflitou (valor do YAML vs valor do banco) e não aplica esses; <code>--dry-run</code> mostra o plano antes — <em>a trava otimista continua existindo para detectar o avanço, mas o resultado é mesclagem, não recusa</em></td></tr>
+      <tr><td>Sonda funcional — escopo da v1 (2026-09-08)</td><td>Só configuração manual por servidor (qual ferramenta, quais argumentos, intervalo) — <em>sem heurística por servidor conhecido</em></td></tr>
+      <tr><td>Provedores só-loopback — Canva (2026-09-08)</td><td>Fora da v1. A fatia correspondente do épico (seção 16) passa a <em>adiada</em>, sem estimativa, mantendo a descrição do problema</td></tr>
+    </tbody>
+  </table></div>
+  <div class="col">
+    <h4>Não-objetivos da v1</h4>
+    <p>Multiusuário e RBAC; policy engine; isolamento de STDIO em container; marketplace ou
+    registry; métricas Prometheus (fica como extensão, não como requisito); UI de edição de prompts
+    e resources (só espelho); tradução de MRTR entre eras (é impossibilidade, não falta de
+    esforço); alta disponibilidade com mais de uma réplica.</p>
+  </div>
+</section>
+
+<section id="testes">
+  <div class="col">
+    <h2><span class="num">13</span>Estratégia de testes</h2>
+    <hr class="rule">
+    <p>Trabalhando sozinho não existe revisor: o teste é o revisor. Isso muda a régua — o que num
+    time seria pego no PR de outra pessoa aqui só é pego por teste, tipo e linter. As quatro camadas
+    abaixo existem porque cada uma pega uma classe de erro que as outras não pegam.</p>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Camada</th><th>Como</th><th>Qual erro ela pega que nenhuma outra pega</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Unitário do normalizador</strong> — a primeira a escrever</td>
+          <td><em>Table-driven</em> em <code>package catalogo_test</code>, um caso por caminho de <code>panic</code> do SDK: <code>InputSchema</code> nulo, ponteiro tipado nulo, <code>type:"string"</code>, schema não serializável, <code>OutputSchema</code> quebrado, nome com rune inválido, nome com 200 caracteres</td>
+          <td>Que uma ferramenta de upstream malformada derruba o processo (<code>mcp/server.go:282-313</code>). É o único teste que exercita os sete caminhos de propósito — nenhum upstream real vai produzir todos</td></tr>
+      <tr><td><strong>Integração com servidor MCP falso em processo</strong></td>
+          <td><code>mcp.NewInMemoryTransports()</code> (<code>mcp/transport.go:160</code>) ligando um <code>*mcp.Server</code> real do próprio SDK — o "falso" é um servidor de verdade com ferramentas de mentira — ao <code>upstream.Manager</code>. Duas variantes do mesmo teste: servidor forçado à era <code>2025-11-25</code> e à era <code>2026-07-28</code>, para provar que a era do upstream não vaza para o downstream</td>
+          <td>Que o roteamento, o prefixo, a agregação e o <code>tools/list_changed</code> funcionam com o comportamento real do protocolo, sem rede nem subprocesso. Um mock escrito à mão concordaria com o meu erro de entendimento do protocolo</td></tr>
+      <tr><td><strong>Integração do AS com cliente OAuth real</strong></td>
+          <td><code>auth.AuthorizationCodeHandler</code> do go-sdk apontado contra o <code>internal/authsrv</code> subido em <code>httptest.NewServer</code>, com um <code>AuthorizationCodeFetcher</code> de teste que faz o papel do navegador. Três execuções: CIMD, pré-registrado e DCR — a ordem que o handler já implementa (<code>auth/authorization_code.go:526-556</code>)</td>
+          <td>Que o AS próprio é conforme. Este é o teste que substitui a maturidade da biblioteca recusada na seção 09 — sem ele, a decisão de escrever o AS à mão não se sustenta</td></tr>
+      <tr><td><strong>Integração do supervisor com processo que pendura</strong></td>
+          <td>Um binário de teste (compilado pelo próprio teste, nome <code>patchbay-hang-fixture</code>) com modos: sai na hora, ignora <code>SIGTERM</code>, escreve frame malformado no stdout, aceita a conexão e nunca responde, e gera um neto que sobrevive ao pai</td>
+          <td>Que a morte de árvore funciona, que o frame malformado (<code>#1209</code>) não passa da borda do upstream, e que o <em>hang</em> é detectado por timeout de resposta e não por liveness de PID. O último modo — o neto sobrevivente — é o teste do process group e do Job Object, e é o único que reproduz o vazamento de PID do MetaMCP</td></tr>
+      <tr><td><strong>Watchdog de conexão</strong></td>
+          <td><code>httptest.NewServer</code> com handler que aceita e dorme; assertiva de que o <code>Connect</code> abandonado não impede o estado ir para <span class="pill failed">degradado</span> dentro do timeout, e de que o contador de abandonos incrementa</td>
+          <td>Que a mitigação da issue <code>#1189</code> existe de verdade. Um teste que só verifica "ficou degradado" passaria mesmo se a goroutine bloqueasse o supervisor</td></tr>
+      <tr><td><strong>Refresh serializado</strong></td>
+          <td><code>httptest</code> como AS que rotaciona o refresh token e <strong>revoga a família</strong> se vir um token já usado — o comportamento de Atlassian/Asana. Disparar N chamadas concorrentes com o token expirado e verificar que só houve uma requisição ao <code>/token</code></td>
+          <td>Que existe exatamente uma <code>TokenSource</code> por upstream. É o teste que detecta alguém instanciar o broker por endpoint no futuro — o erro que reintroduz a issue <code>#1760</code> do SDK de TypeScript</td></tr>
+      <tr><td><strong>Arquitetura</strong></td>
+          <td>Teste que percorre <code>go list -deps</code> e falha se uma <code>internal/&lt;feature&gt;</code> importa outra, ou se <code>internal/platform/*</code> importa feature</td>
+          <td>A erosão do layout, que nenhum outro teste vê e que só aparece quando já dói</td></tr>
+    </tbody>
+  </table></div>
+  <div class="col">
+    <p>Convenções: <code>go test ./... -race -count=1</code> obrigatório e mostrado, nunca relatado
+    como pronto sem a saída; <code>t.Parallel()</code> no pai e em cada subteste; a instância sob
+    teste chamada <code>sut</code>; dublês escritos à mão implementando a interface pequena do
+    consumidor; nenhum <code>time.Sleep</code> — relógio injetado por interface, espera por canal.
+    Integração que precisa de processo real fica atrás de <code>//go:build integration</code>, em
+    alvo separado do <code>Taskfile</code>, porque ela é a única que não roda em paralelo com as
+    outras.</p>
+  </div>
+</section>
+
+<section id="riscos">
+  <div class="col">
+    <h2><span class="num">14</span>Riscos</h2>
+    <hr class="rule">
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Risco</th><th>Detalhe</th><th>Mitigação e o resíduo que ela deixa</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Schema de upstream derruba o processo</strong></td>
+        <td><code>(*Server).AddTool</code> entra em <code>panic</code> em sete pontos com dado que vem do <code>tools/list</code> de terceiro (<code>mcp/server.go:282</code>, <code>:286</code>, <code>:289</code>, <code>:294</code>, <code>:297</code>, <code>:303</code>, <code>:308</code>, <code>:313</code>), e <code>validateToolName</code> só loga (<code>:275</code>). É o requisito de isolamento sendo violado pelo caminho que ninguém olha</td>
+        <td>Normalizador obrigatório + <code>recover</code> por ferramenta (08.2). <strong>Resíduo:</strong> ferramenta com schema inutilizável entra com <code>{"type":"object"}</code> permissivo, então o cliente pode chamá-la com argumento errado e receber um erro do upstream em vez de validação local. Aparece marcada <span class="pill failed">schema degradado</span> na UI. A alternativa — excluir a ferramenta — some com capacidade sem avisar</td>
+      </tr>
+      <tr>
+        <td><strong>A mitigação do <code>#1189</code> vaza goroutine de propósito</strong></td>
+        <td>Go não mata goroutine. Se <code>Connect</code> ignora o deadline, a única saída é abandonar quem ficou preso. Sem teto, um upstream que pendura sempre acumula uma goroutine e um socket por ciclo de backoff — trocando o modo de falha do MetaMCP por outro</td>
+        <td>Backoff com teto, contador de abandonos por upstream visível na UI, e desabilitação automática ao passar do limite. <strong>Resíduo:</strong> até o teto, existem goroutines presas que só somem quando o processo reinicia; e um upstream pode se desabilitar sozinho, o que exige um estado explícito na tela para não parecer que o admin apagou. Some quando o <code>#1189</code> for corrigido — vale reavaliar a cada bump do SDK</td>
+      </tr>
+      <tr>
+        <td><strong><code>Stateless: true</code> no downstream inviabiliza <code>tools/list_changed</code></strong></td>
+        <td><code>changeAndNotify</code> retorna cedo quando não há sessão (<code>mcp/server.go:708-714</code>), e cliente da era nova só recebe a notificação se tiver um <code>subscriptions/listen</code> aberto com opt-in (<code>mcp/server.go:727-745</code>). O modo stateless é o alinhado à direção da spec, e é justamente o que apaga a notificação</td>
+        <td>Rodar com sessão retida + <code>SessionTimeout</code>, e usar <code>ttlMs</code>/<code>cacheScope</code> curtos como segunda rede. <strong>Resíduo duplo:</strong> (1) cliente que não abre <code>listen</code> e ignora o TTL só vê o catálogo novo ao relistar — coberto pela lápide de ferramenta (08.2); (2) manter sessão em memória <strong>impede rodar duas réplicas atrás de um balanceador</strong> sem trabalho adicional, e isso está registrado como não-objetivo em vez de descoberto depois</td>
+      </tr>
+      <tr>
+        <td><strong>SSRF pela adoção de CIMD</strong></td>
+        <td>O AS busca uma URL escolhida por quem chama, de dentro da rede onde estão o SQLite e a chave mestra. É a troca que a spec fez ao deprecar DCR: menos inflação de clientes, um <em>fetch</em> controlado pelo atacante</td>
+        <td>Só HTTPS, sem seguir redirect, faixas privadas/loopback/link-local/metadata bloqueadas <strong>antes e depois</strong> da resolução de DNS (rebinding), <code>Content-Type</code> exigido, corpo limitado, timeout curto, <em>single-flight</em>, cache que nunca guarda erro e serve <em>last-known-good</em>. A tela de consentimento mostra em destaque o hostname do <code>client_id</code> e do <code>redirect_uri</code>. <strong>Resíduo:</strong> provedor legítimo atrás de CDN lenta ou de IP que caia numa faixa bloqueada falha o registro; o admin vê o erro e pode pré-registrar o cliente à mão</td>
+      </tr>
+      <tr>
+        <td><strong>A chave mestra é ponto único de falha do estado</strong></td>
+        <td>Se ela vem de variável de ambiente e a variável muda — deploy novo, compose editado, secret rotacionado —, todo token de upstream fica ilegível de uma vez. O modo de falha ruim é subir "funcionando" e transformar cada upstream em <code>sem_consentimento</code>, como se todos os provedores tivessem revogado o acesso no mesmo minuto</td>
+        <td>Canário cifrado em <code>settings</code>, verificado no boot: se não decifra, <strong>o processo não sobe</strong>, com mensagem dizendo exatamente isso. <strong>Resíduo:</strong> patchbay indisponível até a chave certa voltar. É a escolha deliberada de indisponibilidade sobre corrupção silenciosa, e ela precisa estar no README, não só aqui</td>
+      </tr>
+      <tr>
+        <td><strong>OAuth de cliente do go-sdk é declarado experimental</strong></td>
+        <td>Cadência de ~1 minor a cada 4-8 semanas (v1.6.0 em maio, v1.7.0 em julho, <code>v1.8.0-pre.2</code> em setembro). A superfície de <code>auth</code> pode mudar entre minors, e é dela que dependem o consentimento e o refresh de upstream</td>
+        <td>Versão pinada exata; <code>internal/upauth</code> atrás de uma interface de dois métodos, para o bump ficar contido num pacote; teste de refresh serializado com AS falso que revoga família. <strong>Resíduo:</strong> um bump de minor pode custar um dia. O teste é o que garante que custe um dia e não uma semana</td>
+      </tr>
+      <tr>
+        <td><strong>A spec <code>2026-07-28</code> é atual e pouco adotada</strong></td>
+        <td>É a versão corrente desde 28/07/2026, mas a maioria dos upstreams e clientes em produção ainda fala <code>2025-11-25</code> ou anterior. O claude.ai é o primeiro cliente grande a adotar. Investir na era nova é investir onde quase ninguém está — e ignorá-la é não atender o cliente mais importante</td>
+        <td>Não escrever tradutor: usar a negociação do SDK e não acoplar as eras (08.1). <strong>Resíduo:</strong> MRTR não tem tradução de volta — um upstream moderno que devolva <code>input_required</code> a uma chamada de cliente legado falha com erro explícito, e isso é não-objetivo declarado. A mitigação aqui é <em>dizer antes</em>: está na seção 12, não vai ser descoberto no primeiro uso de elicitation</td>
+      </tr>
+      <tr>
+        <td><strong>Um único escritor no SQLite, e a trilha é a escrita mais frequente</strong></td>
+        <td>O padrão validado é <code>SetMaxOpenConns(1)</code> na escrita. Se a trilha de chamadas entrar na transação da chamada, cada <code>tools/call</code> passa a esperar pela fila de escrita, e o gateway serializa por causa do log</td>
+        <td>Gravar a trilha depois de responder, por canal com buffer e um escritor único que agrupa em lote; ao encher o buffer, descartar contando o descarte. <strong>Resíduo:</strong> sob rajada a trilha perde linhas — e o contador de descartes aparece na tela, porque trilha que mente é pior que trilha faltando</td>
+      </tr>
+      <tr>
+        <td><strong>DNS rebinding e <code>Origin</code></strong></td>
+        <td>O handler do SDK rejeita <code>Host</code> não-localhost quando escuta em localhost, e isso pode ser desligado por <code>DisableLocalhostProtection</code> (<code>mcp/streamable.go:174-182</code>). Em deploy remoto essa proteção não se aplica, e a que vale é a validação de <code>Origin</code></td>
+        <td><code>DisableLocalhostProtection</code> nunca ligado; validação de <code>Origin</code> própria com allowlist para o bind remoto; CORS explícito só nas rotas de metadata — e o <code>ProtectedResourceMetadataHandler</code> já serve com CORS <code>*</code> (<code>auth/auth.go:188</code>), que é correto para um documento público. <strong>Resíduo:</strong> cliente novo com origem não prevista é recusado até o admin adicioná-la, o que é a falha na direção certa</td>
+      </tr>
+      <tr>
+        <td><strong><code>modernc.org/libc</code> é frágil por documentação própria</strong></td>
+        <td>A doc do <code>modernc.org/sqlite</code> avisa que a dependência de <code>libc</code> é "fragile" e que a versão precisa casar exatamente com a do <code>go.mod</code> do próprio pacote. Um <code>go get -u</code> distraído quebra o build</td>
+        <td>Versão de <code>libc</code> fixada exatamente como o pacote indica, e uma verificação em CI que compara as duas. <strong>Resíduo:</strong> atualizar o SQLite deixa de ser um <code>go get</code> e passa a ser um procedimento de duas linhas — anotar isso no <code>CLAUDE.md</code> do repositório</td>
+      </tr>
+      <tr>
+        <td><strong>Sonda mal configurada apaga ferramentas boas</strong></td>
+        <td>A sonda é o diferencial do produto e é também a única feature capaz de remover capacidade por erro do próprio admin</td>
+        <td>Opt-in, desligada por padrão, "sonda desligada" como estado próprio nunca verde, e o erro exibindo a requisição e a resposta exatas. <strong>Resíduo:</strong> a maioria dos upstreams vai ficar sem sonda, porque configurar dá trabalho — o valor do diferencial fica proporcional à disciplina de configurar, e a UI deve lembrar disso na tela do upstream</td>
+      </tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="preciso">
+  <div class="col">
+    <h2><span class="num">15</span>O que eu preciso de você</h2>
+    <hr class="rule">
+    <ol>
+      <li><span class="decided">⟨decidido 2026-09-08: TLS termina no proxy⟩</span> Terminado por
+      proxy reverso/túnel na frente do patchbay (Caddy, nginx, Cloudflare); o patchbay escuta HTTP
+      simples e recebe a URL pública por configuração — é dela que saem o <code>issuer</code>
+      anunciado pelo AS, o <code>resource</code> RFC 8707 e a base da validação de
+      <code>Origin</code>. Sem TLS próprio na v1.</li>
+
+      <li><span class="decided">⟨decidido 2026-09-08: chave mestra só por variável de ambiente⟩</span>
+      Vem exclusivamente de <code>PATCHBAY_MASTER_KEY</code>. Sem ela o processo não sobe, com erro
+      claro. Nenhum arquivo de chave em disco e nenhuma entrada pela UI.</li>
+
+      <li><span class="decided">⟨decidido 2026-09-08: import de YAML mescla⟩</span> Quando o banco
+      avançou desde o export, o import mescla: aplica o que não conflita e reporta item a item o que
+      conflitou (valor do YAML vs valor do banco), sem aplicar esses; <code>--dry-run</code> mostra o
+      plano antes. A trava otimista continua existindo para detectar o avanço, mas o resultado passa
+      a ser mesclagem, não recusa.</li>
+
+      <li><span class="decided">⟨decidido 2026-09-08: sonda só manual na v1⟩</span> Só configuração
+      manual por servidor na v1 — qual ferramenta, quais argumentos, intervalo. Sem heurística por
+      servidor conhecido.</li>
+
+      <li><span class="decided">⟨decidido 2026-09-08: Canva fora da v1⟩</span> Provedores só-loopback
+      (Canva) ficam fora da v1. A fatia correspondente do épico (<a href="#epico">seção 16</a>) passa
+      a adiada, sem estimativa, mantendo a descrição do problema — isso precisa estar escrito no
+      README para não ser redescoberto em três meses.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="epico">
+  <div class="col">
+    <h2><span class="num">16</span>Épico e tasks sugeridos</h2>
+    <hr class="rule">
+    <p><strong>Épico: patchbay v1 — gateway MCP self-hosted.</strong> Dezesseis fatias verticais e
+    dois <em>spikes</em>, um repositório. Toda fatia termina em algo demonstrável, e cada uma aponta
+    para a seção que a especifica. Tamanho: <strong>P</strong> até ~1 dia,
+    <strong>M</strong> 1-3 dias, <strong>G</strong> 3-5 dias — de trabalho, não de calendário.</p>
+
+    <h4>Antes de tudo: dois spikes</h4>
+    <p><strong>S1 · 4 horas — o <code>panic</code> de <code>AddTool</code> acontece com upstream
+    real?</strong> Pergunta: entre os servidores MCP que eu já uso, algum devolve ferramenta sem
+    <code>inputSchema</code>, com <code>type</code> diferente de <code>"object"</code>, ou com nome
+    inválido? Como respondo: conectar um cliente do go-sdk em três servidores reais e imprimir o
+    <code>tools/list</code> cru. <strong>O que muda:</strong> se acontecer, o normalizador
+    (<a href="#propostas">08.2</a>) sobe para dentro da fatia 1; se não acontecer com nenhum, ele
+    continua obrigatório — o <code>panic</code> está no código — mas a fatia 1 pode entregar a versão
+    mínima dele. Resposta escrita mesmo se for negativa.</p>
+    <p><strong>S2 · 4 horas — o fluxo loopback da Canva funciona como imaginado?</strong> Pergunta:
+    a Canva aceita um <code>code</code> trocado por um backend remoto quando o
+    <code>redirect_uri</code> registrado é loopback? Como respondo: registrar a integração e tentar.
+    <strong>O que muda:</strong> fecha a faixa da fatia 15 ou a elimina. Código descartável, em branch
+    própria.</p>
+
+    <h4>As fatias</h4>
+    <p><strong>1 · Primeira chamada ponta a ponta</strong> — <em>pré-requisito duro: nada roda antes
+    disso</em> — <strong>G</strong>, incerteza baixa.<br>
+    Esqueleto (<code>go.mod</code>, <code>cmd/patchbay</code>, <code>Taskfile</code>,
+    <code>golangci-lint</code>, <code>slog</code>), <code>internal/platform/store</code> com os dois
+    pools e as migrações do <code>goose</code> embutidas, um <code>endpoint</code> e um
+    <code>upstream</code> HTTP sem auth criados por SQL de <em>seed</em>, <code>internal/apikey</code>
+    com verificação por hash sobre <code>auth.RequireBearerToken</code>, e
+    <code>internal/catalogo</code> na versão mínima com o normalizador. <strong>Demonstra:</strong> o
+    Claude Code conecta em <code>/mcp/pessoal</code> com uma chave de API e chama uma ferramenta de
+    um upstream HTTP. Seções <a href="#fluxo">04</a>, <a href="#propostas">08.2</a>,
+    <a href="#propostas">08.8</a>.</p>
+
+    <p><strong>2 · UI de administração mínima</strong> — <strong>G</strong>, incerteza baixa.<br>
+    <code>templ</code> + htmx + Tailwind em <code>embed.FS</code>, login de admin com argon2id e
+    <em>setup</em> no primeiro acesso, CSRF nativo, CRUD de upstream HTTP, CRUD de endpoint com
+    composição, CRUD de chave de API com escopo. <strong>Demonstra:</strong> o <em>seed</em> da fatia 1
+    é apagado e tudo passa a ser feito pela tela. Seção <a href="#propostas">08.10</a>.</p>
+
+    <p><strong>3 · Isolamento e resiliência do upstream</strong> — <strong>G</strong>,
+    <em>incerteza alta</em>: a faixa vem das issues <code>#1189</code> e <code>#683</code>; se o
+    watchdog abandonar a goroutine limpo, é G; se o <code>Connect</code> preso segurar recurso
+    compartilhado, pode dobrar.<br>
+    Máquina de estados completa, watchdog de conexão com contador de abandonos, backoff próprio com
+    jitter e teto, catálogo parcial, <code>tools/list_changed</code> na rematerialização, lápide de
+    ferramenta, timeout em toda operação, estado na UI com próxima tentativa. Seções
+    <a href="#estados">05</a>, <a href="#propostas">08.3</a>.</p>
+
+    <p><strong>4 · Composição fina do endpoint</strong> — <strong>M</strong>, incerteza baixa.<br>
+    Filtro por padrão, prefixo, renomeação, contagem de ferramentas por endpoint e por upstream na
+    UI, o mesmo upstream em vários endpoints. Seções <a href="#propostas">08.2</a>,
+    <a href="#interface">11</a>.</p>
+
+    <p><strong>5 · Upstream STDIO com supervisor de processo</strong> — <strong>G</strong>,
+    <em>incerteza alta</em>: o Job Object é código próprio sobre syscall crua e o teste do neto
+    sobrevivente é onde a estimativa quebra.<br>
+    Um processo por servidor, process group no Linux, Job Object no Windows, restart com backoff,
+    detecção de <em>hang</em> por timeout consecutivo, frame malformado contido na borda,
+    <code>WaitDelay</code>. Seções <a href="#propostas">08.4</a>, <a href="#testes">13</a>.</p>
+
+    <p><strong>6 · Segredos cifrados em repouso</strong> — <strong>M</strong>, incerteza baixa.<br>
+    AES-256-GCM com chave derivada por HKDF, canário no boot com falha dura, bearer e headers
+    estáticos de upstream. Seções <a href="#propostas">08.8</a>, <a href="#riscos">14</a>.</p>
+
+    <p><strong>7 · OAuth de upstream: pré-registrado e refresh</strong> — <strong>G</strong>,
+    <em>incerteza média</em>: depende de a superfície de <code>auth</code> do SDK se encaixar como
+    lido.<br>
+    Uma <code>TokenSource</code> por upstream, persistência pelo hook <code>NewTokenSource</code>,
+    fluxo de consentimento pela UI com <code>state</code>/PKCE em tabela de uso único, callback no
+    hostname público, cliente pré-registrado como caminho de primeira classe,
+    <span class="pill expired">sem_consentimento</span> como estado. Seções
+    <a href="#oauth-up">06</a>, <a href="#propostas">08.5</a>.</p>
+
+    <p><strong>8 · OAuth de upstream: CIMD e DCR</strong> — <strong>M</strong>, incerteza baixa
+    (a ordem já está implementada no SDK). Seção <a href="#propostas">08.5</a>.</p>
+
+    <p><strong>9 · Sonda de saúde funcional</strong> — <strong>M</strong>, incerteza baixa — a
+    pergunta 4 da seção 15 já foi respondida em 2026-09-08: só manual. Seção
+    <a href="#propostas">08.7</a>.</p>
+
+    <p><strong>10 · Authorization server: o essencial, e o claude.ai conecta</strong> —
+    <strong>G</strong>, <em>incerteza alta</em>: é a peça sem prior art em Go, e a faixa fecha
+    quando o teste com o cliente OAuth real do go-sdk passar.<br>
+    Metadata RFC 8414 e RFC 9728 por endpoint com sufixo de path, <code>/authorize</code> com PKCE
+    S256 e consentimento atrás da sessão de admin, <code>/token</code> aceitando form-urlencoded,
+    <code>resource</code> RFC 8707 no <code>aud</code>, rotação de refresh com família e detecção de
+    replay, revogação RFC 7009, erros RFC 6749, allowlist de redirect com a URI fixa do claude.ai.
+    Seções <a href="#oauth-down">07</a>, <a href="#propostas">08.6</a>.</p>
+
+    <p><strong>11 · Authorization server: CIMD, DCR e o Claude Code conecta</strong> —
+    <strong>M</strong>, <em>incerteza média</em>: o guard de SSRF é onde mora o trabalho.<br>
+    CIMD com todos os <em>guard-rails</em> da seção 14, DCR, e o match de loopback ignorando a porta.
+    Seções <a href="#propostas">08.6</a>, <a href="#riscos">14</a>.</p>
+
+    <p><strong>12 · Observabilidade</strong> — <strong>M</strong>, incerteza baixa.<br>
+    Trilha por chamada gravada fora do caminho da latência com contador de descartes, tela de trilha
+    filtrável por endpoint, log ao vivo por SSE com redação de segredo. Seções
+    <a href="#propostas">08.8</a>, <a href="#interface">11</a>.</p>
+
+    <p><strong>13 · Export/import YAML</strong> — <strong>M</strong>, incerteza baixa. Seção
+    <a href="#propostas">08.9</a>.</p>
+
+    <p><strong>14 · Upstream SSE legado</strong> — <strong>P</strong>, incerteza baixa
+    (<code>SSEClientTransport</code> em <code>mcp/sse.go:356</code>).</p>
+
+    <p><strong>15 · Provedor loopback-only (Canva)</strong> — <strong>adiada</strong>, sem
+    estimativa (decidido 2026-09-08, fora da v1 — seção 12). Descrição do problema mantida: redirect
+    só-loopback exige um binário auxiliar na máquina do admin (<code>patchbay-loopback-auth</code>)
+    ou colar o <code>code</code> à mão na UI; nenhuma fonte da pesquisa cobre esse cenário.</p>
+
+    <p><strong>16 · Empacotamento e deploy</strong> — <strong>M</strong>, incerteza baixa.<br>
+    <code>goreleaser</code> com as três plataformas, imagem distroless
+    <code>static-debian12:nonroot</code> multi-arch, <code>ENTRYPOINT ["/patchbay"]</code>, README
+    com a decisão da chave mestra e com o procedimento de bump do <code>modernc.org/libc</code>.</p>
+
+    <h3>Sobre a ordem</h3>
+    <p>As fatias <strong>1</strong> e <strong>2</strong> são sequenciais e não negociáveis: sem a 1
+    não há nada para administrar, e sem a 2 toda fatia seguinte precisa de SQL à mão para ser
+    testada. Depois da <strong>2</strong>, três frentes correm em paralelo, e o contrato entre elas é
+    a tabela de <code>upstream</code> e a interface <code>Catalogo</code> especificadas na
+    <a href="#propostas">08.8</a> e na <a href="#arquitetura">03</a>: a frente de resiliência
+    (<strong>3</strong>, <strong>4</strong>, <strong>5</strong>), a de credencial de upstream
+    (<strong>6</strong>, <strong>7</strong>, <strong>8</strong>, <strong>9</strong>) e a de
+    credencial de cliente (<strong>10</strong>, <strong>11</strong>).</p>
+    <p>A ordem contraria de propósito a regra "o risco primeiro": as três concentrações de risco são
+    a <strong>3</strong>, a <strong>5</strong> e a <strong>10</strong>, e nenhuma delas é a primeira
+    fatia. O motivo é que o esqueleto caminhante da <strong>1</strong> é pré-requisito de qualquer
+    teste ponta a ponta — sem ele, "resolvi o #1189" não é verificável. A compensação é que
+    <strong>3</strong> e <strong>10</strong> começam imediatamente depois da <strong>2</strong>, em
+    paralelo, e os dois <em>spikes</em> antecipam a incerteza que dá para antecipar sem código de
+    produção.</p>
+    <p><strong>Vale sozinha:</strong> a fatia <strong>6</strong> (segredos cifrados) pode entrar antes
+    da <strong>3</strong> se você quiser começar a cadastrar upstreams com bearer estático de
+    verdade — ela não depende de nenhuma outra além da <strong>2</strong>, e destrava uso real do
+    patchbay muito antes do OAuth.</p>
+
+    <div class="callout warn">
+      <span class="lede">A fatia 3 não se divide para a primeira implantação.</span>
+      <p>A tentação é entregar "reconexão automática" e deixar watchdog, catálogo parcial, lápide e
+      o teto de abandonos para depois. Mas são exatamente esses quatro que impedem os dois modos de
+      falha que mataram o gateway anterior: <strong>endpoint derrubado por um upstream que pendura</strong>
+      e <strong>upstream que nunca volta porque o estado de erro ficou gravado</strong>. Não são
+      descobertas futuras — estão mapeados na seção <a href="#estados">05</a> com o gatilho de cada
+      transição. Entregar a fatia 3 pela metade é reconstruir o MetaMCP com outro nome.</p>
+    </div>
+
+    <div class="callout warn">
+      <span class="lede">A fatia 5 também não se divide, e o corte tentador tem nome.</span>
+      <p>"Spawn por sessão de cliente agora, processo compartilhado depois" parece uma simplificação
+      e é literalmente o bug que vazava um processo vivo por reconexão até esgotar os PIDs da
+      máquina. E "matar o processo com <code>cmd.Process.Kill()</code> e resolver o process group
+      depois" deixa o neto vivo — que é a mesma falha, um nível abaixo, e ainda mais difícil de ver.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+</div>
+<script>
+(function(){
+"use strict";
+var NS="http://www.w3.org/2000/svg";
+function el(n,a){var e=document.createElementNS(NS,n);for(var k in a){if(a[k]!==null&&a[k]!==undefined)e.setAttribute(k,a[k]);}return e;}
+function txt(s){return document.createTextNode(s);}
+
+/* ---------- tema ---------- */
+var btn=document.getElementById("themeBtn");
+if(btn){btn.addEventListener("click",function(){
+  var c=document.documentElement.getAttribute("data-theme"),dark;
+  if(c==="dark"){dark=false;}else if(c==="light"){dark=true;}
+  else{dark=!(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches);}
+  document.documentElement.setAttribute("data-theme",dark?"dark":"light");
+});}
+
+/* ---------- diagramas ----------
+   Um renderizador para os quatro. Nós desenhados como caixas com nome real do
+   pacote/serviço e o papel na segunda linha; um passo ativo por vez, com a nota
+   do passo indo para o .readout ao lado. As notas ampliam o texto da coluna,
+   nunca o substituem. */
+var BW=200,BH=52;
+
+function clip(a,b){
+  /* ponto onde a reta centro-a -> centro-b sai da caixa a */
+  var ax=a.x+BW/2, ay=a.y+BH/2, bx=b.x+BW/2, by=b.y+BH/2;
+  var dx=bx-ax, dy=by-ay;
+  if(dx===0&&dy===0) return [ax,ay];
+  var sx=(BW/2+4)/Math.abs(dx||1e-6), sy=(BH/2+4)/Math.abs(dy||1e-6);
+  var s=Math.min(sx,sy);
+  return [ax+dx*s, ay+dy*s];
+}
+
+function build(cfg){
+  var svg=document.getElementById(cfg.svg);
+  var out=document.getElementById(cfg.out);
+  var trace=document.getElementById(cfg.trace);
+  if(!svg||!out||!trace) return;
+
+  var byId={},maxX=0,maxY=0;
+  cfg.nodes.forEach(function(n){byId[n.id]=n;
+    if(n.x+BW>maxX)maxX=n.x+BW; if(n.y+BH>maxY)maxY=n.y+BH;});
+  svg.setAttribute("viewBox","0 0 "+(maxX+24)+" "+(maxY+26));
+
+  var defs=el("defs");
+  var mk=el("marker",{id:cfg.svg+"-ah",viewBox:"0 0 10 10",refX:"9",refY:"5",
+    markerWidth:"6",markerHeight:"6",orient:"auto-start-reverse"});
+  mk.appendChild(el("path",{d:"M0,0 L10,5 L0,10 z",fill:"currentColor"}));
+  defs.appendChild(mk); svg.appendChild(defs);
+
+  /* fiação: uma linha fraca por par distinto, desenhada uma vez */
+  var gWire=el("g",{stroke:"var(--line-2)","stroke-width":"1","stroke-dasharray":"3 3",fill:"none"});
+  var seen={};
+  cfg.msgs.forEach(function(m){
+    var key=m.f+">"+m.t; if(seen[key])return; seen[key]=1;
+    var a=byId[m.f],b=byId[m.t]; if(!a||!b)return;
+    var p=clip(a,b),q=clip(b,a);
+    gWire.appendChild(el("line",{x1:p[0],y1:p[1],x2:q[0],y2:q[1]}));
+  });
+  svg.appendChild(gWire);
+
+  var gActive=el("g"); svg.appendChild(gActive);
+
+  var gNodes=el("g"); svg.appendChild(gNodes);
+  var rects={};
+  cfg.nodes.forEach(function(n){
+    var g=el("g");
+    var r=el("rect",{x:n.x,y:n.y,width:BW,height:BH,rx:4,
+      fill:"var(--surface-2)",stroke:"var(--line-2)","stroke-width":"1"});
+    rects[n.id]=r; g.appendChild(r);
+    var t1=el("text",{x:n.x+11,y:n.y+21,"font-family":"var(--sans)","font-size":"12",
+      "font-weight":"650",fill:"var(--ink)"}); t1.appendChild(txt(n.nm)); g.appendChild(t1);
+    var t2=el("text",{x:n.x+11,y:n.y+37,"font-family":"var(--sans)","font-size":"10",
+      fill:"var(--muted)"}); t2.appendChild(txt(n.sb)); g.appendChild(t2);
+    gNodes.appendChild(g);
+  });
+
+  var i=0;
+  function show(k){
+    i=k; var m=cfg.msgs[k];
+    while(gActive.firstChild) gActive.removeChild(gActive.firstChild);
+    cfg.nodes.forEach(function(n){
+      var r=rects[n.id],on=(n.id===m.f||n.id===m.t);
+      r.setAttribute("stroke",on?"var(--accent)":"var(--line-2)");
+      r.setAttribute("stroke-width",on?"2":"1");
+      r.setAttribute("fill",on?"var(--accent-soft)":"var(--surface-2)");
+    });
+    var a=byId[m.f],b=byId[m.t];
+    if(a&&b){
+      var p=clip(a,b),q=clip(b,a);
+      var g=el("g",{color:"var(--accent)"});
+      g.appendChild(el("line",{x1:p[0],y1:p[1],x2:q[0],y2:q[1],
+        stroke:"var(--accent)","stroke-width":"2","marker-end":"url(#"+cfg.svg+"-ah)"}));
+      var mx=(p[0]+q[0])/2, my=(p[1]+q[1])/2;
+      var w=Math.max(60,m.l.length*5.6+12);
+      g.appendChild(el("rect",{x:mx-w/2,y:my-9,width:w,height:18,rx:3,
+        fill:"var(--surface)",stroke:"var(--accent)","stroke-width":"1"}));
+      var tl=el("text",{x:mx,y:my+4,"text-anchor":"middle","font-family":"var(--sans)",
+        "font-size":"9.5",fill:"var(--accent-ink)"}); tl.appendChild(txt(m.l));
+      g.appendChild(tl);
+      gActive.appendChild(g);
+    }
+    out.innerHTML="";
+    var lb=document.createElement("b");
+    lb.appendChild(txt("Passo "+(k+1)+" de "+cfg.msgs.length+" · "+(cfg.ph[m.p]||"")+" · "+m.l));
+    out.appendChild(lb);
+    out.appendChild(txt(m.n));
+    Array.prototype.forEach.call(trace.querySelectorAll("button"),function(b2,idx){
+      b2.setAttribute("aria-current",idx===k?"true":"false");
+    });
+  }
+
+  var lastPhase=null;
+  cfg.msgs.forEach(function(m,idx){
+    if(m.p!==lastPhase){
+      var ph=document.createElement("span"); ph.className="phase";
+      ph.appendChild(txt(cfg.ph[m.p]||("Fase "+m.p))); trace.appendChild(ph); lastPhase=m.p;
+    }
+    var b2=document.createElement("button");
+    b2.type="button"; b2.className="step"; b2.appendChild(txt(String(idx+1)));
+    b2.setAttribute("aria-label","Passo "+(idx+1)+": "+m.l);
+    b2.addEventListener("click",function(){show(idx);});
+    trace.appendChild(b2);
+  });
+  trace.addEventListener("keydown",function(e){
+    if(e.key==="ArrowRight"){show((i+1)%cfg.msgs.length);e.preventDefault();}
+    if(e.key==="ArrowLeft"){show((i-1+cfg.msgs.length)%cfg.msgs.length);e.preventDefault();}
+  });
+  show(0);
+}
+
+/* ===== 04 · o fluxo de uma tools/call ===== */
+build({svg:"dgFluxo",out:"outFluxo",trace:"trFluxo",
+ph:{1:"1 — Entrada e credencial",2:"2 — Roteamento",3:"3 — Upstream",4:"4 — Retorno e trilha"},
+nodes:[
+ {id:"cli",nm:"cliente de IA",sb:"claude.ai · Claude Code · Cursor",x:24,y:24},
+ {id:"htx",nm:"platform/httpx",sb:"Origin · CORS · recover · log",x:252,y:24},
+ {id:"aut",nm:"authsrv + apikey",sb:"RequireBearerToken",x:252,y:102},
+ {id:"end",nm:"internal/endpoint",sb:"*mcp.Server por endpoint",x:480,y:24},
+ {id:"cat",nm:"internal/catalogo",sb:"roteador materializado",x:480,y:102},
+ {id:"ups",nm:"internal/upstream",sb:"Manager · snapshot atômico",x:480,y:180},
+ {id:"rem",nm:"servidor MCP upstream",sb:"Notion · Sentry · Drive",x:708,y:102},
+ {id:"upa",nm:"internal/upauth",sb:"1 TokenSource por upstream",x:708,y:180},
+ {id:"std",nm:"internal/stdioproc",sb:"1 processo por servidor",x:708,y:258},
+ {id:"sto",nm:"platform/store",sb:"SQLite WAL · 2 pools",x:252,y:258}
+],
+msgs:[
+ {p:1,f:"cli",t:"htx",l:"POST /mcp/{slug}",
+  n:"O slug no path é o que roteia, e na era 2026-07-28 os headers Mcp-Method e Mcp-Name permitem inspecionar a requisição sem parsear o corpo. A validação de Origin acontece aqui, antes de qualquer parse — e DisableLocalhostProtection (mcp/streamable.go:174-182) nunca é ligado."},
+ {p:1,f:"htx",t:"aut",l:"verifica a credencial",
+  n:"Chave de API e token do AS embutido passam pelo mesmo middleware: auth.RequireBearerToken (auth/auth.go:97) recebe um TokenVerifier plugável (auth/auth.go:41). O 401 já sai com WWW-Authenticate: Bearer resource_metadata=... (auth/auth.go:114), que é exatamente o header por onde o claude.ai descobre o authorization server — ou seja, o caminho de erro é também o caminho de descoberta."},
+ {p:2,f:"aut",t:"end",l:"getServer(req)",
+  n:"NewStreamableHTTPHandler recebe getServer func(*http.Request) *Server (mcp/streamable.go:232). É o único ponto de extensão para multi-endpoint no SDK, e é por isso que existe um *mcp.Server vivo por endpoint em vez de um por sessão: o objeto Server é quem carrega o catálogo e quem dispara tools/list_changed."},
+ {p:2,f:"end",t:"cat",l:"resolve nt_search",
+  n:"Não há busca aqui. O handler registrado por AddTool já fecha sobre o upstream e o nome original, então prefixo e renomeação custam zero por chamada, e colisão entre dois upstreams que expõem 'search' é impossível por construção — o prefixo entra no nome registrado, não numa tabela consultada em runtime."},
+ {p:3,f:"cat",t:"ups",l:"pede a sessão pronta",
+  n:"O Manager devolve um snapshot atômico do estado. Se o upstream está degradado, a chamada falha em milissegundos com erro de ferramenta e o resto do endpoint continua funcionando. O caminho da requisição nunca chama Connect — é a mitigação da issue #1189, em que Connect bloqueia além do deadline contra um servidor mudo."},
+ {p:3,f:"ups",t:"upa",l:"TokenSource.Token()",
+  n:"Exatamente uma instância por upstream, para o processo inteiro. O mutex de oauth2.reuseTokenSource (golang.org/x/oauth2@v0.37.0/oauth2.go:297-304) é o que serializa o refresh; criar uma segunda instância — uma por endpoint, por exemplo — reintroduz a corrida que revoga a família inteira de refresh tokens em provedor com rotação."},
+ {p:3,f:"upa",t:"sto",l:"grava o par renovado",
+  n:"O que se grava é o *oauth2.Token que o TokenSource devolveu, nunca o corpo da resposta HTTP. A biblioteca já preserva o refresh_token quando a resposta não traz um (internal/token.go:250-253); parsear a resposta por conta própria é a única forma de apagar o único item irrecuperável do banco."},
+ {p:3,f:"ups",t:"rem",l:"CallTool com timeout próprio",
+  n:"Timeout por chamada, nunca por processo. No caso STDIO o processo é compartilhado por todas as sessões de cliente, então matá-lo por causa de uma chamada lenta trocaria um problema pequeno por um grande. O timeout é configurável por upstream e aparece no formulário — timeout invisível é o que transforma 'está lento' em meia hora de investigação."},
+ {p:4,f:"rem",t:"ups",l:"resultado ou erro",
+  n:"Erro de upstream volta como erro de ferramenta para o cliente, com o nome do upstream na mensagem. N erros consecutivos levam o upstream a degradado — é uma das transições da seção 05, e é o que evita o endpoint ficar oferecendo uma ferramenta que só falha."},
+ {p:4,f:"ups",t:"std",l:"(upstream STDIO) mesma sessão",
+  n:"Uma única *mcp.ClientSession sobre um CommandTransport (mcp/cmd.go:20) atende chamadas concorrentes de todos os endpoints: o jsonrpc2 do SDK já multiplexa, e o próprio código documenta que o writer é seguro para uso concorrente (internal/jsonrpc2/conn.go:195). O multiplexador de id que o desenho original previa não precisa existir."},
+ {p:4,f:"end",t:"sto",l:"trilha, depois de responder",
+  n:"A trilha é a escrita mais frequente do sistema e o SQLite tem um único escritor. Gravá-la dentro da transação da chamada faria cada tools/call esperar pela fila de escrita — o gateway serializaria por causa do log. Vai por canal com buffer; ao encher, descarta contando, e o contador de descartes aparece na tela."},
+ {p:4,f:"end",t:"cli",l:"resposta",
+  n:"Se o catálogo mudou durante a vida da sessão, o tools/list_changed já saiu por changeAndNotify com debounce (mcp/server.go:700-724). Para cliente da era nova isso só chega se ele tiver um subscriptions/listen aberto (mcp/server.go:727-745) — a segunda rede é o ttlMs curto no resultado de tools/list."}
+]});
+
+/* ===== 05 · máquina de estados do upstream ===== */
+build({svg:"dgEstados",out:"outEstados",trace:"trEstados",
+ph:{1:"1 — Subida",2:"2 — Degradação",3:"3 — Recuperação",4:"4 — Fim de linha"},
+nodes:[
+ {id:"novo",nm:"novo",sb:"em memória, nunca no banco",x:24,y:24},
+ {id:"conn",nm:"conectando",sb:"watchdog armado",x:252,y:24},
+ {id:"pron",nm:"pronto",sb:"ferramentas no catálogo",x:480,y:24},
+ {id:"desa",nm:"desabilitado",sb:"intenção do admin (persistido)",x:708,y:24},
+ {id:"degr",nm:"degradado",sb:"ferramentas fora do catálogo",x:252,y:124},
+ {id:"sond",nm:"sonda_falhou",sb:"fala, lista, e não funciona",x:480,y:124},
+ {id:"semc",nm:"sem_consentimento",sb:"refresh recusado",x:708,y:124}
+],
+msgs:[
+ {p:1,f:"novo",t:"conn",l:"habilitado no boot ou na UI",
+  n:"Todo upstream habilitado começa aqui em todo boot, sem exceção. É a decisão que responde à dor do MetaMCP: como nenhum estado de erro é persistido, não existe estado gravado capaz de impedir uma nova tentativa."},
+ {p:1,f:"conn",t:"pron",l:"discover/initialize + tools/list no prazo",
+  n:"A negociação de era é do SDK (mcp/shared.go:58-64) e acontece aqui, uma vez por upstream, independente da era que os clientes downstream estão falando. Ao entrar em pronto, as ferramentas são normalizadas e materializadas em todo endpoint que inclui este upstream."},
+ {p:2,f:"conn",t:"degr",l:"timeout do watchdog, ou erro",
+  n:"O watchdog é obrigatório porque a issue #1189 registra Connect bloqueando além do deadline. Ao vencer o timer, o supervisor marca degradado e abandona a goroutine presa — Go não mata goroutine. O abandono é contado e aparece na UI."},
+ {p:2,f:"pron",t:"degr",l:"N erros consecutivos · frame malformado",
+  n:"Três gatilhos distintos com o mesmo destino: erros consecutivos de chamada, sessão fechada pelo outro lado, e frame JSON malformado no stdio (issue #1209), que derruba a sessão inteira e precisa parar na borda deste upstream."},
+ {p:2,f:"pron",t:"sond",l:"sonda funcional falhou",
+  n:"Erro de transporte, timeout, ou resultado com isError verdadeiro. É o estado que o Google Drive sem auth ocupa: ele lista oito ferramentas e falha em toda chamada. As ferramentas saem do catálogo, porque ferramenta que não funciona custa contexto no cliente sem entregar nada."},
+ {p:2,f:"pron",t:"semc",l:"refresh devolveu invalid_grant",
+  n:"Consentimento revogado ou expirado é estado, nunca falha silenciosa de tools/call. A UI mostra o botão reautorizar. Foi por não ter isto que o gateway anterior foi abandonado: a ferramenta simplesmente parava de funcionar e a causa não aparecia em lugar nenhum."},
+ {p:3,f:"degr",t:"conn",l:"backoff expirou (expo + jitter, com teto)",
+  n:"Não existe transição direta degradado → pronto. Voltar passa obrigatoriamente por conectando, porque a conexão pode estar envenenada por erro transitório (issue #683) e a única correção conhecida é descartar o transporte e criar outro. Reaproveitar a sessão antiga é o atalho que reintroduz o bug."},
+ {p:3,f:"sond",t:"pron",l:"sonda voltou a passar",
+  n:"A volta é automática e rematerializa o catálogo, disparando tools/list_changed. É por isso que a lápide de ferramenta tem janela de graça: nesse vai-e-vem o cliente pode estar com a lista antiga em cache de prompt."},
+ {p:3,f:"semc",t:"conn",l:"admin reautorizou na UI",
+  n:"O consentimento novo notifica o Manager, que agenda conectando na hora, sem esperar o backoff pendente. Sem isso o admin clica em autorizar e nada acontece por alguns minutos, o que parece bug."},
+ {p:4,f:"degr",t:"desa",l:"teto de abandonos, ou o admin desabilitou",
+  n:"É o único estado persistido, e ele tem duas origens: a intenção do admin e a autoproteção. Desabilitar por conta própria precisa aparecer explicitamente na tela com o motivo — upstream que se desabilita em silêncio é indistinguível de upstream que alguém apagou."}
+]});
+
+/* ===== 06 · consentimento OAuth de upstream ===== */
+build({svg:"dgOAuthUp",out:"outOAuthUp",trace:"trOAuthUp",
+ph:{1:"1 — Início na UI",2:"2 — Provedor",3:"3 — Troca e persistência",4:"4 — Variante loopback"},
+nodes:[
+ {id:"adm",nm:"navegador do admin",sb:"sessão + CSRF",x:24,y:24},
+ {id:"aui",nm:"internal/admin",sb:"/admin/upstreams/{id}",x:252,y:24},
+ {id:"upa",nm:"internal/upauth",sb:"AuthorizationCodeHandler",x:480,y:24},
+ {id:"prv",nm:"provedor upstream",sb:"Notion · Google · Sentry",x:708,y:24},
+ {id:"sto",nm:"platform/store",sb:"state · PKCE · tokens cifrados",x:480,y:116},
+ {id:"lbk",nm:"patchbay-loopback-auth",sb:"na máquina do admin",x:24,y:116}
+],
+msgs:[
+ {p:1,f:"adm",t:"aui",l:"clica em Autorizar",
+  n:"Exige sessão de admin válida e token de CSRF. É a operação mais sensível da UI: o que ela grava é uma credencial de longa duração de um provedor de terceiro, e é a única coisa no banco que não se reconstrói a partir do YAML de configuração."},
+ {p:1,f:"aui",t:"upa",l:"monta a URL de autorização",
+  n:"O AuthorizationCodeFetcher do SDK é um callback (auth/authorization_code.go:72): em vez de abrir um browser local, o do patchbay devolve a URL para a aba do admin e espera pelo callback. O SDK não pressupõe browser no mesmo processo, e é isso que torna o fluxo web possível sem reimplementar descoberta e PKCE."},
+ {p:1,f:"upa",t:"sto",l:"grava state + PKCE, uso único",
+  n:"Uma linha por tentativa, com expiração, apagada no callback. Sem ela o callback não tem como validar que aquele code pertence àquela tentativa — e com mais de um upstream em fluxo ao mesmo tempo, é o que impede trocar um consentimento pelo outro."},
+ {p:2,f:"upa",t:"prv",l:"redirect com code_challenge e resource",
+  n:"A ordem de registro de cliente é CIMD → pré-registrado → DCR, já implementada em auth/authorization_code.go:526-556. O Google não anuncia nem CIMD nem registration_endpoint, então cai obrigatoriamente no pré-registrado: o formulário da UI precisa aceitar client_id e client_secret colados à mão desde a v1, como caminho normal e não como recuperação de erro."},
+ {p:2,f:"prv",t:"aui",l:"GET /oauth/upstream/callback",
+  n:"Rota no hostname público do patchbay. O iss da resposta é validado contra o issuer gravado (RFC 9207, SHOULD desde 2026-07-28) — é a proteção contra mix-up quando há vários provedores em jogo, e é também o que permite recusar credencial de um AS sendo usada com outro (auth/authorization_code.go:538-540)."},
+ {p:3,f:"aui",t:"upa",l:"troca code por token",
+  n:"A troca usa o mesmo handler que fará os refreshes depois, com a mesma instância única daquele upstream. É a garantia de que o token inicial e os renovados vivem no mesmo lugar, com o mesmo mutex."},
+ {p:3,f:"upa",t:"sto",l:"grava access + refresh cifrados",
+  n:"AES-256-GCM com chave derivada por HKDF, nonce por linha. A partir daqui o upstream sai de sem_consentimento e o Manager é notificado para agendar conectando imediatamente, sem esperar o backoff pendente."},
+ {p:4,f:"adm",t:"lbk",l:"patchbay-loopback-auth canva",
+  n:"A Canva só aceita http://127.0.0.1:<porta> como redirect_uri, e não aceita localhost como hostname nem domínio próprio antes da revisão pública. Um serviço remoto não tem loopback que o navegador do admin alcance, então o listener precisa rodar onde o navegador está e devolver o code ao gateway por chamada autenticada. Isso é inferência de desenho, não padrão documentado — está como spike na seção 16."}
+]});
+
+/* ===== 07 · OAuth dos clientes ===== */
+build({svg:"dgOAuthDown",out:"outOAuthDown",trace:"trOAuthDown",
+ph:{1:"1 — Descoberta",2:"2 — Autorização",3:"3 — Token",4:"4 — Cliente nativo"},
+nodes:[
+ {id:"end",nm:"internal/endpoint",sb:"devolve 401 com WWW-Authenticate",x:24,y:24},
+ {id:"cla",nm:"claude.ai",sb:"web · desktop · mobile",x:24,y:116},
+ {id:"prm",nm:"RFC 9728",sb:"protected resource, por endpoint",x:252,y:24},
+ {id:"asm",nm:"RFC 8414",sb:"authorization server metadata",x:252,y:116},
+ {id:"asv",nm:"internal/authsrv",sb:"/authorize · /token",x:480,y:70},
+ {id:"aui",nm:"internal/admin",sb:"login + consentimento",x:708,y:24},
+ {id:"sto",nm:"platform/store",sb:"code · token · família",x:708,y:116},
+ {id:"cod",nm:"Claude Code",sb:"loopback em porta efêmera",x:24,y:208}
+],
+msgs:[
+ {p:1,f:"cla",t:"end",l:"POST /mcp/{slug} sem token → 401",
+  n:"O 401 carrega WWW-Authenticate: Bearer resource_metadata=..., que tem prioridade sobre o well-known quando presente. O auth.RequireBearerToken do SDK já escreve esse header (auth/auth.go:114), então o patchbay não monta o 401 à mão — e é bom que não monte, porque errar o header é errar a descoberta inteira."},
+ {p:1,f:"cla",t:"prm",l:"GET /.well-known/oauth-protected-resource/mcp/{slug}",
+  n:"O caminho com sufixo é obrigatório aqui porque cada endpoint é um protected resource distinto: o resource do RFC 8707 identifica o endpoint, não o gateway. Sem isso, um token emitido para o endpoint pessoal valeria no endpoint trabalho, e a composição por endpoint deixaria de ser fronteira. O fallback na raiz também é servido, para cliente que não tente o sufixo."},
+ {p:1,f:"cla",t:"asm",l:"GET /.well-known/oauth-authorization-server",
+  n:"Precisa anunciar client_id_metadata_document_supported: true E \"none\" em token_endpoint_auth_methods_supported. Faltando qualquer um dos dois, o claude.ai cai para DCR e passa a registrar um cliente novo a cada conexão fresca. E authorization_servers na metadata do recurso lista um único AS, porque o Claude usa só a primeira entrada e não faz fallback."},
+ {p:2,f:"cla",t:"asv",l:"GET /authorize + PKCE S256 + resource",
+  n:"Se o client_id chega como URL https, é CIMD: buscar o documento com guard de SSRF (só https, sem seguir redirect, faixas privadas bloqueadas antes e depois do DNS, corpo limitado, timeout curto, single-flight) e validar que o client_id de dentro do documento é igual à URL e que o redirect_uri pedido está em redirect_uris. O AS roda na mesma rede da chave mestra — este fetch é a superfície de ataque que a spec criou ao deprecar DCR."},
+ {p:2,f:"asv",t:"aui",l:"exige sessão de admin",
+  n:"O usuário do AS é o próprio admin, e é isso que dispensa multiusuário. A tela de consentimento mostra em destaque o hostname do client_id e do redirect_uri — é a única defesa contra um documento CIMD que se apresente como outro cliente, já que qualquer um pode publicar um."},
+ {p:2,f:"aui",t:"sto",l:"grava code (hash), resource, challenge",
+  n:"O code é guardado como hash, de uso único, com usado_em preenchido no primeiro uso; um segundo uso revoga a família inteira de tokens. É a mesma decisão da chave de API: credencial que o patchbay só verifica nunca precisa voltar em claro."},
+ {p:2,f:"asv",t:"cla",l:"302 para claude.ai/api/mcp/auth_callback",
+  n:"Essa URI exata precisa estar na allowlist, com comparação exata. A resposta carrega iss (RFC 9207), que passou de opcional a SHOULD em 2026-07-28 e é validado pelo cliente contra o issuer gravado."},
+ {p:3,f:"cla",t:"asv",l:"POST /token (form-urlencoded)",
+  n:"Aceitar application/x-www-form-urlencoded não é detalhe: é a falha de implementação mais comum, porque framework que só parseia JSON devolve 415 e o cliente desiste sem mensagem útil. Os erros têm que ser RFC 6749 — o claude.ai decide reautenticar a partir de invalid_grant, e refresca proativamente até cinco minutos antes do expiry gravado."},
+ {p:3,f:"asv",t:"sto",l:"emite access + refresh, rotaciona",
+  n:"Rotação é exigência de OAuth 2.1 para cliente público, que é o caso de CIMD e de DCR. familia_id e substituido_por são o que permite detectar replay: apresentar um refresh já rotacionado revoga a família e força reautenticação — comportamento desejado, e a razão de as duas colunas existirem."},
+ {p:4,f:"cod",t:"asv",l:"mesmo fluxo, CIMD do Claude Code",
+  n:"O Claude Code é cliente nativo RFC 8252 e declara http://localhost/callback e http://127.0.0.1/callback no próprio documento CIMD. O AS tem que aceitar as duas ignorando a porta, que é efêmera. São duas regras de comparação de redirect_uri convivendo no mesmo endpoint: exata para o claude.ai, sem-porta para o loopback."}
+]});
+})();
+</script>
+</body>
+</html>
