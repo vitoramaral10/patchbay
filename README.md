@@ -7,8 +7,9 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
 > Estado: **fatia 6** do épico — segredos cifrados em repouso. Ainda não tem
 > resiliência completa de upstream (fatia 3), composição fina de endpoint
-> (fatia 4), upstream STDIO (fatia 5), OAuth de upstream (fatias 7-8) nem
-> authorization server próprio (fatias 10-11).
+> (fatia 4), upstream STDIO (fatia 5) nem OAuth de upstream (fatias 7-8). O
+> authorization server essencial (fatia 10) já está em produção; CIMD, DCR e
+> redirect URI de loopback (fatia 11) seguem pendentes.
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
