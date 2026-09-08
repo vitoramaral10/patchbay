@@ -15,6 +15,8 @@ const (
 	RotaEndpoints = "/admin/endpoints"
 	// RotaChaves é a lista de chaves de API.
 	RotaChaves = "/admin/chaves"
+	// RotaClientesOAuth é a lista de clientes OAuth do authorization server.
+	RotaClientesOAuth = "/admin/oauth"
 	// RotaLogin é o formulário de entrada.
 	RotaLogin = "/admin/login"
 	// RotaSetup é o formulário de criação do admin único; deixa de existir
@@ -30,6 +32,7 @@ const (
 	SecaoUpstreams = "upstreams"
 	SecaoEndpoints = "endpoints"
 	SecaoChaves    = "chaves"
+	SecaoOAuth     = "oauth"
 )
 
 type itemNav struct {
@@ -43,4 +46,5 @@ var navegacao = []itemNav{
 	{Rota: RotaUpstreams, Rotulo: "Upstreams", Secao: SecaoUpstreams},
 	{Rota: RotaEndpoints, Rotulo: "Endpoints", Secao: SecaoEndpoints},
 	{Rota: RotaChaves, Rotulo: "Chaves de API", Secao: SecaoChaves},
+	{Rota: RotaClientesOAuth, Rotulo: "Clientes OAuth", Secao: SecaoOAuth},
 }

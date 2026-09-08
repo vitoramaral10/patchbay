@@ -1,0 +1,141 @@
+package authsrv
+
+import "github.com/vitoramaral10/patchbay/internal/platform/webui"
+
+// DadosConsentimento é o que a tela de consentimento mostra.
+//
+// Cliente, endpoint, escopo e — em destaque — o hospedeiro para onde o código
+// vai. O hostname do redirect é a informação que decide o consentimento: é ela
+// que separa "o claude.ai está pedindo acesso" de "alguém registrou um cliente
+// com nome parecido".
+type DadosConsentimento struct {
+	Autorizacao Autorizacao
+	Recurso     string
+	Hospedeiro  string
+}
+
+// TelaConsentimento é o passo humano do fluxo: o admin é o "usuário" deste
+// authorization server, e nenhum token sai daqui sem esta tela.
+//
+// O POST da decisão volta para o próprio authorize endpoint com o pedido
+// inteiro em campos escondidos, e lá ele é revalidado do zero — assim o escopo
+// não pode mudar entre o que a pessoa leu e o que o código concede.
+templ TelaConsentimento(d DadosConsentimento) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Autorizar acesso",
+		Subtitulo: "Um cliente OAuth está pedindo acesso a um endpoint deste patchbay.",
+		Secao:     webui.SecaoOAuth,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+	}) {
+		<div class="flex max-w-2xl flex-col gap-6">
+			@webui.Cartao(d.Autorizacao.Cliente.Nome) {
+				<dl class="flex flex-col gap-4 px-4 py-4">
+					<div>
+						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Vai receber o código em</dt>
+						<dd class="mt-1 text-lg font-semibold text-conteudo">{ d.Hospedeiro }</dd>
+						<dd class="mt-0.5">
+							<code class="font-mono text-xs text-conteudo-tenue">{ d.Autorizacao.Pedido.RedirectURI }</code>
+						</dd>
+					</div>
+					<div>
+						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Endpoint</dt>
+						<dd class="mt-1">
+							{ d.Autorizacao.Endpoint.Rotulo() }
+							<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ d.Recurso }</code>
+						</dd>
+					</div>
+					<div>
+						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Escopo</dt>
+						<dd class="mt-1">
+							<code class="font-mono text-xs text-conteudo-suave">{ d.Autorizacao.Escopo }</code>
+						</dd>
+					</div>
+					<div>
+						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">client_id</dt>
+						<dd class="mt-1">
+							<code class="font-mono text-xs text-conteudo-suave">{ d.Autorizacao.Cliente.ClientID }</code>
+						</dd>
+					</div>
+				</dl>
+			}
+			<p class="max-w-[70ch] text-conteudo-suave">
+				O token emitido vale só para este endpoint: apresentá-lo em outro devolve 403.
+				Você pode encerrar a sessão a qualquer momento na tela do cliente.
+			</p>
+			<form method="post" action={ templ.SafeURL(RotaAutorizar) } class="flex items-center gap-3">
+				@camposDoPedido(d.Autorizacao.Pedido)
+				<button type="submit" name="decisao" value="aceitar" class="pb-botao pb-botao-primario">Autorizar</button>
+				<button type="submit" name="decisao" value="recusar" class="pb-botao pb-botao-secundario">Recusar</button>
+			</form>
+		</div>
+	}
+}
+
+templ camposDoPedido(p PedidoAutorizacao) {
+	<input type="hidden" name="client_id" value={ p.ClientID }/>
+	<input type="hidden" name="redirect_uri" value={ p.RedirectURI }/>
+	<input type="hidden" name="response_type" value={ p.ResponseType }/>
+	<input type="hidden" name="code_challenge" value={ p.CodeChallenge }/>
+	<input type="hidden" name="code_challenge_method" value={ p.CodeChallengeMethod }/>
+	<input type="hidden" name="resource" value={ p.Resource }/>
+	<input type="hidden" name="scope" value={ p.Escopo }/>
+	<input type="hidden" name="state" value={ p.State }/>
+}
+
+// DadosErro é o erro de autorização que não pode virar redirecionamento.
+type DadosErro struct {
+	Codigo    string
+	Descricao string
+	ClientID  string
+	Redirect  string
+}
+
+// TelaErro mostra o erro na tela do admin quando redirecionar seria mandar a
+// resposta para um destino que o AS não reconhece.
+templ TelaErro(d DadosErro) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Pedido de autorização recusado",
+		Subtitulo: "O patchbay não redirecionou de volta: o destino do pedido não está na allowlist de nenhum cliente cadastrado.",
+		Secao:     webui.SecaoOAuth,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Alerta: &webui.Alerta{
+			Tom:    webui.TomPerigo,
+			Titulo: d.Codigo,
+			Texto:  d.Descricao,
+		},
+	}) {
+		<div class="flex max-w-2xl flex-col gap-6">
+			@webui.Cartao("O que o cliente pediu") {
+				<dl class="flex flex-col gap-4 px-4 py-4">
+					<div>
+						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">client_id</dt>
+						<dd class="mt-1">
+							if d.ClientID == "" {
+								<span class="text-conteudo-tenue">não informado</span>
+							} else {
+								<code class="font-mono text-xs text-conteudo-suave">{ d.ClientID }</code>
+							}
+						</dd>
+					</div>
+					<div>
+						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">redirect_uri</dt>
+						<dd class="mt-1">
+							if d.Redirect == "" {
+								<span class="text-conteudo-tenue">não informada</span>
+							} else {
+								<code class="font-mono text-xs text-conteudo-suave">{ d.Redirect }</code>
+							}
+						</dd>
+					</div>
+				</dl>
+			}
+			<p class="max-w-[70ch] text-conteudo-suave">
+				Se este cliente devia funcionar, confira a allowlist dele: a comparação é exata,
+				caractere a caractere, e uma barra final a mais já é outra URI.
+			</p>
+			<div>
+				<a href={ templ.SafeURL(webui.RotaClientesOAuth) } class="pb-botao pb-botao-primario">Ver clientes OAuth</a>
+			</div>
+		</div>
+	}
+}
