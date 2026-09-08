@@ -62,6 +62,11 @@ type vivo struct {
 	// origens diz de qual upstream veio cada ferramenta viva. É o que a lápide
 	// usa para escrever "saiu do upstream X" em vez de um texto genérico.
 	origens map[string]string
+	// porUpstream é quantas ferramentas cada upstream entrega *a este endpoint*,
+	// depois de filtro, renome e prefixo. Não é a contagem do upstream: o mesmo
+	// upstream entra em vários endpoints com composições diferentes, e é a
+	// diferença entre os dois números que a tela precisa mostrar (seção 11).
+	porUpstream map[int64]int
 	// lapides são as ferramentas que já saíram do catálogo e continuam
 	// registradas até a janela de graça vencer.
 	lapides map[string]lapide
@@ -158,6 +163,7 @@ func (s *Servidores) reconciliar(regs []Registro) (vivos []*vivo, aposentados []
 			v.handler = s.novoHandler(v.servidor)
 			v.expostos = nil
 			v.origens = nil
+			v.porUpstream = nil
 			// A instância nova nasce sem lápide: as sessões daquele endpoint
 			// foram encerradas, então não existe cliente com a lista antiga em
 			// cache para proteger.
@@ -252,10 +258,12 @@ func (s *Servidores) rematerializar(ctx context.Context, v *vivo) error {
 	// legítima do tools/list; erro não é.
 	novos := make([]string, 0, len(ferramentas))
 	origens := make(map[string]string, len(ferramentas))
+	porUpstream := make(map[int64]int)
 	for _, f := range ferramentas {
 		if s.registrar(srv, f) {
 			novos = append(novos, f.NomeExposto())
 			origens[f.NomeExposto()] = f.UpstreamNome
+			porUpstream[f.UpstreamID]++
 		}
 	}
 
@@ -270,6 +278,7 @@ func (s *Servidores) rematerializar(ctx context.Context, v *vivo) error {
 	if v.servidor == srv {
 		v.expostos = novos
 		v.origens = origens
+		v.porUpstream = porUpstream
 	}
 	s.mu.Unlock()
 
@@ -356,6 +365,22 @@ func (s *Servidores) Contagem(slug string) int {
 		return 0
 	}
 	return len(v.expostos)
+}
+
+// ContagemPorUpstream devolve quantas ferramentas cada upstream entrega a este
+// endpoint depois da composição.
+//
+// É outro número que a contagem do upstream isolado: o mesmo upstream pode
+// entregar quinze ferramentas num endpoint e três em outro, e é justamente essa
+// diferença que diz se o filtro fez o que o admin queria.
+func (s *Servidores) ContagemPorUpstream(slug string) map[int64]int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.porSlug[slug]
+	if !ok {
+		return nil
+	}
+	return maps.Clone(v.porUpstream)
 }
 
 // Expostos devolve os nomes que o endpoint expõe agora, em ordem.

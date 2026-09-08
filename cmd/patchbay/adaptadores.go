@@ -39,6 +39,13 @@ func (a upstreamsParaEndpoint) Opcoes(ctx context.Context) ([]endpoint.UpstreamO
 		if s, ok := a.gerente.Situacao(reg.ID); ok {
 			o.Estado, o.Ferramentas = string(s.Estado), s.Ferramentas
 		}
+		// NomesOriginais é o catálogo vivo contra o qual as regras casam — o
+		// que a tela usa para avisar de uma regra que não casa com nada nele.
+		for _, t := range a.gerente.Ferramentas(reg.ID) {
+			if t != nil {
+				o.NomesOriginais = append(o.NomesOriginais, t.Name)
+			}
+		}
 		out = append(out, o)
 	}
 	return out, nil

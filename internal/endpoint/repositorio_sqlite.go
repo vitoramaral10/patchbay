@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/vitoramaral10/patchbay/internal/catalogo"
 )
 
 // RepositorioSQLite lê e escreve endpoints nos dois pools.
@@ -90,25 +92,71 @@ SELECT endpoint_id, COUNT(*) FROM endpoint_upstream GROUP BY endpoint_id`)
 	return out, nil
 }
 
-// UpstreamsDo devolve os ids dos upstreams que compõem o endpoint.
-func (r *RepositorioSQLite) UpstreamsDo(ctx context.Context, id int64) ([]int64, error) {
+// ItemComposicao é um upstream dentro da composição de um endpoint, com o
+// prefixo e as regras que valem só ali.
+type ItemComposicao struct {
+	UpstreamID int64
+	Prefixo    string
+	Regras     []catalogo.Regra
+}
+
+// ComposicaoDe devolve a composição do endpoint na ordem gravada.
+func (r *RepositorioSQLite) ComposicaoDe(ctx context.Context, id int64) ([]ItemComposicao, error) {
 	rows, err := r.leitura.QueryContext(ctx, `
-SELECT upstream_id FROM endpoint_upstream WHERE endpoint_id = ? ORDER BY ordem, upstream_id`, id)
+SELECT upstream_id, prefixo FROM endpoint_upstream WHERE endpoint_id = ? ORDER BY ordem, upstream_id`, id)
 	if err != nil {
 		return nil, fmt.Errorf("selecionar composição do endpoint %d: %w", id, err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []int64
+	var out []ItemComposicao
 	for rows.Next() {
-		var upstreamID int64
-		if err := rows.Scan(&upstreamID); err != nil {
+		var item ItemComposicao
+		if err := rows.Scan(&item.UpstreamID, &item.Prefixo); err != nil {
 			return nil, fmt.Errorf("ler composição do endpoint %d: %w", id, err)
 		}
-		out = append(out, upstreamID)
+		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterar composição do endpoint %d: %w", id, err)
+	}
+
+	regras, err := r.regrasDe(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Regras = regras[out[i].UpstreamID]
+	}
+	return out, nil
+}
+
+func (r *RepositorioSQLite) regrasDe(ctx context.Context, id int64) (map[int64][]catalogo.Regra, error) {
+	rows, err := r.leitura.QueryContext(ctx, `
+SELECT upstream_id, acao, padrao, renome
+  FROM endpoint_tool_rule
+ WHERE endpoint_id = ?
+ ORDER BY upstream_id, ordem, id`, id)
+	if err != nil {
+		return nil, fmt.Errorf("selecionar regras do endpoint %d: %w", id, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make(map[int64][]catalogo.Regra)
+	for rows.Next() {
+		var (
+			upstreamID int64
+			acao       string
+			regra      catalogo.Regra
+		)
+		if err := rows.Scan(&upstreamID, &acao, &regra.Padrao, &regra.Renome); err != nil {
+			return nil, fmt.Errorf("ler regra do endpoint %d: %w", id, err)
+		}
+		regra.Acao = catalogo.Acao(acao)
+		out[upstreamID] = append(out[upstreamID], regra)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterar regras do endpoint %d: %w", id, err)
 	}
 	return out, nil
 }
@@ -136,7 +184,7 @@ RETURNING id`,
 		}
 		return 0, fmt.Errorf("gravar endpoint %s: %w", f.Slug, err)
 	}
-	if err := gravarComposicao(ctx, tx, id, f.UpstreamIDs); err != nil {
+	if err := gravarComposicao(ctx, tx, id, f); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -170,7 +218,15 @@ UPDATE endpoint SET nome = ?, descricao = ?, instrucoes = ? WHERE id = ?`,
 		`DELETE FROM endpoint_upstream WHERE endpoint_id = ?`, id); err != nil {
 		return fmt.Errorf("limpar composição do endpoint %d: %w", id, err)
 	}
-	if err := gravarComposicao(ctx, tx, id, f.UpstreamIDs); err != nil {
+	// As regras saem à mão: elas referenciam o endpoint, não a linha de
+	// endpoint_upstream, então apagar a composição não as leva junto por
+	// cascata. Sem este DELETE, desmarcar um upstream e remarcá-lo depois traria
+	// de volta um filtro que o admin já tinha apagado.
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM endpoint_tool_rule WHERE endpoint_id = ?`, id); err != nil {
+		return fmt.Errorf("limpar regras do endpoint %d: %w", id, err)
+	}
+	if err := gravarComposicao(ctx, tx, id, f); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -192,14 +248,32 @@ func (r *RepositorioSQLite) Remover(ctx context.Context, id int64) error {
 	return nil
 }
 
-func gravarComposicao(ctx context.Context, tx *sql.Tx, endpointID int64, upstreamIDs []int64) error {
+func gravarComposicao(ctx context.Context, tx *sql.Tx, endpointID int64, f Form) error {
 	// A ordem da composição é a ordem em que o admin marcou, e ela decide qual
 	// upstream ganha o nome quando dois expõem a mesma ferramenta.
-	for ordem, upstreamID := range slices.Compact(slices.Sorted(slices.Values(upstreamIDs))) {
+	for ordem, upstreamID := range slices.Compact(slices.Sorted(slices.Values(f.UpstreamIDs))) {
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO endpoint_upstream (endpoint_id, upstream_id, prefixo, ordem)
-VALUES (?, ?, '', ?)`, endpointID, upstreamID, ordem); err != nil {
+VALUES (?, ?, ?, ?)`, endpointID, upstreamID, f.Prefixo(upstreamID), ordem); err != nil {
 			return fmt.Errorf("compor endpoint %d com upstream %d: %w", endpointID, upstreamID, err)
+		}
+		if err := gravarRegras(ctx, tx, endpointID, upstreamID, f.Regras(upstreamID)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// gravarRegras grava as regras de um upstream naquele endpoint, na ordem em que
+// o admin as escreveu — que é a ordem em que elas são avaliadas.
+func gravarRegras(ctx context.Context, tx *sql.Tx, endpointID, upstreamID int64, regras []catalogo.Regra) error {
+	for ordem, regra := range regras {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO endpoint_tool_rule (endpoint_id, upstream_id, ordem, acao, padrao, renome)
+VALUES (?, ?, ?, ?, ?, ?)`,
+			endpointID, upstreamID, ordem, string(regra.Acao), regra.Padrao, regra.Renome); err != nil {
+			return fmt.Errorf("gravar regra %d do endpoint %d com upstream %d: %w",
+				ordem, endpointID, upstreamID, err)
 		}
 	}
 	return nil
