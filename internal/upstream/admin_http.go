@@ -78,9 +78,18 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 	webui.Renderizar(w, r, http.StatusOK, a.log, TelaLista(linhas, webui.Avisos(r, avisos)))
 }
 
+// formNovo abre o formulário do tipo pedido na query.
+//
+// O tipo entra pela URL e não por um seletor dentro do formulário porque ele não
+// muda depois: um upstream HTTP e um upstream STDIO pedem campos diferentes, e
+// um formulário que mostra os dois conjuntos ao mesmo tempo obriga o admin a
+// adivinhar quais valem.
 func (a *Admin) formNovo(w http.ResponseWriter, r *http.Request) {
-	form := Form{TimeoutMS: TimeoutPadraoMS, Habilitado: true}
-	form.CompletarHeaders(nil)
+	form := Form{Tipo: TipoHTTP, TimeoutMS: TimeoutPadraoMS, Habilitado: true}
+	if r.URL.Query().Get("tipo") == TipoSTDIO {
+		form.Tipo = TipoSTDIO
+	}
+	form.CompletarCredenciais(nil)
 	webui.Renderizar(w, r, http.StatusOK, a.log, TelaForm(form))
 }
 
@@ -96,9 +105,9 @@ func (a *Admin) reexibir(w http.ResponseWriter, r *http.Request, status int, for
 			webui.ErroInterno(w, r, a.log, err)
 			return
 		}
-		form.CompletarHeaders(definidas)
+		form.CompletarCredenciais(definidas)
 	} else {
-		form.CompletarHeaders(nil)
+		form.CompletarCredenciais(nil)
 	}
 	webui.Renderizar(w, r, status, a.log, TelaForm(form))
 }
@@ -126,11 +135,9 @@ func (a *Admin) criar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	form.ID = id
-	a.aplicarNoAr(r.Context(), Registro{
-		ID: id, Nome: form.Nome, Tipo: TipoHTTP, URL: form.URL,
-		TimeoutMS: form.TimeoutMS, Habilitado: form.Habilitado,
-	})
-	a.log.Info("upstream criado", "upstream", form.Nome, "upstream_id", id)
+	a.aplicarNoAr(r.Context(), registroDoForm(id, form))
+	a.log.Info("upstream criado",
+		"upstream", form.Nome, "upstream_id", id, "tipo", form.TipoEfetivo())
 	webui.Redirecionar(w, r, webui.RotaUpstreams+"/"+strconv.FormatInt(id, 10)+"?aviso=criado")
 }
 
@@ -214,7 +221,13 @@ func (a *Admin) formEditar(w http.ResponseWriter, r *http.Request) {
 	form := Form{
 		ID:         reg.ID,
 		Nome:       reg.Nome,
+		Tipo:       reg.Tipo,
 		URL:        reg.URL,
+		Comando:    reg.Comando,
+		ArgsTexto:  TextoDeArgs(reg.Args),
+		Args:       reg.Args,
+		EnvTexto:   TextoDeEnv(reg.Env),
+		Env:        reg.Env,
 		TimeoutMS:  reg.TimeoutMS,
 		Habilitado: reg.Habilitado,
 	}
@@ -223,7 +236,7 @@ func (a *Admin) formEditar(w http.ResponseWriter, r *http.Request) {
 		webui.ErroInterno(w, r, a.log, err)
 		return
 	}
-	form.CompletarHeaders(definidas)
+	form.CompletarCredenciais(definidas)
 	webui.Renderizar(w, r, http.StatusOK, a.log, TelaForm(form))
 }
 
@@ -238,6 +251,10 @@ func (a *Admin) atualizar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	form.ID = reg.ID
+	// O tipo vem do banco e não do corpo da requisição: ele não é editável, e
+	// aceitá-lo do formulário deixaria um POST forjado trocar o transporte de um
+	// upstream sem que nada na tela dissesse isso.
+	form.Tipo = reg.Tipo
 	if !form.Validar() {
 		a.reexibir(w, r, http.StatusUnprocessableEntity, form)
 		return
@@ -257,12 +274,9 @@ func (a *Admin) atualizar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.aplicarNoAr(r.Context(), Registro{
-		ID: reg.ID, Nome: form.Nome, Tipo: TipoHTTP, URL: form.URL,
-		TimeoutMS: form.TimeoutMS, Habilitado: form.Habilitado,
-	})
+	a.aplicarNoAr(r.Context(), registroDoForm(reg.ID, form))
 	a.log.Info("upstream atualizado", "upstream", form.Nome, "upstream_id", reg.ID,
-		"habilitado", form.Habilitado)
+		"tipo", form.TipoEfetivo(), "habilitado", form.Habilitado)
 	webui.Redirecionar(w, r, webui.RotaUpstreams+"/"+strconv.FormatInt(reg.ID, 10)+"?aviso=salvo")
 }
 
@@ -351,14 +365,64 @@ func lerForm(r *http.Request) (Form, error) {
 	}
 	return Form{
 		Nome:      r.PostFormValue("nome"),
+		Tipo:      r.PostFormValue("tipo"),
 		URL:       r.PostFormValue("url"),
+		Comando:   r.PostFormValue("comando"),
+		ArgsTexto: r.PostFormValue("args"),
+		EnvTexto:  r.PostFormValue("env"),
 		TimeoutMS: timeout,
 		// Checkbox só chega quando marcado.
 		Habilitado:   r.PostFormValue("habilitado") != "",
 		Bearer:       cripto.Segredo(r.PostFormValue("bearer")),
 		BearerLimpar: r.PostFormValue("bearer_limpar") != "",
 		Headers:      lerHeaders(r.PostForm),
+		EnvSecretos:  lerEnvSecretos(r.PostForm),
 	}, nil
+}
+
+// registroDoForm monta o registro que vai para o gerente depois de o banco já
+// ter aceitado o formulário.
+//
+// Existe para que criar e atualizar não repitam a lista de campos: repetição
+// aqui é como um campo novo entra no banco e não entra na supervisão, e o
+// sintoma é "salvei e não mudou nada até reiniciar".
+func registroDoForm(id int64, f Form) Registro {
+	return Registro{
+		ID:         id,
+		Nome:       f.Nome,
+		Tipo:       f.TipoEfetivo(),
+		URL:        f.URL,
+		Comando:    f.Comando,
+		Args:       f.Args,
+		Env:        f.Env,
+		TimeoutMS:  f.TimeoutMS,
+		Habilitado: f.Habilitado,
+	}
+}
+
+// lerEnvSecretos lê as linhas de variável de ambiente cifrada.
+//
+// Mesma mecânica dos headers: env_nome e env_valor são arrays paralelos na ordem
+// do documento, e o checkbox de limpar viaja por nome porque checkbox só é
+// enviado quando marcado e desalinharia os dois arrays.
+func lerEnvSecretos(campos url.Values) []CampoEnv {
+	nomes := campos["env_nome"]
+	valores := campos["env_valor"]
+
+	limpar := make(map[string]bool, len(campos["env_limpar"]))
+	for _, nome := range campos["env_limpar"] {
+		limpar[strings.TrimSpace(nome)] = true
+	}
+
+	out := make([]CampoEnv, 0, len(nomes))
+	for i, nome := range nomes {
+		e := CampoEnv{Nome: nome, Limpar: limpar[strings.TrimSpace(nome)]}
+		if i < len(valores) {
+			e.Valor = cripto.Segredo(valores[i])
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // lerHeaders lê as linhas de header estático do formulário.

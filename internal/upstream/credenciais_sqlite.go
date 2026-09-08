@@ -112,6 +112,28 @@ func (r *RepositorioSQLite) aplicarCredenciais(ctx context.Context, tx *sql.Tx, 
 			return err
 		}
 	}
+
+	// As variáveis de ambiente sensíveis seguem exatamente a mesma regra: mesma
+	// tabela, mesma cifra, mesmo "em branco mantém, limpar apaga". O que muda é
+	// só onde o valor é apresentado — bloco de ambiente do processo em vez de
+	// header da requisição.
+	for _, e := range f.EnvSecretos {
+		if e.Nome == "" {
+			continue
+		}
+		if e.Limpar {
+			if err := apagarCredencial(ctx, tx, upstreamID, CredencialEnv, e.Nome); err != nil {
+				return err
+			}
+			continue
+		}
+		if e.Valor.Vazio() {
+			continue
+		}
+		if err := r.gravarCredencial(ctx, tx, upstreamID, CredencialEnv, e.Nome, e.Valor); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -2,7 +2,10 @@ package upstream
 
 import (
 	"context"
+	"errors"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,13 +29,30 @@ const (
 
 // Registro é o upstream como ele está no banco.
 type Registro struct {
-	ID         int64
-	Nome       string
-	Tipo       string
-	URL        string
+	ID      int64
+	Nome    string
+	Tipo    string
+	URL     string
+	Comando string
+	Args    []string
+	// Env são as variáveis não sensíveis. As sensíveis moram em upstream_secret
+	// e não passam por aqui — Registro alimenta a tela.
+	Env        map[string]string
 	TimeoutMS  int64
 	Habilitado bool
 	UltimoErro string
+}
+
+// STDIO informa se o upstream é um processo local.
+func (r Registro) STDIO() bool { return r.Tipo == TipoSTDIO }
+
+// Descricao é a linha de identificação do upstream na lista: a URL para HTTP, a
+// linha de comando para STDIO.
+func (r Registro) Descricao() string {
+	if r.Tipo == TipoSTDIO {
+		return LinhaDeComando(r.Comando, r.Args)
+	}
+	return r.URL
 }
 
 // Config traduz o registro para a configuração que o gerente supervisiona.
@@ -42,8 +62,28 @@ func (r Registro) Config() Config {
 		Nome:    r.Nome,
 		Tipo:    r.Tipo,
 		URL:     r.URL,
+		Comando: r.Comando,
+		Args:    r.Args,
+		Env:     r.Env,
 		Timeout: time.Duration(r.TimeoutMS) * time.Millisecond,
 	}
+}
+
+// LinhaDeComando junta comando e argumentos para exibição.
+//
+// Só para a tela: o processo recebe os argumentos como vetor, e reconstruir a
+// linha nunca é o caminho de volta. Argumento com espaço aparece entre aspas
+// para o admin não confundir dois argumentos com um.
+func LinhaDeComando(comando string, args []string) string {
+	partes := make([]string, 0, len(args)+1)
+	partes = append(partes, comando)
+	for _, a := range args {
+		if strings.ContainsAny(a, " \t\"") {
+			a = strconv.Quote(a)
+		}
+		partes = append(partes, a)
+	}
+	return strings.Join(partes, " ")
 }
 
 // LinhasHeaderEmBranco é quantas linhas vazias de header estático o formulário
@@ -63,17 +103,66 @@ type CampoHeader struct {
 	Erro     string
 }
 
-// Form é o formulário de upstream HTTP.
+// LinhasEnvEmBranco é quantas linhas vazias de variável sensível o formulário
+// oferece além das já gravadas.
+const LinhasEnvEmBranco = 2
+
+// LimiteDeArgs e LimiteDeEnv recusam formulário absurdo antes de ele virar um
+// bloco de argumentos ou de ambiente absurdo. Não é limite de produto: é o
+// mesmo motivo pelo qual o timeout tem teto.
+const (
+	LimiteDeArgs = 64
+	LimiteDeEnv  = 64
+)
+
+// CampoEnv é uma linha da tabela de variáveis de ambiente sensíveis.
 //
-// Bearer e headers estáticos são a classe de segredo que o patchbay apresenta:
-// cifra reversível em repouso, e nunca de volta à tela. O que a tela mostra é
-// "definido" ou "não definido", com a opção de trocar ou de limpar.
+// Mesma forma e mesma regra do CampoHeader: valor em branco mantém o gravado,
+// apagar é explícito pelo Limpar. São dois tipos e não um porque o que a tela
+// pede em cada um é diferente — nome de header é um token da RFC 9110, nome de
+// variável é um identificador POSIX — e unificá-los faria a validação aceitar
+// nos dois o que só vale num.
+type CampoEnv struct {
+	Nome     string
+	Valor    cripto.Segredo
+	Definido bool
+	Limpar   bool
+	Erro     string
+}
+
+// Form é o formulário de upstream, HTTP ou STDIO.
+//
+// Bearer, headers estáticos e variáveis de ambiente sensíveis são a classe de
+// segredo que o patchbay apresenta: cifra reversível em repouso, e nunca de
+// volta à tela. O que a tela mostra é "definido" ou "não definido", com a opção
+// de trocar ou de limpar.
 type Form struct {
-	ID         int64
-	Nome       string
+	ID   int64
+	Nome string
+	// Tipo é http ou stdio. Vazio é http, para que o formulário antigo — e todo
+	// teste que o monta sem tipo — continue significando o que significava.
+	Tipo       string
 	URL        string
 	TimeoutMS  int64
 	Habilitado bool
+
+	// Comando é o programa do upstream stdio.
+	Comando string
+	// ArgsTexto é a caixa de texto com um argumento por linha, e Args é o que
+	// a validação extraiu dela.
+	//
+	// Uma linha por argumento, e não uma linha de comando partida por espaço:
+	// argumento com espaço dentro é normal — um caminho do Windows, um prompt —
+	// e qualquer separador escolhido aqui viraria uma regra de escape que o
+	// admin descobre errando.
+	ArgsTexto string
+	Args      []string
+	// EnvTexto é a caixa NOME=valor por linha das variáveis não sensíveis, e
+	// Env é o que a validação extraiu dela.
+	EnvTexto string
+	Env      map[string]string
+	// EnvSecretos são as variáveis cifradas, uma linha por variável.
+	EnvSecretos []CampoEnv
 
 	// Bearer é o token novo. Vazio mantém o gravado.
 	Bearer cripto.Segredo
@@ -88,15 +177,40 @@ type Form struct {
 	Erros map[string]string
 }
 
+// TipoEfetivo normaliza o tipo do formulário. Vazio é http.
+func (f Form) TipoEfetivo() string {
+	if f.Tipo == TipoSTDIO {
+		return TipoSTDIO
+	}
+	return TipoHTTP
+}
+
+// STDIO informa se o formulário descreve um processo local.
+func (f Form) STDIO() bool { return f.TipoEfetivo() == TipoSTDIO }
+
 // Validar preenche Erros e informa se o formulário passa.
 func (f *Form) Validar() bool {
 	f.Erros = map[string]string{}
 	f.Nome = strings.TrimSpace(f.Nome)
-	f.URL = strings.TrimSpace(f.URL)
+	f.Tipo = f.TipoEfetivo()
 
 	if f.Nome == "" {
 		f.Erros["nome"] = "Dê um nome ao upstream."
 	}
+	if f.Tipo == TipoSTDIO {
+		f.validarProcesso()
+	} else {
+		f.validarURL()
+	}
+	if f.TimeoutMS < TimeoutMinimoMS || f.TimeoutMS > TimeoutMaximoMS {
+		f.Erros["timeout_ms"] = "Use um valor entre 250 e 120000 milissegundos."
+	}
+	f.validarCredenciais()
+	return len(f.Erros) == 0
+}
+
+func (f *Form) validarURL() {
+	f.URL = strings.TrimSpace(f.URL)
 	switch u, err := url.Parse(f.URL); {
 	case f.URL == "":
 		f.Erros["url"] = "Informe a URL do endpoint MCP Streamable HTTP do servidor."
@@ -105,11 +219,132 @@ func (f *Form) Validar() bool {
 	case u.Scheme != "http" && u.Scheme != "https":
 		f.Erros["url"] = "Só http e https são aceitos aqui."
 	}
-	if f.TimeoutMS < TimeoutMinimoMS || f.TimeoutMS > TimeoutMaximoMS {
-		f.Erros["timeout_ms"] = "Use um valor entre 250 e 120000 milissegundos."
+}
+
+// validarProcesso recusa o que o supervisor não conseguiria lançar, e diz na
+// tela qual campo está errado.
+//
+// A existência do executável não é conferida aqui de propósito: o PATH do
+// processo patchbay pode mudar entre o salvar e o próximo restart, e recusar o
+// cadastro por causa disso transformaria um erro de execução — que a tela já
+// mostra como último erro, com backoff e reconexão — num erro de formulário que
+// o admin não tem como resolver.
+func (f *Form) validarProcesso() {
+	f.Comando = strings.TrimSpace(f.Comando)
+	if f.Comando == "" {
+		f.Erros["comando"] = "Informe o programa a executar, por exemplo npx ou uvx."
+	} else if strings.ContainsAny(f.Comando, "\x00\n\r") {
+		f.Erros["comando"] = "O comando não pode ter quebra de linha nem caractere nulo."
 	}
-	f.validarCredenciais()
-	return len(f.Erros) == 0
+
+	f.Args = linhas(f.ArgsTexto)
+	switch {
+	case len(f.Args) > LimiteDeArgs:
+		f.Erros["args"] = "São no máximo " + strconv.Itoa(LimiteDeArgs) + " argumentos."
+		f.Args = nil
+	case argComCaractereNulo(f.Args):
+		// Mesma regra do comando e do valor de variável de ambiente: um vetor
+		// de argumentos vai para exec.Command como está, sem shell no meio, e
+		// o caractere nulo é o único jeito de um argumento confundir o exec
+		// por baixo — o valor de env já recusa isto em lerParesEnv.
+		f.Erros["args"] = "Nenhum argumento pode ter caractere nulo."
+		f.Args = nil
+	}
+
+	env, err := lerParesEnv(f.EnvTexto)
+	switch {
+	case err != nil:
+		f.Erros["env"] = err.Error()
+	case len(env) > LimiteDeEnv:
+		f.Erros["env"] = "São no máximo " + strconv.Itoa(LimiteDeEnv) + " variáveis."
+	default:
+		f.Env = env
+	}
+}
+
+// linhas quebra uma caixa de texto em itens, uma linha por item, descartando as
+// vazias. Não faz trim do conteúdo: um argumento pode legitimamente terminar em
+// espaço, e comer isso em silêncio seria pior que o incômodo de ver a linha em
+// branco sumir.
+func linhas(texto string) []string {
+	var out []string
+	for _, linha := range strings.Split(texto, "\n") {
+		linha = strings.TrimRight(linha, "\r")
+		if strings.TrimSpace(linha) == "" {
+			continue
+		}
+		out = append(out, linha)
+	}
+	return out
+}
+
+// lerParesEnv lê a caixa de NOME=valor por linha.
+func lerParesEnv(texto string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, linha := range linhas(texto) {
+		nome, valor, ok := strings.Cut(linha, "=")
+		nome = strings.TrimSpace(nome)
+		_, repetido := out[nome]
+		switch {
+		case !ok:
+			return nil, errors.New("Cada linha precisa ser NOME=valor. Faltou o = em: " + resumir(linha))
+		case !NomeDeVariavelValido(nome):
+			return nil, errors.New("Nome de variável inválido: " + resumir(nome) +
+				". Use letras, dígitos e _, começando por letra ou _.")
+		case strings.ContainsRune(valor, 0):
+			return nil, errors.New("O valor de " + nome + " tem caractere nulo.")
+		case repetido:
+			return nil, errors.New("A variável " + nome + " aparece duas vezes.")
+		}
+		out[nome] = valor
+	}
+	return out, nil
+}
+
+// resumir corta texto de usuário antes de ele entrar numa mensagem de tela.
+func resumir(s string) string {
+	const limite = 40
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 {
+			return ' '
+		}
+		return r
+	}, s)
+	if len(s) > limite {
+		return s[:limite] + "…"
+	}
+	return s
+}
+
+// argComCaractereNulo informa se algum argumento tem um \x00, que quebraria o
+// vetor de argv do processo por baixo do exec.
+func argComCaractereNulo(args []string) bool {
+	for _, a := range args {
+		if strings.ContainsRune(a, 0) {
+			return true
+		}
+	}
+	return false
+}
+
+// NomeDeVariavelValido aceita o identificador de variável de ambiente do POSIX.
+//
+// Existe para que a UI recuse na hora: um nome com '=' ou espaço dentro produz
+// um bloco de ambiente que o filho lê torto, e o sintoma aparece muito depois,
+// como "a variável não chegou".
+func NomeDeVariavelValido(nome string) bool {
+	if nome == "" {
+		return false
+	}
+	for i, r := range nome {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_':
+		case r >= '0' && r <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // validarCredenciais recusa o que viraria requisição malformada ou header
@@ -149,6 +384,47 @@ func (f *Form) validarCredenciais() {
 	}
 	if comErro {
 		f.Erros["headers"] = "Corrija os headers marcados abaixo."
+	}
+	f.validarEnvSecretos()
+}
+
+// validarEnvSecretos recusa nome de variável inválido e repetição.
+//
+// Roda para qualquer tipo, e não só para stdio: um upstream que já teve
+// variáveis gravadas e foi trocado para HTTP continua com as linhas na tela, e
+// deixá-las passar sem validação seria gravar lixo que só apareceria no dia em
+// que ele voltasse a ser stdio.
+func (f *Form) validarEnvSecretos() {
+	vistos := make(map[string]bool, len(f.EnvSecretos))
+	comErro := false
+	for i := range f.EnvSecretos {
+		e := &f.EnvSecretos[i]
+		e.Nome = strings.TrimSpace(e.Nome)
+		e.Erro = ""
+
+		switch {
+		case e.Nome == "" && e.Valor.Vazio():
+			// Linha em branco: o formulário sempre oferece algumas.
+			continue
+		case e.Nome == "":
+			e.Erro = "Informe o nome da variável."
+		case !NomeDeVariavelValido(e.Nome):
+			e.Erro = "Nome inválido. Use letras, dígitos e _, começando por letra ou _."
+		case vistos[e.Nome]:
+			e.Erro = "Esta variável já aparece acima."
+		case f.Env[e.Nome] != "":
+			e.Erro = "Esta variável também está na lista em claro acima. Deixe-a só num lugar."
+		case strings.ContainsRune(e.Valor.Revelar(), 0):
+			e.Erro = "O valor não pode ter caractere nulo."
+		}
+		if e.Erro != "" {
+			comErro = true
+			continue
+		}
+		vistos[e.Nome] = true
+	}
+	if comErro {
+		f.Erros["env_secreto"] = "Corrija as variáveis marcadas abaixo."
 	}
 }
 
@@ -195,6 +471,79 @@ func (f *Form) CompletarHeaders(definidas []CredencialDefinida) {
 	for ; emBranco < LinhasHeaderEmBranco; emBranco++ {
 		f.Headers = append(f.Headers, CampoHeader{})
 	}
+}
+
+// CompletarCredenciais preenche as linhas de header e de variável sensível a
+// partir do que está gravado. É o que a borda HTTP chama antes de desenhar o
+// formulário.
+func (f *Form) CompletarCredenciais(definidas []CredencialDefinida) {
+	f.CompletarHeaders(definidas)
+	f.CompletarEnvSecretos(definidas)
+}
+
+// CompletarEnvSecretos acrescenta ao formulário as variáveis sensíveis já
+// gravadas e as linhas em branco para as novas.
+//
+// Mesma regra do CompletarHeaders: o que o admin digitou tem prioridade sobre o
+// que veio do banco, porque esta função também roda ao reexibir um formulário
+// recusado pela validação.
+func (f *Form) CompletarEnvSecretos(definidas []CredencialDefinida) {
+	digitados := make(map[string]bool, len(f.EnvSecretos))
+	for _, e := range f.EnvSecretos {
+		if e.Nome != "" {
+			digitados[e.Nome] = true
+		}
+	}
+
+	existentes := make([]CampoEnv, 0, len(definidas))
+	for _, d := range definidas {
+		if d.Tipo == CredencialEnv && !digitados[d.Nome] {
+			existentes = append(existentes, CampoEnv{Nome: d.Nome, Definido: true})
+		}
+	}
+	for i := range f.EnvSecretos {
+		for _, d := range definidas {
+			if d.Tipo == CredencialEnv && d.Nome == f.EnvSecretos[i].Nome {
+				f.EnvSecretos[i].Definido = true
+			}
+		}
+	}
+	f.EnvSecretos = append(existentes, f.EnvSecretos...)
+
+	emBranco := 0
+	for _, e := range f.EnvSecretos {
+		if e.Nome == "" {
+			emBranco++
+		}
+	}
+	for ; emBranco < LinhasEnvEmBranco; emBranco++ {
+		f.EnvSecretos = append(f.EnvSecretos, CampoEnv{})
+	}
+}
+
+// TextoDeArgs e TextoDeEnv devolvem o que a caixa de texto do formulário mostra
+// ao editar um upstream existente.
+func TextoDeArgs(args []string) string { return strings.Join(args, "\n") }
+
+// TextoDeEnv ordena as variáveis por nome: a caixa de texto é reexibida a cada
+// edição, e uma ordem que muda sozinha faz o admin achar que alguém mexeu.
+func TextoDeEnv(env map[string]string) string {
+	nomes := make([]string, 0, len(env))
+	for nome := range env {
+		nomes = append(nomes, nome)
+	}
+	sort.Strings(nomes)
+
+	var b strings.Builder
+	for i, nome := range nomes {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(nome)
+		b.WriteByte('=')
+		b.WriteString(env[nome])
+	}
+	return b.String()
 }
 
 // Linha é um upstream na lista da UI.
@@ -267,6 +616,34 @@ func (d Detalhe) HeadersEstaticos() []CredencialDefinida {
 		}
 	}
 	return out
+}
+
+// VariaveisSecretas devolve só os nomes das variáveis de ambiente cifradas.
+func (d Detalhe) VariaveisSecretas() []CredencialDefinida {
+	var out []CredencialDefinida
+	for _, c := range d.Credenciais {
+		if c.Tipo == CredencialEnv {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// VariaveisEmClaro devolve as variáveis não sensíveis em ordem de nome, para a
+// tela de detalhe.
+func (d Detalhe) VariaveisEmClaro() []ParEnv {
+	out := make([]ParEnv, 0, len(d.Env))
+	for nome, valor := range d.Env {
+		out = append(out, ParEnv{Nome: nome, Valor: valor})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Nome < out[j].Nome })
+	return out
+}
+
+// ParEnv é uma variável de ambiente não sensível, do jeito que a tela a mostra.
+type ParEnv struct {
+	Nome  string
+	Valor string
 }
 
 // NomeExpostoDe traduz uma ferramenta bruta no nome que o cliente veria, com os

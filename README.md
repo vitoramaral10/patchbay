@@ -5,12 +5,12 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: fatias **1, 2, 3, 4, 6 e 10** do épico entregues — catálogo e
-> endpoint, resiliência de upstream, composição fina do endpoint, segredos
-> cifrados em repouso e o authorization server essencial. Upstream STDIO
-> (fatia 5) está pronto em branch, aguardando merge. OAuth de upstream
-> (fatias 7-8), sonda funcional (fatia 9) e CIMD/DCR/redirect URI de loopback
-> (fatia 11) seguem pendentes.
+> Estado: fatias **1, 2, 3, 4, 5, 6 e 10** do épico entregues — catálogo e
+> endpoint, resiliência de upstream, composição fina do endpoint, upstream
+> STDIO com supervisor de processo, segredos cifrados em repouso e o
+> authorization server essencial. OAuth de upstream (fatias 7-8), sonda
+> funcional (fatia 9) e CIMD/DCR/redirect URI de loopback (fatia 11) seguem
+> pendentes.
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
@@ -30,7 +30,14 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
   Ferramenta que sai do catálogo deixa uma **lápide** por uma janela de graça:
   continua listada e responde com um erro de ferramenta explicando que saiu, em
   vez de o cliente receber `unknown tool` e concluir que o endpoint quebrou.
-- `internal/upstream` — uma sessão MCP por servidor HTTP configurado, conectada
+- `internal/platform/stdioproc` — o supervisor de processo: **process group** no
+  Linux e no macOS, **Job Object** no Windows, com `KILL_ON_JOB_CLOSE`. É o
+  único pacote que fala `syscall`/`golang.org/x/sys/windows`, e existe separado
+  para o supervisor ser testável com um processo que pendura de propósito, sem
+  MCP no meio. `(*os.Process).Kill` mata só o filho direto e deixa o **neto**
+  vivo — `npx` lança `node`, `uvx` lança `python` —, e é esse neto que vazava um
+  processo por reconexão até esgotar os PIDs da máquina no gateway anterior.
+- `internal/upstream` — uma sessão MCP por servidor configurado, conectada
   em goroutine de supervisão. Nenhuma operação de upstream no caminho da
   requisição do cliente. **Adicionar, reconfigurar e remover upstream valem em
   tempo de execução**, sem reiniciar o processo. A máquina de estados da seção
@@ -39,7 +46,10 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
   automática, e backoff exponencial próprio com jitter e teto — sem
   `cenkalti/backoff`, com relógio injetado. **Nenhum estado de erro é
   persistido:** o banco guarda só `habilitado`, e todo boot recomeça em
-  `novo → conectando`.
+  `novo → conectando`. **Dois transportes na mesma máquina de estados:**
+  Streamable HTTP e STDIO — um processo por servidor, compartilhado por todas as
+  sessões de cliente, com a árvore inteira morrendo junto e restart pelo mesmo
+  backoff.
 - `internal/endpoint` — um `*mcp.Server` e um `StreamableHTTPHandler` vivos por
   endpoint, servidos em `/mcp/{slug}` com sessão retida. **Catálogo parcial
   servido sem hesitar:** endpoint com três upstreams e um degradado serve as
@@ -69,7 +79,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
 | `/admin/setup` | Cria o administrador único. Existe **só** no primeiro acesso |
 | `/admin/login` · `/admin/sair` | Entrada e saída |
 | `/admin/` | Painel: upstreams por estado, endpoints, ferramentas, chaves |
-| `/admin/upstreams` | CRUD de upstream HTTP com bearer e headers estáticos; detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora |
+| `/admin/upstreams` | CRUD de upstream HTTP (bearer e headers estáticos) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora |
 | `/admin/endpoints` | CRUD de endpoint com composição fina — quais upstreams entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada upstream dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
 
@@ -159,6 +169,81 @@ pela tela: upstream → endpoint → chave → o cliente MCP conecta.
 
 O `patchbay seed` continua existindo como ferramenta de desenvolvimento (cria
 endpoint, upstream e chave por SQL), mas **não é mais necessário**.
+
+## Upstream STDIO
+
+Um servidor MCP que não fala HTTP: o patchbay o executa como processo filho e
+conversa com ele pelo stdin e stdout. É o caso de `@modelcontextprotocol/server-filesystem`,
+dos servidores lançados por `npx` e `uvx`, e de qualquer binário local.
+
+**Um processo por upstream, compartilhado por todas as sessões de cliente.** Não
+um por sessão: spawn por sessão é o que vazava um processo vivo por reconexão até
+esgotar os PIDs da máquina no gateway anterior. O `jsonrpc2` do go-sdk já
+multiplexa chamadas concorrentes sobre uma sessão só, então não há multiplexador
+para escrever — o que sobra é o ciclo de vida do processo.
+
+### Cadastrar
+
+Em `/admin/upstreams`, botão **Novo processo STDIO**. O formulário pede:
+
+| Campo | O quê |
+|---|---|
+| **Comando** | O programa, resolvido pelo `PATH` do processo patchbay: `npx`, `uvx`, `node`, ou um caminho completo |
+| **Argumentos** | **Um por linha.** Nada de linha de comando partida por espaço — argumento com espaço dentro é normal (`C:\Arquivos de Programas\a.js`), e um separador aqui viraria uma regra de escape para você descobrir errando |
+| **Variáveis de ambiente** | `NOME=valor`, uma por linha. Vão **em claro** no banco e aparecem na tela: é o lugar de `NODE_ENV`, nível de log, `PATH` extra |
+| **Variáveis sensíveis** | Mesmo formato dos headers estáticos de um upstream HTTP: cifradas em repouso, nunca reexibidas, campo em branco mantém o gravado, apagar é explícito pelo *limpar* |
+| **Timeout** | Vale para conectar, listar e chamar ferramenta neste upstream |
+
+Exemplo de servidor de arquivos:
+
+```
+Comando:     npx
+Argumentos:  -y
+             @modelcontextprotocol/server-filesystem
+             C:\dados
+```
+
+O processo **herda o ambiente do patchbay** e recebe as variáveis configuradas
+por cima. Sem a herança, um servidor lançado por `npx` não acharia nem o próprio
+interpretador — o erro que apareceria seria `executable file not found`, que não
+diz nada sobre a causa.
+
+Toda variável com prefixo `PATCHBAY_` fica de fora dessa herança, sempre —
+inclusive `PATCHBAY_MASTER_KEY`. Um upstream stdio é um binário de terceiro, e
+receber a chave que cifra os próprios segredos do patchbay no ambiente seria
+entregar a chave do cofre para quem só devia ver o conteúdo já decifrado.
+
+O **tipo não muda depois de criado**. Trocar o transporte de um upstream vivo não
+é editá-lo, é substituí-lo: outras ferramentas, outras credenciais, outro modo de
+falha. Para trocar, crie outro upstream e recomponha os endpoints.
+
+### O que o supervisor garante
+
+- **A árvore inteira morre junto.** O processo nasce num *process group* próprio
+  (Linux, macOS) ou num *Job Object* com `KILL_ON_JOB_CLOSE` (Windows). Ao
+  encerrar — desligamento, remoção, reconfiguração, hang —, morre o processo
+  **e todo neto que ele tenha lançado**. `npx` lança `node`; matar só o `npx`
+  deixaria o `node` rodando para sempre.
+- **A despedida é a do protocolo, e só depois vem a força.** Fechar a sessão
+  fecha o stdin do processo, que é o que a especificação do transporte STDIO
+  pede; o supervisor espera ele sair sozinho e só então varre a árvore.
+- **Hang é falha.** Um processo vivo e mudo não morre sozinho, então liveness de
+  PID não o detecta — no Unix `os.FindProcess` sempre devolve sucesso e no
+  Windows não há equivalente de sinal 0. Quem detecta é o timeout: passado ele, o
+  upstream vai a **degradado**, a árvore é morta e o backoff é agendado.
+- **Restart é o mesmo backoff.** Processo que morre sozinho derruba a sessão, o
+  upstream vai a degradado, e a tentativa seguinte sobe um processo novo —
+  exponencial com jitter e teto, com o teto de connects abandonados levando à
+  desabilitação automática, exatamente como num upstream HTTP.
+- **O stderr do processo vai para o log** em nível `debug`, linha a linha e com
+  tamanho limitado. Sem isso, um servidor que morre na primeira linha morre em
+  silêncio.
+- **Timeout de chamada não mata o processo.** Ele é compartilhado por todas as
+  sessões; derrubá-lo por uma chamada lenta trocaria um problema pequeno por um
+  grande. Só a chamada falha.
+
+Isolamento em container está fora do escopo da v1 — o patchbay roda o processo
+nu, e é por isso que a morte de árvore é obrigatória e não opcional.
 
 ## Desenvolver o front-end
 
@@ -265,8 +350,11 @@ Guarde-a onde você guarda segredo de produção, e faça backup dela junto com 
   horária das vencidas.
 - **Duas classes de segredo**: o que o patchbay *verifica* (chave de API, sessão
   de admin) vai como hash, e não volta nunca; o que ele *apresenta* (bearer e
-  header estático de upstream, e adiante os tokens de OAuth) precisa voltar em
-  claro e vai em cifra reversível. Guardar a segunda classe como hash não
+  header estático de upstream, variável de ambiente sensível de upstream STDIO,
+  e adiante os tokens de OAuth) precisa voltar em claro e vai em cifra
+  reversível. O token de um servidor lançado por linha de comando é a mesma
+  classe do bearer de um servidor HTTP: mesma tabela, mesma cifra. A coluna `env`
+  em claro fica para o que não é segredo e o admin precisa poder reler. Guardar a segunda classe como hash não
   funciona; guardar a primeira de forma reversível cria um cofre de credencial
   alheia sem necessidade.
 - **Cifra em repouso**: AES-256-GCM com chave derivada por HKDF-SHA256 da chave
@@ -276,7 +364,7 @@ Guarde-a onde você guarda segredo de produção, e faça backup dela junto com 
   linhas de uma vez.
 - **AAD com a linha de origem**: o dado autenticado adicional é
   `(tabela, coluna, id)` — para uma credencial de upstream, o id é
-  `<upstream_id>/<tipo>/<nome>`. Copiar o `valor_cifrado` do upstream A para a
+  `<upstream_id>/<tipo>/<nome>`, onde o tipo é `bearer`, `header` ou `env`. Copiar o `valor_cifrado` do upstream A para a
   linha do upstream B falha a autenticação mesmo com a chave certa: quem tem
   escrita no banco e não tem a chave não consegue apontar a credencial de um
   upstream para outro.
@@ -298,6 +386,13 @@ task verifica   # go vet + golangci-lint + go test -race
 
 `-race` exige cgo; no Windows sem compilador C, rode os testes por WSL ou em
 Linux.
+
+Os testes de upstream STDIO sobem **processos de verdade**: o binário de teste se
+reexecuta como servidor MCP, como processo mudo e como neto, e prova que o neto
+morre junto com a árvore. O caso de controle
+(`TestArvore_MatarSoOFilhoDeixaONetoVivo`, em `internal/platform/stdioproc`)
+mata só o filho direto e verifica que o neto **sobrevive** — sem ele, o teste
+principal passaria mesmo que o neto estivesse morrendo por outro motivo.
 
 ## Layout
 

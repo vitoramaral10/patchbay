@@ -32,15 +32,24 @@ func NovoRepositorioSQLite(leitura, escrita *sql.DB, cifrador Cifrador) *Reposit
 	return &RepositorioSQLite{leitura: leitura, escrita: escrita, cifrador: cifrador}
 }
 
-const colunas = `id, nome, tipo, url, timeout_ms, habilitado, ultimo_erro`
+const colunas = `id, nome, tipo, url, comando, args, env, timeout_ms, habilitado, ultimo_erro`
 
 func lerRegistro(scan func(...any) error) (Registro, error) {
 	var (
 		r          Registro
+		args, ambi string
 		habilitado int
 	)
-	if err := scan(&r.ID, &r.Nome, &r.Tipo, &r.URL, &r.TimeoutMS, &habilitado, &r.UltimoErro); err != nil {
+	if err := scan(&r.ID, &r.Nome, &r.Tipo, &r.URL, &r.Comando, &args, &ambi,
+		&r.TimeoutMS, &habilitado, &r.UltimoErro); err != nil {
 		return Registro{}, err
+	}
+	var err error
+	if r.Args, err = decodificarArgs(args); err != nil {
+		return Registro{}, fmt.Errorf("upstream %s: %w", r.Nome, err)
+	}
+	if r.Env, err = decodificarEnv(ambi); err != nil {
+		return Registro{}, fmt.Errorf("upstream %s: %w", r.Nome, err)
 	}
 	r.Habilitado = habilitado == 1
 	return r, nil
@@ -87,6 +96,11 @@ func (r *RepositorioSQLite) Obter(ctx context.Context, id int64) (Registro, erro
 // digitar entraria em supervisão, falharia com 401 e pareceria erro do
 // provedor.
 func (r *RepositorioSQLite) Criar(ctx context.Context, f Form) (int64, error) {
+	args, ambi, err := codificarProcesso(f)
+	if err != nil {
+		return 0, err
+	}
+
 	tx, err := r.escrita.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("upstream: abrir transação: %w", err)
@@ -95,10 +109,11 @@ func (r *RepositorioSQLite) Criar(ctx context.Context, f Form) (int64, error) {
 
 	var id int64
 	err = tx.QueryRowContext(ctx, `
-INSERT INTO upstream (nome, tipo, url, timeout_ms, habilitado, criado_em)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO upstream (nome, tipo, url, comando, args, env, timeout_ms, habilitado, criado_em)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id`,
-		f.Nome, TipoHTTP, f.URL, f.TimeoutMS, booleanoSQL(f.Habilitado), time.Now().Unix()).Scan(&id)
+		f.Nome, f.TipoEfetivo(), f.URL, f.Comando, args, ambi,
+		f.TimeoutMS, booleanoSQL(f.Habilitado), time.Now().Unix()).Scan(&id)
 	if err != nil {
 		if nomeEmUso(ctx, r.leitura, f.Nome, 0) {
 			return 0, ErrNomeEmUso
@@ -114,11 +129,23 @@ RETURNING id`,
 	return id, nil
 }
 
-// Atualizar grava nome, URL, timeout e a intenção de habilitar.
+// Atualizar grava nome, destino (URL ou processo), timeout e a intenção de
+// habilitar.
+//
+// tipo não está na lista de propósito: ele é escolhido na criação e não muda
+// depois. Trocar o transporte de um upstream vivo não é editar o upstream, é
+// trocá-lo por outro — as ferramentas, as credenciais e o modo de falha são
+// outros —, e deixar o campo editável faria um clique errado parecer uma
+// reconfiguração quando é uma substituição.
 //
 // ultimo_erro é zerado junto: ele é texto para a UI descrever a última falha, e
 // depois de uma reconfiguração a falha antiga já não descreve nada.
 func (r *RepositorioSQLite) Atualizar(ctx context.Context, id int64, f Form) error {
+	args, ambi, err := codificarProcesso(f)
+	if err != nil {
+		return err
+	}
+
 	tx, err := r.escrita.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("upstream: abrir transação: %w", err)
@@ -127,9 +154,11 @@ func (r *RepositorioSQLite) Atualizar(ctx context.Context, id int64, f Form) err
 
 	res, err := tx.ExecContext(ctx, `
 UPDATE upstream
-   SET nome = ?, url = ?, timeout_ms = ?, habilitado = ?, ultimo_erro = ''
+   SET nome = ?, url = ?, comando = ?, args = ?, env = ?,
+       timeout_ms = ?, habilitado = ?, ultimo_erro = ''
  WHERE id = ?`,
-		f.Nome, f.URL, f.TimeoutMS, booleanoSQL(f.Habilitado), id)
+		f.Nome, f.URL, f.Comando, args, ambi,
+		f.TimeoutMS, booleanoSQL(f.Habilitado), id)
 	if err != nil {
 		if nomeEmUso(ctx, r.leitura, f.Nome, id) {
 			return ErrNomeEmUso
@@ -214,6 +243,21 @@ SELECT e.slug
 		return nil, fmt.Errorf("upstream: iterar endpoints de %d: %w", id, err)
 	}
 	return out, nil
+}
+
+// codificarProcesso serializa os campos de processo do formulário.
+//
+// Num upstream HTTP eles saem vazios, e é a representação certa: o tipo é
+// escolhido na criação e não muda depois, então um upstream HTTP nunca teve
+// comando nenhum para preservar.
+func codificarProcesso(f Form) (args, ambiente string, err error) {
+	if args, err = codificarArgs(f.Args); err != nil {
+		return "", "", err
+	}
+	if ambiente, err = codificarEnv(f.Env); err != nil {
+		return "", "", err
+	}
+	return args, ambiente, nil
 }
 
 func booleanoSQL(v bool) int {

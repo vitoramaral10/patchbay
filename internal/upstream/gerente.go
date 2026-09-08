@@ -354,13 +354,21 @@ func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) (chegouPront
 	}
 	g.marcarConectando(id)
 
-	sessao, err := g.conectar(ctx, cfg)
+	sessao, processo, err := g.conectar(ctx, cfg)
 	if err != nil {
 		return false, err
 	}
 	defer func() {
 		if err := sessao.Close(); err != nil {
 			g.log.Debug("erro ao fechar sessão de upstream", "upstream", cfg.Nome, "erro", err)
+		}
+		// Fechar a sessão fecha o stdin do processo, que é o adeus que a
+		// especificação do transporte STDIO pede. Encerrar é o que vem depois:
+		// a árvore inteira morre, inclusive o neto que sobreviveu ao pai. Isto
+		// roda na goroutine de supervisão, então quando Aguardar volta não há
+		// processo de upstream vivo — que é o critério da fatia.
+		if processo != nil {
+			processo.Encerrar()
 		}
 		g.esquecerSessao(id)
 	}()
@@ -391,24 +399,19 @@ func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) (chegouPront
 // não responde, e Go não mata goroutine. Vencido o timer, o supervisor abandona
 // a goroutine presa — vazamento deliberado, e é por isso que o abandono é
 // contado, aparece na tela e leva à desabilitação automática no teto.
-func (g *Gerente) conectar(ctx context.Context, cfg Config) (*mcp.ClientSession, error) {
-	if cfg.Tipo != TipoHTTP {
-		return nil, fmt.Errorf("%w: %s", ErrTipoNaoSuportado, cfg.Tipo)
+//
+// O segundo retorno é o processo do upstream, quando o transporte é STDIO. Ele
+// pertence a quem chamou: fechar a sessão fecha o stdin, e recolher a árvore é
+// um passo à parte.
+func (g *Gerente) conectar(ctx context.Context, cfg Config) (*mcp.ClientSession, *processoUpstream, error) {
+	transporte, processo, err := g.transporteDe(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	cliente := mcp.NewClient(&mcp.Implementation{Name: "patchbay", Version: versao.Numero}, &mcp.ClientOptions{
 		Logger: g.log.With("componente", "cliente_upstream", "upstream", cfg.Nome),
 	})
-	// As credenciais estáticas são lidas do banco a cada conexão e entram no
-	// transporte, nunca na URL nem na Config: Config alimenta a UI e o log.
-	clienteHTTP, err := g.clienteDe(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
-	transporte := &mcp.StreamableClientTransport{
-		Endpoint:   cfg.URL,
-		HTTPClient: clienteHTTP,
-	}
 
 	ctxConexao, cancelar := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancelar()
@@ -426,27 +429,63 @@ func (g *Gerente) conectar(ctx context.Context, cfg Config) (*mcp.ClientSession,
 	select {
 	case r := <-pronto:
 		if r.err != nil {
-			return nil, fmt.Errorf("upstream %s: conectar: %w", cfg.Nome, r.err)
+			if processo != nil {
+				processo.EncerrarAgora()
+			}
+			return nil, nil, fmt.Errorf("upstream %s: conectar: %w", cfg.Nome, r.err)
 		}
-		return r.sessao, nil
+		return r.sessao, processo, nil
 	case <-ctxConexao.Done():
 		// A goroutine acima fica para trás de propósito: é a mitigação da
-		// issue #1189, e o resíduo tem que ser visível. Ela deixa duas
+		// issue #1189, e o resíduo tem que ser visível. No HTTP ela deixa duas
 		// goroutines presas — esta e o coletor abaixo, que espera `<-pronto`
 		// para fechar a sessão se ela chegar tarde —, e as duas só somem no
 		// próximo boot.
+		//
+		// No STDIO o desfecho é melhor e o contador é o mesmo de propósito:
+		// matar a árvore fecha o stdout do filho, o Connect preso volta com
+		// erro e as duas goroutines terminam. O que continua valendo é o
+		// diagnóstico — um upstream que pendura sempre passa do teto e se
+		// desabiliza sozinho, com o motivo na tela, em vez de ficar reiniciando
+		// um processo mudo para sempre.
 		consecutivos, totais := g.contarAbandono(cfg.ID)
 		g.log.Warn("connect de upstream abandonado por timeout",
-			"upstream", cfg.Nome, "timeout", cfg.Timeout,
+			"upstream", cfg.Nome, "timeout", cfg.Timeout, "tipo", cfg.Tipo,
 			"abandonos_consecutivos", consecutivos, "abandonos_totais", totais,
 			"teto_abandonos", g.tetoAbandonos)
+		if processo != nil {
+			processo.EncerrarAgora()
+		}
 		go func() {
 			r := <-pronto
 			if r.sessao != nil {
 				_ = r.sessao.Close()
 			}
 		}()
-		return nil, fmt.Errorf("upstream %s: conectar: %w", cfg.Nome, ctxConexao.Err())
+		return nil, nil, fmt.Errorf("upstream %s: conectar: %w", cfg.Nome, ctxConexao.Err())
+	}
+}
+
+// transporteDe monta o transporte do tipo configurado.
+//
+// É o único ponto do gerente que sabe que existe mais de um transporte: daqui
+// para baixo a máquina de estados é a mesma para HTTP e para STDIO, e é isso que
+// faz o backoff, o watchdog, o teto de abandonos e a tela valerem para os dois
+// sem nenhum caso especial.
+func (g *Gerente) transporteDe(ctx context.Context, cfg Config) (mcp.Transport, *processoUpstream, error) {
+	switch cfg.Tipo {
+	case TipoHTTP:
+		// As credenciais estáticas são lidas do banco a cada conexão e entram no
+		// transporte, nunca na URL nem na Config: Config alimenta a UI e o log.
+		clienteHTTP, err := g.clienteDe(ctx, cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: clienteHTTP}, nil, nil
+	case TipoSTDIO:
+		return g.abrirProcesso(ctx, cfg)
+	default:
+		return nil, nil, fmt.Errorf("%w: %s", ErrTipoNaoSuportado, cfg.Tipo)
 	}
 }
 

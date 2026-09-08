@@ -12,15 +12,24 @@
 // jitter e teto, o watchdog de conexão com contador de abandonos e a
 // desabilitação automática ao passar do teto estão aqui; sonda_falhou e
 // sem_consentimento são estados declarados que só as fatias 9 e 7 sabem entrar.
+//
+// Dois transportes chegam nessa máquina pelo mesmo caminho: o Streamable HTTP e
+// o STDIO. No STDIO o upstream é um processo filho, e o ciclo de vida dele —
+// árvore própria no sistema operacional, morte da árvore inteira, restart pelo
+// mesmo backoff — está em stdio.go, sobre internal/platform/stdioproc. É um
+// processo por servidor configurado, compartilhado por todas as sessões de
+// cliente: spawn por sessão é o vazamento de PID que derrubou o gateway
+// anterior.
 package upstream
 
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
-// Tipos de upstream. Só http é servido na fatia 1; sse e stdio existem no
+// Tipos de upstream. http vem da fatia 1 e stdio da fatia 5; sse existe no
 // schema porque a forma é contrato (seções 08.4 e 08.8).
 const (
 	TipoHTTP  = "http"
@@ -73,12 +82,33 @@ const (
 )
 
 // Config é a configuração de um upstream, como ela sai do banco.
+//
+// URL só vale para http; Comando, Args e Env só valem para stdio. Os dois
+// conjuntos convivem na mesma struct porque é uma linha só de tabela e trocar o
+// tipo de um upstream não pode apagar o que o outro modo tinha configurado.
+//
+// Args e Env são imutáveis depois de construídos: Config viaja por valor entre
+// o repositório, o gerente e o processo do upstream, mas os dois campos são
+// slice e map — cópia rasa. Nada aqui muta o conteúdo deles outra vez; reaplicar
+// é sempre construir um Config novo (definir, em gerente.go), nunca editar os
+// já em uso por uma supervisão em curso.
 type Config struct {
 	ID      int64
 	Nome    string
 	Tipo    string
 	URL     string
 	Timeout time.Duration
+
+	// Comando é o programa do upstream stdio, resolvido pelo PATH do processo
+	// patchbay.
+	Comando string
+	// Args são os argumentos já separados. Nunca uma linha de comando a ser
+	// partida por espaço: quebrar string de shell é onde nasce injeção.
+	Args []string
+	// Env são as variáveis de ambiente não sensíveis do processo. As sensíveis
+	// não passam por aqui — elas são lidas cifradas do banco a cada início de
+	// processo, como as credenciais de HTTP, e nunca alimentam a UI nem o log.
+	Env map[string]string
 }
 
 // Validar recusa configuração que o gerente não sabe supervisionar.
@@ -95,7 +125,12 @@ func (c Config) Validar() error {
 			return fmt.Errorf("upstream %s: url vazia", c.Nome)
 		}
 		return nil
-	case TipoSSE, TipoSTDIO:
+	case TipoSTDIO:
+		if strings.TrimSpace(c.Comando) == "" {
+			return fmt.Errorf("upstream %s: comando vazio", c.Nome)
+		}
+		return nil
+	case TipoSSE:
 		return fmt.Errorf("%w: %s", ErrTipoNaoSuportado, c.Tipo)
 	default:
 		return fmt.Errorf("%w: %s", ErrTipoNaoSuportado, c.Tipo)
