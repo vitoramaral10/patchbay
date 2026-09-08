@@ -3,12 +3,14 @@ package endpoint
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/vitoramaral10/patchbay/internal/catalogo"
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
 )
 
@@ -67,7 +69,7 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Admin) formNovo(w http.ResponseWriter, r *http.Request) {
-	opcoes, err := a.ups.Opcoes(r.Context())
+	opcoes, err := a.opcoesDoForm(r.Context(), Form{})
 	if err != nil {
 		webui.ErroInterno(w, r, a.log, err)
 		return
@@ -111,7 +113,7 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	composicao, err := a.composicao(r.Context(), reg.ID)
+	composicao, err := a.composicao(r.Context(), reg)
 	if err != nil {
 		webui.ErroInterno(w, r, a.log, err)
 		return
@@ -120,7 +122,7 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 	webui.Renderizar(w, r, http.StatusOK, a.log, TelaDetalhe(Detalhe{
 		Registro:    reg,
 		URL:         a.urlDo(reg.Slug),
-		Ferramentas: a.srv.Expostos(reg.Slug),
+		Ferramentas: a.ferramentasExpostas(reg.Slug),
 		Lapides:     a.srv.Lapides(reg.Slug),
 		Composicao:  composicao,
 	}, webui.Avisos(r, avisos)))
@@ -131,25 +133,17 @@ func (a *Admin) formEditar(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	escolhidos, err := a.repo.UpstreamsDo(r.Context(), reg.ID)
+	form, err := a.formDe(r.Context(), reg)
 	if err != nil {
 		webui.ErroInterno(w, r, a.log, err)
 		return
 	}
-	opcoes, err := a.opcoesMarcadas(r.Context(), escolhidos)
+	opcoes, err := a.opcoesDoForm(r.Context(), form)
 	if err != nil {
 		webui.ErroInterno(w, r, a.log, err)
 		return
 	}
-	webui.Renderizar(w, r, http.StatusOK, a.log, TelaForm(Form{
-		ID:          reg.ID,
-		Slug:        reg.Slug,
-		Nome:        reg.Nome,
-		Descricao:   reg.Descricao,
-		Instrucoes:  reg.Instrucoes,
-		UpstreamIDs: escolhidos,
-		SlugFixo:    true,
-	}, opcoes))
+	webui.Renderizar(w, r, http.StatusOK, a.log, TelaForm(form, opcoes))
 }
 
 func (a *Admin) atualizar(w http.ResponseWriter, r *http.Request) {
@@ -232,11 +226,13 @@ func (a *Admin) lerForm(r *http.Request, slugFixo bool) (Form, error) {
 		return Form{}, err
 	}
 	form := Form{
-		Slug:       r.PostFormValue("slug"),
-		Nome:       strings.TrimSpace(r.PostFormValue("nome")),
-		Descricao:  strings.TrimSpace(r.PostFormValue("descricao")),
-		Instrucoes: strings.TrimSpace(r.PostFormValue("instrucoes")),
-		SlugFixo:   slugFixo,
+		Slug:        r.PostFormValue("slug"),
+		Nome:        strings.TrimSpace(r.PostFormValue("nome")),
+		Descricao:   strings.TrimSpace(r.PostFormValue("descricao")),
+		Instrucoes:  strings.TrimSpace(r.PostFormValue("instrucoes")),
+		Prefixos:    map[int64]string{},
+		RegrasTexto: map[int64]string{},
+		SlugFixo:    slugFixo,
 	}
 	for _, bruto := range r.PostForm["upstream"] {
 		id, err := strconv.ParseInt(bruto, 10, 64)
@@ -246,12 +242,17 @@ func (a *Admin) lerForm(r *http.Request, slugFixo bool) (Form, error) {
 			continue
 		}
 		form.UpstreamIDs = append(form.UpstreamIDs, id)
+		// Prefixo e regras chegam num campo por upstream, e só os do upstream
+		// marcado entram: campo de upstream desmarcado é sobra de formulário, e
+		// gravá-lo faria uma composição que a tela não mostra.
+		form.Prefixos[id] = strings.TrimSpace(r.PostFormValue(ChavePrefixo(id)))
+		form.RegrasTexto[id] = r.PostFormValue(ChaveRegras(id))
 	}
 	return form, nil
 }
 
 func (a *Admin) reexibir(w http.ResponseWriter, r *http.Request, form Form, status int) {
-	opcoes, err := a.opcoesMarcadas(r.Context(), form.UpstreamIDs)
+	opcoes, err := a.opcoesDoForm(r.Context(), form)
 	if err != nil {
 		webui.ErroInterno(w, r, a.log, err)
 		return
@@ -259,28 +260,129 @@ func (a *Admin) reexibir(w http.ResponseWriter, r *http.Request, form Form, stat
 	webui.Renderizar(w, r, status, a.log, TelaForm(form, opcoes))
 }
 
-func (a *Admin) opcoesMarcadas(ctx context.Context, escolhidos []int64) ([]UpstreamOpcao, error) {
+// opcoesDoForm devolve o catálogo de upstreams já marcado com o que o formulário
+// carrega — inclusive o que a pessoa digitou e ainda não passou na validação.
+func (a *Admin) opcoesDoForm(ctx context.Context, form Form) ([]UpstreamOpcao, error) {
 	opcoes, err := a.ups.Opcoes(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for i := range opcoes {
-		opcoes[i].Escolhido = slices.Contains(escolhidos, opcoes[i].ID)
+		id := opcoes[i].ID
+		opcoes[i].Escolhido = slices.Contains(form.UpstreamIDs, id)
+		opcoes[i].Prefixo = form.Prefixo(id)
+		opcoes[i].Regras = form.RegrasDe(id)
+		opcoes[i].ErroPrefixo = form.Erros[ChavePrefixo(id)]
+		opcoes[i].ErroRegras = form.Erros[ChaveRegras(id)]
+		// O aviso de regra que não casou nada só faz sentido para quem está
+		// marcado e cuja sintaxe já passou — sem isso o textarea reexibe erro
+		// de sintaxe e aviso de "não casou nada" ao mesmo tempo, para a mesma
+		// linha quebrada.
+		if opcoes[i].Escolhido && opcoes[i].ErroRegras == "" {
+			opcoes[i].AvisoRegras = avisoDeRegraSemCasar(opcoes[i].Regras, opcoes[i].NomesOriginais)
+		}
 	}
 	return opcoes, nil
 }
 
-func (a *Admin) composicao(ctx context.Context, id int64) ([]UpstreamOpcao, error) {
-	escolhidos, err := a.repo.UpstreamsDo(ctx, id)
+// avisoDeRegraSemCasar avisa, sem bloquear, de uma regra que não casou nenhuma
+// ferramenta do catálogo vivo do upstream — como uma regra escrita contra o
+// nome já prefixado (seção 1.4 da revisão), que nunca vai casar porque o
+// filtro roda contra o nome original.
+//
+// Não é erro de formulário porque o catálogo vivo é só o snapshot de agora: o
+// upstream pode reconectar depois com ferramentas diferentes, e uma regra que
+// não casa hoje pode passar a casar amanhã sem o admin ter mudado nada.
+func avisoDeRegraSemCasar(regrasTexto string, nomesOriginais []string) string {
+	regras, err := catalogo.AnalisarRegras(regrasTexto)
+	if err != nil {
+		return ""
+	}
+	var semCasar []string
+	for _, r := range regras {
+		casou := false
+		for _, nome := range nomesOriginais {
+			if r.Casa(nome) {
+				casou = true
+				break
+			}
+		}
+		if !casou {
+			semCasar = append(semCasar, string(r.Acao)+" "+r.Padrao)
+		}
+	}
+	if len(semCasar) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("Não casou nenhuma ferramenta do catálogo atual: %s.", strings.Join(semCasar, ", "))
+}
+
+// formDe monta o formulário de edição a partir do que está gravado.
+func (a *Admin) formDe(ctx context.Context, reg Registro) (Form, error) {
+	itens, err := a.repo.ComposicaoDe(ctx, reg.ID)
+	if err != nil {
+		return Form{}, err
+	}
+	form := Form{
+		ID:          reg.ID,
+		Slug:        reg.Slug,
+		Nome:        reg.Nome,
+		Descricao:   reg.Descricao,
+		Instrucoes:  reg.Instrucoes,
+		Prefixos:    make(map[int64]string, len(itens)),
+		RegrasTexto: make(map[int64]string, len(itens)),
+		SlugFixo:    true,
+	}
+	for _, item := range itens {
+		form.UpstreamIDs = append(form.UpstreamIDs, item.UpstreamID)
+		form.Prefixos[item.UpstreamID] = item.Prefixo
+		form.RegrasTexto[item.UpstreamID] = catalogo.TextoDeRegras(item.Regras)
+	}
+	return form, nil
+}
+
+// composicao é a lista da tela de detalhe: só os upstreams que compõem, cada um
+// com o que ele entrega *a este endpoint*.
+func (a *Admin) composicao(ctx context.Context, reg Registro) ([]UpstreamOpcao, error) {
+	form, err := a.formDe(ctx, reg)
 	if err != nil {
 		return nil, err
 	}
-	opcoes, err := a.opcoesMarcadas(ctx, escolhidos)
+	opcoes, err := a.opcoesDoForm(ctx, form)
 	if err != nil {
 		return nil, err
 	}
 	// A tela de detalhe mostra só o que compõe, não o catálogo inteiro.
-	return slices.DeleteFunc(opcoes, func(o UpstreamOpcao) bool { return !o.Escolhido }), nil
+	opcoes = slices.DeleteFunc(opcoes, func(o UpstreamOpcao) bool { return !o.Escolhido })
+
+	// A contagem por upstream vem da materialização, não do banco: é o resultado
+	// da composição, e é a única forma de o número na tela ser o número que o
+	// cliente vê.
+	contagens := a.srv.ContagemPorUpstream(reg.Slug)
+	for i := range opcoes {
+		opcoes[i].NoEndpoint = contagens[opcoes[i].ID]
+	}
+	return opcoes, nil
+}
+
+// ferramentasExpostas monta a lista da tela de detalhe, na mesma ordem de
+// Expostos: quem decide a ordem é o nome exposto, e Detalhes só empresta de
+// onde cada nome veio e o que a composição fez a ele.
+func (a *Admin) ferramentasExpostas(slug string) []FerramentaExposta {
+	nomes := a.srv.Expostos(slug)
+	detalhes := a.srv.Detalhes(slug)
+	out := make([]FerramentaExposta, 0, len(nomes))
+	for _, nome := range nomes {
+		if d, ok := detalhes[nome]; ok {
+			out = append(out, d)
+			continue
+		}
+		// Sem detalhe correspondente não deveria acontecer — Expostos e
+		// Detalhes vêm da mesma materialização —, mas a tela mostra o nome de
+		// qualquer forma em vez de escondê-lo.
+		out = append(out, FerramentaExposta{Nome: nome})
+	}
+	return out
 }
 
 // avisos traduz o ?aviso= da URL na caixa de resultado da ação anterior.

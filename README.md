@@ -5,10 +5,10 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: **fatia 3** do épico — isolamento e resiliência do upstream, sobre as
-> fatias 1, 2 e 6 já entregues. Ainda não tem composição fina de endpoint
-> (fatia 4), upstream STDIO (fatia 5), OAuth de upstream (fatias 7-8), sonda
-> funcional (fatia 9) nem authorization server próprio (fatias 10-11).
+> Estado: **fatia 4** do épico — composição fina do endpoint, sobre as fatias
+> 1, 2, 3 e 6 já entregues. Ainda não tem upstream STDIO (fatia 5), OAuth de
+> upstream (fatias 7-8), sonda funcional (fatia 9) nem authorization server
+> próprio (fatias 10-11).
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
@@ -20,7 +20,9 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
 - `internal/platform/store` — SQLite com WAL, `busy_timeout`, dois pools
   (leitura livre, escritor único) e migrações `goose` embutidas em `embed.FS`.
-- `internal/catalogo` — normalizador obrigatório entre o upstream e o SDK.
+- `internal/catalogo` — a **composição fina** do endpoint (filtro por padrão,
+  renomeação e prefixo, por endpoint) e o normalizador obrigatório entre o
+  upstream e o SDK.
   `(*mcp.Server).AddTool` entra em panic em oito pontos com dado que vem do
   `tools/list` de terceiro; ferramenta que não normaliza é descartada com log.
   Ferramenta que sai do catálogo deixa uma **lápide** por uma janela de graça:
@@ -66,7 +68,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
 | `/admin/login` · `/admin/sair` | Entrada e saída |
 | `/admin/` | Painel: upstreams por estado, endpoints, ferramentas, chaves |
 | `/admin/upstreams` | CRUD de upstream HTTP com bearer e headers estáticos; detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora |
-| `/admin/endpoints` | CRUD de endpoint com composição de upstreams e contagem de ferramentas |
+| `/admin/endpoints` | CRUD de endpoint com composição fina — quais upstreams entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada upstream dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
 
 **Nada exige reiniciar o processo.** Criar, editar, desabilitar ou remover um
@@ -83,6 +85,61 @@ invalidaria em silêncio a credencial de todos os clientes.
 
 A chave de API aparece em texto claro **uma única vez**, na resposta da criação.
 Ela é guardada como hash; depois disso só o prefixo visível continua na tela.
+
+## Composição do endpoint
+
+Cada upstream entra num endpoint com um **prefixo** e uma lista de **regras**, e
+as duas coisas valem só naquele endpoint: o mesmo upstream pode compor `pessoal`
+inteiro e compor `trabalho` com três ferramentas renomeadas. O catálogo é
+descoberto **uma vez por upstream** e composto por endpoint — nenhuma operação
+de upstream acontece no caminho da requisição do cliente.
+
+Uma regra por linha, no formulário do endpoint:
+
+```
+excluir  write_*                  # tira do endpoint tudo que casa
+incluir  write_seguro             # exceção, se vier antes do excluir
+renomear buscar_no_notion buscar  # troca o nome-base
+renomear notion_* nt.*            # o * do renome recebe o que o * do padrão casou
+```
+
+O `*` casa qualquer trecho, inclusive vazio, e é o único metacaractere — não é
+regex. O padrão casa contra o **nome original no upstream**, nunca contra o nome
+já prefixado; e por ser separado por espaço, um padrão não pode conter espaço.
+
+A ordem em que tudo é aplicado, e ela é fixa:
+
+1. **filtro** — vale a primeira regra `incluir`/`excluir` que casa. O que não
+   casa com nenhuma **entra**. Para deixar só um conjunto, feche a lista com
+   `excluir *` no fim — a linha que apaga o resto é uma linha que você escreveu
+   e vê, em vez de um modo implícito;
+2. **renomeação** — vale a primeira regra `renomear` que casa. Só muda o nome
+   exposto: o `tools/call` de saída continua usando o nome do upstream;
+3. **prefixo** do upstream naquele endpoint;
+4. **saneamento** do nome pelas regras do SDK;
+5. **desambiguação** — nome já usado no endpoint ganha sufixo `_2`, `_3`. É a
+   última etapa de propósito: ela vê o nome final, então prefixo e renome
+   resolvem a colisão antes de precisar de sufixo.
+
+O resultado é determinístico — a ordem dos upstreams na composição decide quem
+fica com o nome disputado —, porque o nome exposto é contrato: o cliente pode
+tê-lo em cache de prompt. A desambiguação roda em duas passadas: primeiro
+reserva nome quem manteve o nome nativo do upstream, depois quem foi
+renomeado por regra. Sem isso, uma regra de renome poderia roubar o nome de
+uma ferramenta nativa do mesmo upstream dependendo só da ordem em que o
+`tools/list` a listou — o nome nativo é o que o cliente já pode ter em cache
+de antes de a regra existir.
+
+A contagem aparece **duas vezes** na tela do endpoint: quantas ferramentas ele
+expõe no total e quantas cada upstream entrega *àquele endpoint*. Sem o segundo
+número, um filtro que apagou tudo é indistinguível de um upstream que não
+conectou. Acima de 40 ferramentas o número aparece destacado: é custo de contexto
+que todo cliente daquele endpoint paga.
+
+Mudar prefixo, regra ou composição **vale na hora**, na mesma instância de
+`*mcp.Server` — as sessões abertas sobrevivem e recebem `tools/list_changed`. O
+nome que sai do catálogo por uma mudança de prefixo ou de filtro deixa a lápide
+da fatia 3: continua respondendo por uma janela de graça, explicando que saiu.
 
 ## Rodar
 

@@ -42,6 +42,16 @@ func Normalizar(origemID int64, origemNome string, prefixo string, t *mcp.Tool) 
 	if t == nil {
 		return Ferramenta{}, fmt.Errorf("%w: ferramenta nula", ErrDescartada)
 	}
+	return normalizarCom(origemID, origemNome, prefixo, t.Name, t)
+}
+
+// normalizarCom é a Normalizar com o nome-base já decidido pelas regras da
+// composição. O nome original continua o do upstream: é ele que vai no
+// tools/call de saída, e regra de renome não muda o que o upstream conhece.
+func normalizarCom(origemID int64, origemNome, prefixo, base string, t *mcp.Tool) (Ferramenta, error) {
+	if t == nil {
+		return Ferramenta{}, fmt.Errorf("%w: ferramenta nula", ErrDescartada)
+	}
 	if t.Name == "" {
 		// Sem nome original não há o que chamar no upstream: não existe
 		// correção possível, só descarte.
@@ -54,7 +64,7 @@ func Normalizar(origemID int64, origemNome string, prefixo string, t *mcp.Tool) 
 		NomeOriginal: t.Name,
 	}
 
-	nome, saneado := sanearNome(prefixo + t.Name)
+	nome, saneado := sanearNome(prefixo + base)
 	if nome == "" {
 		return Ferramenta{}, fmt.Errorf("%w: nome %q não sobrevive ao saneamento", ErrDescartada, t.Name)
 	}
@@ -216,24 +226,72 @@ func remarshal(de any, para any) error {
 	return nil
 }
 
-// Materializar normaliza todas as origens de um endpoint e resolve colisão de
-// nome, devolvendo a lista pronta para registrar.
+// candidato é uma ferramenta que passou pelo filtro, ainda por normalizar e
+// desambiguar. Guarda o índice da origem para reencontrar upstream e prefixo
+// na segunda etapa, sem carregar cada Origem inteira por candidato.
+type candidato struct {
+	origemIdx int
+	bruta     *mcp.Tool
+	base      string
+	renomeou  bool
+}
+
+// Materializar aplica a composição de cada origem, normaliza o que sobra e
+// resolve colisão de nome, devolvendo a lista pronta para registrar.
+//
+// A ordem de composição é a mesma para toda ferramenta: filtro pelas regras,
+// renome pelas regras, prefixo da origem, saneamento do SDK e, por último,
+// desambiguação de colisão. Filtro e renome casam contra o nome original do
+// upstream; prefixo e desambiguação mexem só no nome exposto.
+//
+// A desambiguação roda em duas passadas: primeiro reserva nome quem manteve o
+// nome nativo (sem regra de renome), depois quem foi renomeado por regra. Sem
+// isso, uma regra `renomear z_last a_first` no mesmo upstream rouba o nome
+// `a_first` da ferramenta nativa sempre que o tools/list do upstream lista
+// `z_last` antes — o nome nativo é o que o cliente já pode ter em cache de
+// prompt de antes de a regra existir, e uma regra nova não pode empurrá-lo
+// para o sufixo `_2` por causa da ordem de um snapshot.
 //
 // A saída é determinística: a ordem das origens é a ordem da composição e as
-// ferramentas de cada origem entram na ordem em que o upstream as listou. Isso
-// é o que faz o nome exposto ser estável entre rematerializações — e o nome
-// exposto é contrato, porque o cliente pode tê-lo em cache de prompt.
+// ferramentas de cada origem entram na ordem em que o upstream as listou —
+// isso é assembly, não reserva de nome, e continua valendo com as duas
+// passadas porque a posição de cada ferramenta na saída é a da sua ordem de
+// chegada, não a da passada que a processou.
 func Materializar(log *slog.Logger, origens []Origem) []Ferramenta {
-	vistos := make(map[string]bool)
-	var out []Ferramenta
+	var candidatos []candidato
+	filtradas := make([]int, len(origens))
 
-	for _, o := range origens {
+	for oi, o := range origens {
 		for _, bruta := range o.Ferramentas {
-			f, err := Normalizar(o.UpstreamID, o.Nome, o.Prefixo, bruta)
+			if bruta == nil {
+				log.Warn("ferramenta nula descartada", "upstream", o.Nome)
+				continue
+			}
+			base, entra, renomeou := Aplicar(o.Regras, bruta.Name)
+			if !entra {
+				filtradas[oi]++
+				continue
+			}
+			candidatos = append(candidatos, candidato{origemIdx: oi, bruta: bruta, base: base, renomeou: renomeou})
+		}
+	}
+
+	vistos := make(map[string]bool)
+	resultado := make([]*Ferramenta, len(candidatos))
+	for _, passadaDeRenomeados := range []bool{false, true} {
+		for i, c := range candidatos {
+			if c.renomeou != passadaDeRenomeados {
+				continue
+			}
+			o := origens[c.origemIdx]
+			f, err := normalizarCom(o.UpstreamID, o.Nome, o.Prefixo, c.base, c.bruta)
 			if err != nil {
 				log.Warn("ferramenta descartada na normalização",
-					"upstream", o.Nome, "ferramenta", nomeSeguro(bruta), "erro", err)
+					"upstream", o.Nome, "ferramenta", nomeSeguro(c.bruta), "erro", err)
 				continue
+			}
+			if c.renomeou {
+				f.Avisos = append(f.Avisos, AvisoRenomeada)
 			}
 			if nome, colidiu := desambiguar(f.NomeExposto(), vistos); colidiu {
 				if nome == "" {
@@ -247,7 +305,20 @@ func Materializar(log *slog.Logger, origens []Origem) []Ferramenta {
 				f.Avisos = append(f.Avisos, AvisoColisaoDeNome)
 			}
 			vistos[f.NomeExposto()] = true
-			out = append(out, f)
+			resultado[i] = &f
+		}
+	}
+
+	out := make([]Ferramenta, 0, len(candidatos))
+	for _, f := range resultado {
+		if f != nil {
+			out = append(out, *f)
+		}
+	}
+	for oi, o := range origens {
+		if filtradas[oi] > 0 {
+			log.Info("ferramentas fora do endpoint por regra de composição",
+				"upstream", o.Nome, "ferramentas", filtradas[oi])
 		}
 	}
 	return out
