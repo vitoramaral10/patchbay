@@ -11,3 +11,6 @@
 # ficam versionados, para que `go build ./...` não precise de toolchain de
 # front-end.
 /ferramentas/
+
+# worktrees de agentes
+.claude/worktrees/
