@@ -18,13 +18,18 @@ var (
 
 // RepositorioSQLite lê e escreve upstreams nos dois pools.
 type RepositorioSQLite struct {
-	leitura *sql.DB
-	escrita *sql.DB
+	leitura  *sql.DB
+	escrita  *sql.DB
+	cifrador Cifrador
 }
 
 // NovoRepositorioSQLite monta o repositório de upstreams.
-func NovoRepositorioSQLite(leitura, escrita *sql.DB) *RepositorioSQLite {
-	return &RepositorioSQLite{leitura: leitura, escrita: escrita}
+//
+// O cifrador entra por construtor porque as credenciais estáticas do upstream
+// são a classe de segredo que precisa voltar em claro (seção 08.8): sem ele o
+// repositório não teria como gravar bearer nem header.
+func NovoRepositorioSQLite(leitura, escrita *sql.DB, cifrador Cifrador) *RepositorioSQLite {
+	return &RepositorioSQLite{leitura: leitura, escrita: escrita, cifrador: cifrador}
 }
 
 const colunas = `id, nome, tipo, url, timeout_ms, habilitado, ultimo_erro`
@@ -76,10 +81,20 @@ func (r *RepositorioSQLite) Obter(ctx context.Context, id int64) (Registro, erro
 	return reg, nil
 }
 
-// Criar grava um upstream HTTP.
+// Criar grava um upstream HTTP e as credenciais estáticas do formulário.
+//
+// Uma transação só: um upstream criado sem o bearer que o admin acabou de
+// digitar entraria em supervisão, falharia com 401 e pareceria erro do
+// provedor.
 func (r *RepositorioSQLite) Criar(ctx context.Context, f Form) (int64, error) {
+	tx, err := r.escrita.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("upstream: abrir transação: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	var id int64
-	err := r.escrita.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 INSERT INTO upstream (nome, tipo, url, timeout_ms, habilitado, criado_em)
 VALUES (?, ?, ?, ?, ?, ?)
 RETURNING id`,
@@ -90,6 +105,12 @@ RETURNING id`,
 		}
 		return 0, fmt.Errorf("upstream: gravar %s: %w", f.Nome, err)
 	}
+	if err := r.aplicarCredenciais(ctx, tx, id, f); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("upstream: confirmar criação de %s: %w", f.Nome, err)
+	}
 	return id, nil
 }
 
@@ -98,7 +119,13 @@ RETURNING id`,
 // ultimo_erro é zerado junto: ele é texto para a UI descrever a última falha, e
 // depois de uma reconfiguração a falha antiga já não descreve nada.
 func (r *RepositorioSQLite) Atualizar(ctx context.Context, id int64, f Form) error {
-	res, err := r.escrita.ExecContext(ctx, `
+	tx, err := r.escrita.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("upstream: abrir transação: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, `
 UPDATE upstream
    SET nome = ?, url = ?, timeout_ms = ?, habilitado = ?, ultimo_erro = ''
  WHERE id = ?`,
@@ -111,6 +138,12 @@ UPDATE upstream
 	}
 	if n, err := res.RowsAffected(); err == nil && n == 0 {
 		return ErrNaoEncontrado
+	}
+	if err := r.aplicarCredenciais(ctx, tx, id, f); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("upstream: confirmar atualização de %d: %w", id, err)
 	}
 	return nil
 }

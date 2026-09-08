@@ -5,13 +5,16 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: **fatia 2** do épico — UI de administração mínima. Ainda não tem
+> Estado: **fatia 6** do épico — segredos cifrados em repouso. Ainda não tem
 > resiliência completa de upstream (fatia 3), composição fina de endpoint
-> (fatia 4), upstream STDIO (fatia 5), cifra de segredo em repouso (fatia 6),
-> OAuth de upstream (fatias 7-8) nem authorization server próprio
-> (fatias 10-11).
+> (fatia 4), upstream STDIO (fatia 5), OAuth de upstream (fatias 7-8) nem
+> authorization server próprio (fatias 10-11).
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
+
+> **O patchbay não sobe sem `PATCHBAY_MASTER_KEY`.** Gere a chave uma vez com
+> `patchbay chave-mestra gerar` e guarde-a onde você guarda segredo de produção.
+> Se ela mudar, o processo **se recusa a subir** — ver [Chave mestra](#chave-mestra).
 
 ## O que já funciona
 
@@ -32,6 +35,10 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 - `internal/admin` — administrador único com senha em argon2id, setup no
   primeiro acesso, sessão por cookie `HttpOnly`/`SameSite=Lax` em tabela com
   expiração, e o portão que protege as rotas de UI.
+- `internal/platform/cripto` — a cifra de campo: AES-256-GCM com chave derivada
+  por HKDF-SHA256 da chave mestra, nonce sorteado por valor, formato de
+  armazenamento versionado e AAD com a linha de origem. Mais o canário que
+  detecta chave mestra trocada no boot.
 - `internal/platform/webui` — o layout da UI: tokens de cor semânticos em duas
   camadas, componentes de página, e htmx + extensão de SSE vendorizados dentro
   do binário.
@@ -45,7 +52,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
 | `/admin/setup` | Cria o administrador único. Existe **só** no primeiro acesso |
 | `/admin/login` · `/admin/sair` | Entrada e saída |
 | `/admin/` | Painel: upstreams por estado, endpoints, ferramentas, chaves |
-| `/admin/upstreams` | CRUD de upstream HTTP; detalhe com estado, último erro e as ferramentas descobertas (nome exposto, nome original, descrição) |
+| `/admin/upstreams` | CRUD de upstream HTTP com bearer e headers estáticos; detalhe com estado, último erro e as ferramentas descobertas (nome exposto, nome original, descrição) |
 | `/admin/endpoints` | CRUD de endpoint com composição de upstreams e contagem de ferramentas |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
 
@@ -69,8 +76,9 @@ Ela é guardada como hash; depois disso só o prefixo visível continua na tela.
 Precisa de Go 1.26 e, para o `Taskfile`, do [task](https://taskfile.dev).
 
 ```sh
-task build                 # ou: go build -o patchbay ./cmd/patchbay
-task run                   # escuta em 127.0.0.1:8787
+task build                                        # ou: go build -o patchbay ./cmd/patchbay
+export PATCHBAY_MASTER_KEY=$(task -s chave-mestra) # uma vez; guarde a chave
+task run                                          # escuta em 127.0.0.1:8787
 ```
 
 Abra `http://127.0.0.1:8787/admin/` — sem administrador cadastrado, qualquer
@@ -123,10 +131,52 @@ Flags e variáveis de ambiente, sem arquivo lido no boot. Flag ganha do ambiente
 | `-log-level` | `PATCHBAY_LOG_LEVEL` | `info` |
 | `-log-texto` | `PATCHBAY_LOG_TEXTO` | JSON |
 
+E uma variável **obrigatória**, sem flag equivalente:
+
+| Variável | O quê |
+|---|---|
+| `PATCHBAY_MASTER_KEY` | Chave mestra de cifra, 32 bytes em base64. `serve` e `seed` não sobem sem ela |
+
+Ela não tem flag de propósito: argumento de processo aparece em `ps` e no
+histórico do shell. E não tem arquivo de chave em disco nem entrada pela UI —
+a origem é essa variável e só ela.
+
 A URL pública é o que a UI mostra aos clientes e o que decide o atributo
 `Secure` do cookie de sessão: o TLS é terminado por um proxy reverso na frente
 do patchbay, então o processo não descobre o esquema externo olhando a
 requisição.
+
+## Chave mestra
+
+O patchbay guarda duas coisas que precisam voltar em claro: as credenciais
+estáticas de upstream (bearer, headers) e, adiante, os tokens de OAuth. As duas
+são cifradas em repouso com uma chave derivada da **chave mestra**.
+
+```sh
+patchbay chave-mestra gerar     # imprime 32 bytes em base64, uma única vez
+export PATCHBAY_MASTER_KEY=...  # e é só daqui que o patchbay a lê
+```
+
+Ela vem **exclusivamente** de `PATCHBAY_MASTER_KEY`. Não há arquivo de chave em
+disco, não há campo na UI e não há flag de linha de comando — argumento de
+processo aparece em `ps` e no histórico do shell. Sem a variável, `patchbay
+serve` e `patchbay seed` terminam no boot com a instrução de como gerar uma.
+
+**Se a chave mudar, o patchbay não sobe.** No primeiro boot ele grava um
+*canário* — um valor conhecido, cifrado — na tabela `settings`; em todo boot
+seguinte ele decifra e compara. Se não confere, o processo termina dizendo
+exatamente isso.
+
+É indisponibilidade escolhida de propósito, no lugar de corrupção silenciosa. O
+modo de falha ruim seria subir "funcionando" com a chave errada e transformar
+cada upstream autenticado em falha de credencial, como se todos os provedores
+tivessem revogado o acesso no mesmo minuto — e ninguém liga isso a um `compose`
+editado três dias antes.
+
+**Perder a chave é perder os segredos.** Não existe recuperação: sem ela o que
+está cifrado no banco não volta, e o caminho é apagar o banco e recadastrar.
+Guarde-a onde você guarda segredo de produção, e faça backup dela junto com o
+`patchbay.db` — um sem o outro não serve para nada.
 
 ## Segurança
 
@@ -141,10 +191,32 @@ requisição.
 - **Sessão de admin**: token de 256 bits sorteado, guardado como hash SHA-256,
   cookie `HttpOnly` + `SameSite=Lax`, validade absoluta de 12 horas, varredura
   horária das vencidas.
-- **Duas classes de segredo**: o que o patchbay *verifica* (chave de API, sessão)
-  vai como hash; o que ele *apresenta* (bearer de upstream, token OAuth) exige
-  cifra reversível e é da fatia 6 — por isso o formulário de upstream ainda não
-  tem campo de credencial.
+- **Duas classes de segredo**: o que o patchbay *verifica* (chave de API, sessão
+  de admin) vai como hash, e não volta nunca; o que ele *apresenta* (bearer e
+  header estático de upstream, e adiante os tokens de OAuth) precisa voltar em
+  claro e vai em cifra reversível. Guardar a segunda classe como hash não
+  funciona; guardar a primeira de forma reversível cria um cofre de credencial
+  alheia sem necessidade.
+- **Cifra em repouso**: AES-256-GCM com chave derivada por HKDF-SHA256 da chave
+  mestra. Nonce sorteado por valor — repetir nonce em GCM destrói os dois
+  valores. O valor gravado é `pbc1:<base64url(nonce ‖ selado)>`: o prefixo de
+  versão é o que permite trocar de algoritmo no futuro sem reescrever todas as
+  linhas de uma vez.
+- **AAD com a linha de origem**: o dado autenticado adicional é
+  `(tabela, coluna, id)` — para uma credencial de upstream, o id é
+  `<upstream_id>/<tipo>/<nome>`. Copiar o `valor_cifrado` do upstream A para a
+  linha do upstream B falha a autenticação mesmo com a chave certa: quem tem
+  escrita no banco e não tem a chave não consegue apontar a credencial de um
+  upstream para outro.
+- **Redação**: o valor em claro é o tipo `cripto.Segredo`, cujo `String`,
+  `GoString` e `LogValue` devolvem `«redigido»`. `%v`, `%s`, `%#v` e o `slog`
+  imprimem a marca mesmo quando alguém esquece; sair do tipo exige chamar
+  `Revelar()`, que é grep-ável. Nenhuma mensagem de erro da cifra carrega o
+  valor guardado.
+- **Nunca em query string**: a credencial de upstream vai em header, injetada
+  por um `http.RoundTripper` por upstream. Query string vaza em log de proxy,
+  em histórico e em `Referer` — e é o vazamento que a cifra em repouso não teria
+  como desfazer.
 
 ## Verificar
 

@@ -5,8 +5,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
+	"github.com/vitoramaral10/patchbay/internal/platform/cripto"
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
 )
 
@@ -74,7 +77,27 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 
 func (a *Admin) formNovo(w http.ResponseWriter, r *http.Request) {
 	form := Form{TimeoutMS: TimeoutPadraoMS, Habilitado: true}
+	form.CompletarHeaders(nil)
 	webui.Renderizar(w, r, http.StatusOK, a.log, TelaForm(form))
+}
+
+// reexibir devolve o formulário recusado com o estado das credenciais gravadas
+// preenchido de novo.
+//
+// Sem isto, um erro de validação apagaria o "definido" da tela e o admin leria
+// "nenhum bearer" sobre um upstream que tem um.
+func (a *Admin) reexibir(w http.ResponseWriter, r *http.Request, status int, form Form) {
+	if form.ID != 0 {
+		definidas, err := a.repo.CredenciaisDefinidas(r.Context(), form.ID)
+		if err != nil {
+			webui.ErroInterno(w, r, a.log, err)
+			return
+		}
+		form.CompletarHeaders(definidas)
+	} else {
+		form.CompletarHeaders(nil)
+	}
+	webui.Renderizar(w, r, status, a.log, TelaForm(form))
 }
 
 func (a *Admin) criar(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +107,7 @@ func (a *Admin) criar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !form.Validar() {
-		webui.Renderizar(w, r, http.StatusUnprocessableEntity, a.log, TelaForm(form))
+		a.reexibir(w, r, http.StatusUnprocessableEntity, form)
 		return
 	}
 
@@ -92,7 +115,7 @@ func (a *Admin) criar(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, ErrNomeEmUso):
 		form.Erros = map[string]string{"nome": "Já existe um upstream com este nome."}
-		webui.Renderizar(w, r, http.StatusConflict, a.log, TelaForm(form))
+		a.reexibir(w, r, http.StatusConflict, form)
 		return
 	case err != nil:
 		webui.ErroInterno(w, r, a.log, err)
@@ -119,7 +142,16 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d := Detalhe{Registro: reg, Endpoints: slugs}
+	// Definidas e não decifradas: a tela precisa saber que existe credencial,
+	// nunca qual é — e assim ela continua abrindo mesmo com a chave mestra
+	// trocada, em vez de virar um 500 no meio do diagnóstico.
+	credenciais, err := a.repo.CredenciaisDefinidas(r.Context(), reg.ID)
+	if err != nil {
+		webui.ErroInterno(w, r, a.log, err)
+		return
+	}
+
+	d := Detalhe{Registro: reg, Endpoints: slugs, Credenciais: credenciais}
 	if s, ok := a.gerente.Situacao(reg.ID); ok {
 		d.Estado, d.TentativaEm, d.Supervisionado = s.Estado, s.TentativaEm, true
 		if s.UltimoErro != "" {
@@ -146,13 +178,20 @@ func (a *Admin) formEditar(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	webui.Renderizar(w, r, http.StatusOK, a.log, TelaForm(Form{
+	form := Form{
 		ID:         reg.ID,
 		Nome:       reg.Nome,
 		URL:        reg.URL,
 		TimeoutMS:  reg.TimeoutMS,
 		Habilitado: reg.Habilitado,
-	}))
+	}
+	definidas, err := a.repo.CredenciaisDefinidas(r.Context(), reg.ID)
+	if err != nil {
+		webui.ErroInterno(w, r, a.log, err)
+		return
+	}
+	form.CompletarHeaders(definidas)
+	webui.Renderizar(w, r, http.StatusOK, a.log, TelaForm(form))
 }
 
 func (a *Admin) atualizar(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +206,7 @@ func (a *Admin) atualizar(w http.ResponseWriter, r *http.Request) {
 	}
 	form.ID = reg.ID
 	if !form.Validar() {
-		webui.Renderizar(w, r, http.StatusUnprocessableEntity, a.log, TelaForm(form))
+		a.reexibir(w, r, http.StatusUnprocessableEntity, form)
 		return
 	}
 
@@ -178,7 +217,7 @@ func (a *Admin) atualizar(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, ErrNomeEmUso):
 		form.Erros = map[string]string{"nome": "Já existe um upstream com este nome."}
-		webui.Renderizar(w, r, http.StatusConflict, a.log, TelaForm(form))
+		a.reexibir(w, r, http.StatusConflict, form)
 		return
 	case err != nil:
 		webui.ErroInterno(w, r, a.log, err)
@@ -282,8 +321,37 @@ func lerForm(r *http.Request) (Form, error) {
 		URL:       r.PostFormValue("url"),
 		TimeoutMS: timeout,
 		// Checkbox só chega quando marcado.
-		Habilitado: r.PostFormValue("habilitado") != "",
+		Habilitado:   r.PostFormValue("habilitado") != "",
+		Bearer:       cripto.Segredo(r.PostFormValue("bearer")),
+		BearerLimpar: r.PostFormValue("bearer_limpar") != "",
+		Headers:      lerHeaders(r.PostForm),
 	}, nil
+}
+
+// lerHeaders lê as linhas de header estático do formulário.
+//
+// header_nome e header_valor são arrays paralelos: cada linha da tela contribui
+// com exatamente um de cada, na ordem do documento. O checkbox de limpar viaja
+// à parte, por nome, porque checkbox só é enviado quando marcado e desalinharia
+// os dois arrays.
+func lerHeaders(campos url.Values) []CampoHeader {
+	nomes := campos["header_nome"]
+	valores := campos["header_valor"]
+
+	limpar := make(map[string]bool, len(campos["header_limpar"]))
+	for _, nome := range campos["header_limpar"] {
+		limpar[strings.ToLower(strings.TrimSpace(nome))] = true
+	}
+
+	out := make([]CampoHeader, 0, len(nomes))
+	for i, nome := range nomes {
+		h := CampoHeader{Nome: nome, Limpar: limpar[strings.ToLower(strings.TrimSpace(nome))]}
+		if i < len(valores) {
+			h.Valor = cripto.Segredo(valores[i])
+		}
+		out = append(out, h)
+	}
+	return out
 }
 
 var avisos = map[string]webui.Alerta{

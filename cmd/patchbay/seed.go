@@ -146,6 +146,15 @@ func comandoSeed(ctx context.Context, args []string, saida io.Writer) error {
 	}
 	log := novoLogger(*cfg, os.Stderr)
 
+	// O seed toca o mesmo banco que o serve, então passa pelo mesmo portão: sem
+	// chave mestra não se abre, e com a chave errada o canário barra antes de
+	// qualquer escrita. Um seed que rodasse com outra chave gravaria o canário
+	// de um banco que o serve depois recusaria.
+	cofre, err := cofreDoAmbiente()
+	if err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("criar diretório de dados %s: %w", cfg.DataDir, err)
 	}
@@ -158,6 +167,10 @@ func comandoSeed(ctx context.Context, args []string, saida io.Writer) error {
 			log.Error("falha ao fechar o banco", "erro", err)
 		}
 	}()
+
+	if err := verificarCanario(ctx, cofre, st.Leitura(), st.Escrita(), log); err != nil {
+		return err
+	}
 
 	r, err := semear(ctx, st.Escrita(), o)
 	if err != nil {

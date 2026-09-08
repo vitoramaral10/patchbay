@@ -3,9 +3,14 @@
 //
 // Subcomandos:
 //
-//	patchbay serve   sobe o gateway
-//	patchbay seed    cria endpoint, upstream e chave de desenvolvimento
-//	patchbay versao  imprime a versão
+//	patchbay serve                sobe o gateway
+//	patchbay seed                 cria endpoint, upstream e chave de desenvolvimento
+//	patchbay chave-mestra gerar   sorteia a chave de PATCHBAY_MASTER_KEY
+//	patchbay versao               imprime a versão
+//
+// serve e seed exigem PATCHBAY_MASTER_KEY: sem ela não há como ler nem gravar
+// segredo em repouso, e subir sem cifra seria a corrupção silenciosa que a
+// seção 14 do estudo recusa.
 package main
 
 import (
@@ -54,6 +59,9 @@ func executar(args []string, saida *os.File) error {
 	case "seed":
 		return comandoSeed(ctx, args, saida)
 
+	case "chave-mestra":
+		return comandoChaveMestra(args, saida)
+
 	case "versao", "version":
 		_, _ = fmt.Fprintf(saida, "patchbay %s\n", versao.Numero)
 		return nil
@@ -74,10 +82,11 @@ func imprimirAjuda(saida *os.File) {
 	_, _ = fmt.Fprint(saida, `uso: patchbay <subcomando> [flags]
 
 subcomandos:
-  serve    sobe o gateway (padrão)
-  seed     cria endpoint, upstream HTTP e chave de API de desenvolvimento
-  versao   imprime a versão
-  ajuda    imprime esta mensagem
+  serve                sobe o gateway (padrão)
+  seed                 cria endpoint, upstream HTTP e chave de API de desenvolvimento
+  chave-mestra gerar   sorteia a chave de PATCHBAY_MASTER_KEY
+  versao               imprime a versão
+  ajuda                imprime esta mensagem
 
 flags comuns (todas com variável de ambiente equivalente):
   -listen       endereço de escuta            PATCHBAY_LISTEN
@@ -85,5 +94,9 @@ flags comuns (todas com variável de ambiente equivalente):
   -public-url   URL pública do patchbay       PATCHBAY_PUBLIC_URL
   -log-level    debug|info|warn|error         PATCHBAY_LOG_LEVEL
   -log-texto    log em texto em vez de JSON   PATCHBAY_LOG_TEXTO
+
+variável obrigatória em serve e seed (não tem flag equivalente, de propósito:
+argumento de processo aparece em ps e em histórico de shell):
+  PATCHBAY_MASTER_KEY   chave mestra de cifra, 32 bytes em base64
 `)
 }

@@ -209,6 +209,38 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 					</div>
 				}
 			}
+			@webui.Cartao("Credenciais apresentadas ao upstream") {
+				<div class="flex flex-col gap-4 px-4 py-4">
+					<p class="max-w-[65ch] text-sm text-conteudo-suave">
+						Bearer e headers estáticos ficam cifrados em repouso (AES-256-GCM, chave derivada da
+						chave mestra). O valor não volta para esta tela nem para o log — o que aparece aqui é
+						só se ele está definido. Para trocar, edite o upstream.
+					</p>
+					<dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+						@dado("Bearer") {
+							if d.TemBearer() {
+								@webui.Selo(webui.TomSucesso, "definido")
+							} else {
+								@webui.Selo(webui.TomNeutro, "não definido")
+							}
+						}
+						@dado("Headers estáticos") {
+							if len(d.HeadersEstaticos()) == 0 {
+								<span class="text-conteudo-tenue">nenhum</span>
+							} else {
+								<ul class="flex flex-wrap gap-2">
+									for _, h := range d.HeadersEstaticos() {
+										<li class="flex items-center gap-2 rounded-md bg-superficie-alta px-2 py-1">
+											<code class="font-mono text-xs">{ h.Nome }</code>
+											@webui.Selo(webui.TomSucesso, "definido")
+										</li>
+									}
+								</ul>
+							}
+						}
+					</dl>
+				</div>
+			}
 			@webui.Cartao("Endpoints que incluem este upstream") {
 				if len(d.Endpoints) == 0 {
 					<p class="px-4 py-6 max-w-[65ch] text-conteudo-suave">
@@ -264,7 +296,7 @@ templ dado(rotulo string) {
 templ TelaForm(f Form) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    tituloDoForm(f),
-		Subtitulo: "Só upstream MCP Streamable HTTP sem autenticação nesta fatia. Bearer e headers estáticos entram junto com a cifra em repouso.",
+		Subtitulo: "Upstream MCP Streamable HTTP. Bearer e headers estáticos são cifrados em repouso e nunca voltam para esta tela.",
 		Secao:     webui.SecaoUpstreams,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 	}) {
@@ -317,6 +349,64 @@ templ TelaForm(f Form) {
 					</label>
 				</div>
 			}
+			@webui.Cartao("Credenciais") {
+				<div class="flex flex-col gap-6 px-4 py-5">
+					<p class="max-w-[65ch] text-sm text-conteudo-suave">
+						O que o patchbay <strong>apresenta</strong> ao upstream é cifrado em repouso com
+						AES-256-GCM e nunca é reexibido aqui. Campo em branco mantém o valor gravado;
+						para tirar a credencial, marque <em>limpar</em>.
+					</p>
+					<div class="flex flex-col gap-1.5">
+						<div class="flex items-center gap-2">
+							<label for="bearer" class="text-sm font-medium text-conteudo">Bearer token</label>
+							if f.BearerDefinido {
+								@webui.Selo(webui.TomSucesso, "definido")
+							} else {
+								@webui.Selo(webui.TomNeutro, "não definido")
+							}
+						</div>
+						<input
+							class="pb-campo font-mono"
+							id="bearer"
+							name="bearer"
+							type="password"
+							autocomplete="new-password"
+							placeholder={ marcadorDeSegredo(f.BearerDefinido) }
+							if f.Erros["bearer"] != "" {
+								aria-invalid="true"
+							}
+							aria-describedby="bearer-ajuda"
+						/>
+						if f.Erros["bearer"] != "" {
+							<p id="bearer-ajuda" class="text-sm text-perigo">{ f.Erros["bearer"] }</p>
+						} else {
+							<p id="bearer-ajuda" class="text-sm text-conteudo-tenue">
+								Vai como <code class="font-mono">Authorization: Bearer …</code> em toda requisição
+								para este upstream.
+							</p>
+						}
+						if f.BearerDefinido {
+							<label class="mt-1 flex items-center gap-2">
+								<input type="checkbox" name="bearer_limpar" value="1" class="h-4 w-4 accent-[var(--pb-acento)]"/>
+								<span class="text-sm text-conteudo-suave">Limpar o bearer gravado</span>
+							</label>
+						}
+					</div>
+					<fieldset class="flex flex-col gap-3">
+						<legend class="text-sm font-medium text-conteudo">Headers estáticos</legend>
+						if f.Erros["headers"] != "" {
+							<p class="text-sm text-perigo">{ f.Erros["headers"] }</p>
+						}
+						for i, h := range f.Headers {
+							@linhaHeader(i, h)
+						}
+						<p class="text-sm text-conteudo-tenue">
+							Um par nome/valor por linha, enviado em toda requisição.
+							<code class="font-mono">Authorization</code> não entra aqui: use o campo de bearer acima.
+						</p>
+					</fieldset>
+				</div>
+			}
 			<div class="flex items-center gap-3">
 				<button type="submit" class="pb-botao pb-botao-primario">
 					if f.ID == 0 {
@@ -329,6 +419,61 @@ templ TelaForm(f Form) {
 			</div>
 		</form>
 	}
+}
+
+// marcadorDeSegredo é o placeholder de um campo de segredo. Nunca o valor: o
+// placeholder é o único texto de um campo de senha que a tela mostra.
+func marcadorDeSegredo(definido bool) string {
+	if definido {
+		return "deixe em branco para manter o valor gravado"
+	}
+	return "cole o valor aqui"
+}
+
+// linhaHeader é uma linha da tabela de headers estáticos.
+//
+// O nome de um header já gravado vai em campo escondido e aparece como texto: é
+// a chave da linha no banco e do AAD da cifra, e deixá-lo editável faria "trocar
+// o nome" parecer renomear quando na verdade cria outro header.
+templ linhaHeader(indice int, h CampoHeader) {
+	<div class="flex flex-col gap-1.5 rounded-md border border-borda px-3 py-3">
+		<div class="flex flex-wrap items-center gap-2">
+			if h.Definido {
+				<input type="hidden" name="header_nome" value={ h.Nome }/>
+				<code class="font-mono text-sm text-conteudo">{ h.Nome }</code>
+				@webui.Selo(webui.TomSucesso, "definido")
+			} else {
+				<input
+					class="pb-campo font-mono sm:max-w-64"
+					name="header_nome"
+					type="text"
+					value={ h.Nome }
+					placeholder="X-Api-Key"
+					aria-label={ "Nome do header " + strconv.Itoa(indice+1) }
+				/>
+			}
+		</div>
+		<input
+			class="pb-campo font-mono"
+			name="header_valor"
+			type="password"
+			autocomplete="new-password"
+			placeholder={ marcadorDeSegredo(h.Definido) }
+			aria-label={ "Valor do header " + strconv.Itoa(indice+1) }
+			if h.Erro != "" {
+				aria-invalid="true"
+			}
+		/>
+		if h.Erro != "" {
+			<p class="text-sm text-perigo">{ h.Erro }</p>
+		}
+		if h.Definido {
+			<label class="flex items-center gap-2">
+				<input type="checkbox" name="header_limpar" value={ h.Nome } class="h-4 w-4 accent-[var(--pb-acento)]"/>
+				<span class="text-sm text-conteudo-suave">Limpar este header</span>
+			</label>
+		}
+	</div>
 }
 
 func tituloDoForm(f Form) string {
