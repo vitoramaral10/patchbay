@@ -249,7 +249,8 @@ func (a *Aplicacao) painel(w http.ResponseWriter, r *http.Request) {
 			// Desabilitado ou fora da supervisão: nem pronto, nem degradado.
 		case s.Estado == upstream.EstadoPronto:
 			d.UpstreamsProntos++
-		case s.Estado == upstream.EstadoDegradado:
+		case s.Estado == upstream.EstadoDegradado, s.Estado == upstream.EstadoSondaFalhou,
+			s.Estado == upstream.EstadoDesabilitado, s.Estado == upstream.EstadoSemConsentimento:
 			d.UpstreamsRuins++
 		}
 	}
