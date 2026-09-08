@@ -5,10 +5,12 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: **fatia 4** do épico — composição fina do endpoint, sobre as fatias
-> 1, 2, 3 e 6 já entregues. Ainda não tem upstream STDIO (fatia 5), OAuth de
-> upstream (fatias 7-8), sonda funcional (fatia 9) nem authorization server
-> próprio (fatias 10-11).
+> Estado: fatias **1, 2, 3, 4, 6 e 10** do épico entregues — catálogo e
+> endpoint, resiliência de upstream, composição fina do endpoint, segredos
+> cifrados em repouso e o authorization server essencial. Upstream STDIO
+> (fatia 5) está pronto em branch, aguardando merge. OAuth de upstream
+> (fatias 7-8), sonda funcional (fatia 9) e CIMD/DCR/redirect URI de loopback
+> (fatia 11) seguem pendentes.
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 

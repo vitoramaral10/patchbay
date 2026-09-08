@@ -1,0 +1,368 @@
+package authsrv
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/vitoramaral10/patchbay/internal/platform/webui"
+)
+
+func instante(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Local().Format("02/01/2006 15:04")
+}
+
+func rotaCliente(c Cliente) string {
+	return webui.RotaClientesOAuth + "/" + strconv.FormatInt(c.ID, 10)
+}
+
+func tipoDoCliente(c Cliente) string {
+	if c.Confidencial {
+		return "confidencial"
+	}
+	return "público"
+}
+
+// TelaClientes lista os clientes OAuth cadastrados.
+templ TelaClientes(clientes []Cliente, alerta *webui.Alerta) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Clientes OAuth",
+		Subtitulo: "Quem pode pedir um token ao authorization server do patchbay, e para quais endpoints. O consentimento acontece nesta sessão de administração.",
+		Secao:     webui.SecaoOAuth,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Acao:      botaoNovoCliente(),
+		Alerta:    alerta,
+	}) {
+		if len(clientes) == 0 {
+			@webui.Vazio("Nenhum cliente OAuth cadastrado.",
+				"Cadastre o claude.ai para conectar um endpoint como conector customizado. A redirect_uri dele já vem sugerida no formulário.") {
+				@botaoNovoCliente()
+			}
+		} else {
+			@webui.Cartao("") {
+				<div class="overflow-x-auto">
+					<table class="w-full text-left">
+						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+							<tr>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Cliente</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">client_id</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Tipo</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Endpoints</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Cadastrado</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-borda">
+							for _, c := range clientes {
+								<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
+									<td class="px-4 py-3">
+										<a href={ templ.SafeURL(rotaCliente(c)) } class="font-medium text-acento hover:underline">{ c.Nome }</a>
+										if c.Revogado() {
+											<span class="ml-2">
+												@webui.Selo(webui.TomNeutro, "revogado em " + instante(c.RevogadoEm))
+											</span>
+										}
+									</td>
+									<td class="px-4 py-3">
+										<code class="font-mono text-xs text-conteudo-suave">{ c.ClientID }</code>
+									</td>
+									<td class="px-4 py-3 text-conteudo-suave">{ tipoDoCliente(c) }</td>
+									<td class="px-4 py-3">
+										<span class="flex flex-wrap gap-1">
+											for _, e := range c.Endpoints {
+												<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs text-conteudo-suave">{ e.Slug }</code>
+											}
+										</span>
+									</td>
+									<td class="px-4 py-3 text-conteudo-suave">{ instante(c.CriadoEm) }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		}
+	}
+}
+
+templ botaoNovoCliente() {
+	<a href={ templ.SafeURL(webui.RotaClientesOAuth + "/novo") } class="pb-botao pb-botao-primario">Novo cliente</a>
+}
+
+// TelaFormCliente é o cadastro: nome, allowlist de redirect, tipo e escopo.
+templ TelaFormCliente(f FormCliente, opcoes []EndpointOpcao) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Novo cliente OAuth",
+		Subtitulo: "Nem o escopo nem a allowlist de redirect se editam depois. Para mudar o que um cliente alcança, revogue e cadastre outro.",
+		Secao:     webui.SecaoOAuth,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+	}) {
+		<form method="post" action={ templ.SafeURL(webui.RotaClientesOAuth) } class="flex max-w-2xl flex-col gap-8">
+			@webui.Cartao("Identificação") {
+				<div class="flex flex-col gap-5 px-4 py-5">
+					@webui.Campo(webui.DadosCampo{
+						Nome:        "nome",
+						Rotulo:      "Nome",
+						Valor:       f.Nome,
+						Ajuda:       "Quem é este cliente: “claude.ai”, “Claude Code do notebook”.",
+						Erro:        f.Erros["nome"],
+						Obrigatorio: true,
+					})
+					<fieldset class="flex flex-col gap-2">
+						<legend class="text-sm font-medium text-conteudo">Tipo de cliente</legend>
+						<label class="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 transition-colors duration-150 ease-out hover:bg-superficie-alta">
+							<input type="radio" name="tipo" value="publico" class="mt-1 h-4 w-4 accent-[var(--pb-acento)]" checked?={ !f.Confidencial }/>
+							<span class="flex-1">
+								<span class="font-medium">Público</span>
+								<span class="block text-sm text-conteudo-tenue">
+									Sem segredo. É o caso do claude.ai e do Claude Code: eles rodam onde
+									um segredo não pode ficar guardado, e a proteção é o PKCE.
+								</span>
+							</span>
+						</label>
+						<label class="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 transition-colors duration-150 ease-out hover:bg-superficie-alta">
+							<input type="radio" name="tipo" value="confidencial" class="mt-1 h-4 w-4 accent-[var(--pb-acento)]" checked?={ f.Confidencial }/>
+							<span class="flex-1">
+								<span class="font-medium">Confidencial</span>
+								<span class="block text-sm text-conteudo-tenue">
+									Com client_secret, mostrado uma única vez na criação. Escolha isto
+									para um serviço seu, que guarda o segredo no servidor.
+								</span>
+							</span>
+						</label>
+					</fieldset>
+				</div>
+			}
+			@webui.Cartao("Allowlist de redirect") {
+				<div class="px-4 py-5">
+					@webui.CampoTexto(webui.DadosCampo{
+						Nome:   "redirect_uris",
+						Rotulo: "redirect_uri, uma por linha",
+						Valor:  f.RedirectTexto,
+						Ajuda:  "A comparação é exata, caractere a caractere. A URI das superfícies hospedadas da Anthropic (claude.ai, Desktop, mobile) é a sugerida acima.",
+						Erro:   f.Erros["redirect"],
+					})
+				</div>
+			}
+			@webui.Cartao("Escopo") {
+				if f.Erros["endpoint"] != "" {
+					<p class="border-b border-borda px-4 py-3 text-sm text-perigo" role="alert">{ f.Erros["endpoint"] }</p>
+				}
+				if len(opcoes) == 0 {
+					<p class="max-w-[65ch] px-4 py-6 text-conteudo-suave">
+						Nenhum endpoint cadastrado. Crie um endpoint primeiro: o token deste cliente
+						vale para um endpoint só, e sem endpoint não há resource a pedir.
+					</p>
+				} else {
+					<fieldset class="px-4 py-4">
+						<legend class="sr-only">Endpoints que este cliente pode pedir</legend>
+						<ul class="flex flex-col gap-1">
+							for _, o := range opcoes {
+								<li>
+									<label class="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 transition-colors duration-150 ease-out hover:bg-superficie-alta">
+										<input
+											type="checkbox"
+											name="endpoint"
+											value={ strconv.FormatInt(o.ID, 10) }
+											class="h-4 w-4 accent-[var(--pb-acento)]"
+											checked?={ o.Escolhido }
+										/>
+										<span class="flex-1 font-medium">{ o.Rotulo() }</span>
+										<code class="font-mono text-xs text-conteudo-tenue">{ o.Slug }</code>
+									</label>
+								</li>
+							}
+						</ul>
+					</fieldset>
+				}
+			}
+			<div class="flex items-center gap-3">
+				<button type="submit" class="pb-botao pb-botao-primario">Cadastrar cliente</button>
+				<a href={ templ.SafeURL(webui.RotaClientesOAuth) } class="pb-botao pb-botao-secundario">Cancelar</a>
+			</div>
+		</form>
+	}
+}
+
+// TelaClienteCriado é a única vez que o client_secret aparece.
+templ TelaClienteCriado(c ClienteCriado, urlPublica string) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Cliente cadastrado",
+		Subtitulo: "Estes são os dados que o cliente precisa para descobrir o authorization server e pedir consentimento.",
+		Secao:     webui.SecaoOAuth,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Alerta:    alertaSegredo(c),
+	}) {
+		<div class="flex max-w-3xl flex-col gap-6">
+			@webui.Cartao(c.Nome) {
+				<dl class="flex flex-col gap-4 px-4 py-4">
+					@linhaCopiavel("client_id", c.ClientID)
+					if c.Segredo != "" {
+						@linhaCopiavel("client_secret", c.Segredo)
+					}
+					@linhaCopiavel("issuer", urlPublica)
+					for _, e := range c.Endpoints {
+						@linhaCopiavel("resource · "+e.Slug, urlPublica+"/mcp/"+e.Slug)
+					}
+				</dl>
+			}
+			@webui.Cartao("Como o cliente descobre o resto") {
+				<div class="flex flex-col gap-3 px-4 py-4 text-conteudo-suave">
+					<p class="max-w-[70ch]">
+						Não é preciso passar endpoint de autorização nem de token à mão: o cliente
+						conecta em <code class="font-mono text-xs">{ urlPublica }/mcp/&lt;slug&gt;</code>,
+						recebe 401 com o <code class="font-mono text-xs">WWW-Authenticate</code> apontando
+						para a metadata daquele endpoint, e dela chega ao authorization server.
+					</p>
+					<p class="max-w-[70ch]">
+						O token vale para um endpoint só. Apresentá-lo em outro endpoint devolve 403,
+						mesmo que o cliente tenha os dois no escopo — é o resource do pedido que decide.
+					</p>
+				</div>
+			}
+			<div>
+				<a href={ templ.SafeURL(webui.RotaClientesOAuth) } class="pb-botao pb-botao-primario">Já copiei, voltar à lista</a>
+			</div>
+		</div>
+	}
+}
+
+func alertaSegredo(c ClienteCriado) *webui.Alerta {
+	if c.Segredo == "" {
+		return nil
+	}
+	return &webui.Alerta{
+		Tom:    webui.TomAlerta,
+		Titulo: "Esta é a única vez que o client_secret aparece.",
+		Texto:  "Depois de sair desta tela só o prefixo " + c.SegredoPrefixo + " continua visível. Ele é guardado como hash.",
+	}
+}
+
+templ linhaCopiavel(rotulo, valor string) {
+	<div>
+		<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">{ rotulo }</dt>
+		<dd>
+			<pre class="mt-1 overflow-x-auto rounded-md bg-superficie-alta px-3 py-2 font-mono text-sm text-conteudo">{ valor }</pre>
+		</dd>
+	</div>
+}
+
+// TelaCliente é o detalhe: os dados do registro e as sessões vivas.
+templ TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.Alerta) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    c.Nome,
+		Subtitulo: "Cada sessão abaixo é uma família de tokens: o access e todos os refresh que a rotação encadeou a partir de um consentimento.",
+		Secao:     webui.SecaoOAuth,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Alerta:    alerta,
+	}) {
+		<div class="flex flex-col gap-6">
+			@webui.Cartao("Registro") {
+				<dl class="grid gap-4 px-4 py-4 sm:grid-cols-2">
+					@linhaCopiavel("client_id", c.ClientID)
+					<div>
+						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Tipo</dt>
+						<dd class="mt-1">
+							{ tipoDoCliente(c) }
+							if c.Confidencial {
+								<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ c.SegredoPrefixo }…</code>
+							}
+						</dd>
+					</div>
+					<div>
+						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">redirect_uri</dt>
+						<dd class="mt-1 flex flex-col gap-1">
+							for _, uri := range c.RedirectURIs {
+								<code class="font-mono text-xs text-conteudo-suave">{ uri }</code>
+							}
+						</dd>
+					</div>
+					<div>
+						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Endpoints no escopo</dt>
+						<dd class="mt-1 flex flex-col gap-1">
+							for _, e := range c.Endpoints {
+								<code class="font-mono text-xs text-conteudo-suave">{ urlPublica }/mcp/{ e.Slug }</code>
+							}
+						</dd>
+					</div>
+				</dl>
+				if !c.Revogado() {
+					<div class="border-t border-borda px-4 py-3">
+						<form
+							method="post"
+							action={ templ.SafeURL(rotaCliente(c) + "/revogar") }
+							hx-post={ rotaCliente(c) + "/revogar" }
+							hx-confirm={ "Revogar o cliente " + c.Nome + "? Todas as sessões dele caem junto e ele precisa ser cadastrado de novo." }
+							hx-disabled-elt="find button"
+						>
+							<button type="submit" class="pb-botao pb-botao-perigo px-2.5 py-1.5 text-xs">Revogar cliente</button>
+						</form>
+					</div>
+				} else {
+					<p class="border-t border-borda px-4 py-3 text-sm text-conteudo-suave">
+						Revogado em { instante(c.RevogadoEm) }. Continua na lista para que o client_id
+						não vire um mistério em três meses.
+					</p>
+				}
+			}
+			@webui.Cartao("Sessões") {
+				if len(sessoes) == 0 {
+					<p class="px-4 py-6 text-conteudo-suave">
+						Nenhum consentimento concedido ainda. A primeira sessão nasce quando o cliente
+						pedir autorização e você aceitar.
+					</p>
+				} else {
+					<div class="overflow-x-auto">
+						<table class="w-full text-left">
+							<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+								<tr>
+									<th scope="col" class="px-4 py-2.5 font-semibold">Família</th>
+									<th scope="col" class="px-4 py-2.5 font-semibold">Endpoint</th>
+									<th scope="col" class="px-4 py-2.5 font-semibold">Estado</th>
+									<th scope="col" class="px-4 py-2.5 font-semibold">Concedida</th>
+									<th scope="col" class="px-4 py-2.5 font-semibold">Último uso</th>
+									<th scope="col" class="px-4 py-2.5 font-semibold"><span class="sr-only">Ações</span></th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-borda">
+								for _, s := range sessoes {
+									<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
+										<td class="px-4 py-3">
+											<code class="font-mono text-xs text-conteudo-suave">{ s.Curta() }</code>
+										</td>
+										<td class="px-4 py-3">
+											<code class="font-mono text-xs text-conteudo-suave">{ s.EndpointSlug }</code>
+										</td>
+										<td class="px-4 py-3">
+											if s.Ativa() {
+												@webui.Selo(webui.TomSucesso, "ativa · "+strconv.Itoa(s.Ativos)+" de "+strconv.Itoa(s.Total)+" tokens")
+											} else {
+												@webui.Selo(webui.TomNeutro, "encerrada")
+											}
+										</td>
+										<td class="px-4 py-3 text-conteudo-suave">{ instante(s.CriadaEm) }</td>
+										<td class="px-4 py-3 text-conteudo-suave">{ instante(s.UltimoUsoEm) }</td>
+										<td class="px-4 py-3 text-right">
+											if s.Ativa() {
+												<form
+													method="post"
+													action={ templ.SafeURL(rotaCliente(c) + "/sessoes/" + s.FamiliaID + "/revogar") }
+													hx-post={ rotaCliente(c) + "/sessoes/" + s.FamiliaID + "/revogar" }
+													hx-confirm={ "Revogar esta sessão? O cliente para de acessar " + s.EndpointSlug + " na próxima chamada e precisa do consentimento de novo." }
+													hx-disabled-elt="find button"
+												>
+													<button type="submit" class="pb-botao pb-botao-perigo px-2.5 py-1.5 text-xs">Revogar</button>
+												</form>
+											}
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				}
+			}
+		</div>
+	}
+}

@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/vitoramaral10/patchbay/internal/apikey"
+	"github.com/vitoramaral10/patchbay/internal/authsrv"
 	"github.com/vitoramaral10/patchbay/internal/catalogo"
 	"github.com/vitoramaral10/patchbay/internal/endpoint"
 	"github.com/vitoramaral10/patchbay/internal/upstream"
@@ -67,6 +71,57 @@ func (a endpointsParaChave) Opcoes(ctx context.Context) ([]apikey.EndpointOpcao,
 		out = append(out, apikey.EndpointOpcao{ID: reg.ID, Slug: reg.Slug, Nome: reg.Nome})
 	}
 	return out, nil
+}
+
+// endpointsParaOAuth responde ao authorization server: quais endpoints existem,
+// para o escopo de um cliente, para o scopes_supported da metadata e para o
+// resource do RFC 8707.
+type endpointsParaOAuth struct {
+	repo *endpoint.RepositorioSQLite
+}
+
+// Todos implementa authsrv.Endpoints.
+func (a endpointsParaOAuth) Todos(ctx context.Context) ([]authsrv.EndpointRef, error) {
+	regs, err := a.repo.Todos(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]authsrv.EndpointRef, 0, len(regs))
+	for _, reg := range regs {
+		out = append(out, authsrv.EndpointRef{ID: reg.ID, Slug: reg.Slug, Nome: reg.Nome})
+	}
+	return out, nil
+}
+
+// verificadorDeBearer combina as duas credenciais que abrem /mcp/{slug}: a
+// chave de API da fatia 1 e o access token do authorization server da fatia 10.
+//
+// O despacho é pela marca do texto, e não por tentativa e erro: cada verificador
+// consulta o banco, e tentar os dois em sequência dobraria o custo do caminho
+// quente para dizer a mesma coisa. A marca vem de quem emitiu, então nunca há
+// ambiguidade.
+//
+// Os dois escrevem o escopo "endpoint:<slug>" em TokenInfo.Scopes, que é o que
+// o middleware do go-sdk compara com o escopo exigido pela URL — é dele que sai
+// o 403 quando um token de um endpoint é apresentado noutro, e é por isso que
+// esta função não precisa olhar o aud.
+func verificadorDeBearer(chave *apikey.Servico, as *authsrv.Servico) auth.TokenVerifier {
+	return func(ctx context.Context, token string, r *http.Request) (*auth.TokenInfo, error) {
+		switch {
+		case authsrv.TemMarca(token, authsrv.MarcaAcesso):
+			return as.Verificar(ctx, token, r)
+		case authsrv.TemMarca(token, authsrv.MarcaRefresh):
+			// Refresh token no lugar do access é erro comum de cliente, e dizer
+			// isso poupa uma hora de depuração de quem integra.
+			return nil, fmt.Errorf("%w: o refresh_token não vale como bearer; troque-o no /oauth/token",
+				auth.ErrInvalidToken)
+		default:
+			// Chave de API é o padrão: ela é a credencial mais antiga e a que
+			// não tem descoberta nenhuma, então erro de formato aqui vira o 401
+			// dela, com o desafio que aponta para a metadata do endpoint.
+			return chave.Verificar(ctx, token, r)
+		}
+	}
 }
 
 // nomeExpostoDe traduz uma ferramenta bruta no nome que o cliente veria.
