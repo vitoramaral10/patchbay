@@ -21,9 +21,14 @@ type dadosPainel struct {
 	UpstreamsRuins   int
 	Endpoints        int
 	Ferramentas      int
-	Chaves           int
-	ChavesAtivas     int
-	URLPublica       string
+	// Lapides é quantas ferramentas removidas ainda respondem explicando que
+	// saíram, somando todos os endpoints. Elas custam o mesmo orçamento de
+	// contexto que uma ferramenta viva, e por isso aparecem ao lado da
+	// contagem (seção 08.3).
+	Lapides      int
+	Chaves       int
+	ChavesAtivas int
+	URLPublica   string
 }
 
 // telaPainel é a primeira tela depois do login: o que está no ar, e o próximo
@@ -81,7 +86,7 @@ func telaPainel(d dadosPainel, alerta *webui.Alerta) templ.Component {
 					var templ_7745c5c3_Var4 templ.SafeURL
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(webui.RotaUpstreams + "/novo"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 34, Col: 58}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 39, Col: 58}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {
@@ -111,7 +116,7 @@ func telaPainel(d dadosPainel, alerta *webui.Alerta) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = indicador("Ferramentas expostas", strconv.Itoa(d.Ferramentas), "somando todos os endpoints", webui.RotaEndpoints).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = indicador("Ferramentas expostas", valorFerramentas(d), "somando todos os endpoints", webui.RotaEndpoints).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -142,7 +147,7 @@ func telaPainel(d dadosPainel, alerta *webui.Alerta) templ.Component {
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(d.URLPublica)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 46, Col: 76}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 51, Col: 76}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -177,6 +182,16 @@ func telaPainel(d dadosPainel, alerta *webui.Alerta) templ.Component {
 		}
 		return nil
 	})
+}
+
+// valorFerramentas é o número que o indicador mostra: a contagem de
+// ferramentas vivas, e as lápides ao lado quando houver, porque as duas
+// custam o mesmo orçamento de contexto do cliente (seção 08.3).
+func valorFerramentas(d dadosPainel) string {
+	if d.Lapides == 0 {
+		return strconv.Itoa(d.Ferramentas)
+	}
+	return strconv.Itoa(d.Ferramentas) + " + " + strconv.Itoa(d.Lapides) + " lápides"
 }
 
 func rodapeUpstreams(d dadosPainel) string {
@@ -222,7 +237,7 @@ func indicador(rotulo, valor, rodape, rota string) templ.Component {
 		var templ_7745c5c3_Var8 templ.SafeURL
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(rota))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 75, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 90, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -235,7 +250,7 @@ func indicador(rotulo, valor, rodape, rota string) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(rotulo)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 76, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 91, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -248,7 +263,7 @@ func indicador(rotulo, valor, rodape, rota string) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(valor)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 77, Col: 88}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 92, Col: 88}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -261,7 +276,7 @@ func indicador(rotulo, valor, rodape, rota string) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(rodape)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 78, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/patchbay/painel.templ`, Line: 93, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {

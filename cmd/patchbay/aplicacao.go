@@ -168,6 +168,15 @@ func (a *Aplicacao) Iniciar(ctx context.Context) {
 		defer a.wg.Done()
 		a.limparSessoes(ctx)
 	}()
+
+	// A lápide de ferramenta vence sozinha, e a rematerialização só acontece
+	// quando algo muda: sem esta varredura, a ferramenta que saiu ficaria no
+	// tools/list explicando que saiu para sempre.
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		a.endpoints.VigiarLapides(ctx)
+	}()
 }
 
 // limparSessoes varre as sessões vencidas até o ctx ser cancelado.
@@ -249,7 +258,8 @@ func (a *Aplicacao) painel(w http.ResponseWriter, r *http.Request) {
 			// Desabilitado ou fora da supervisão: nem pronto, nem degradado.
 		case s.Estado == upstream.EstadoPronto:
 			d.UpstreamsProntos++
-		case s.Estado == upstream.EstadoDegradado:
+		case s.Estado == upstream.EstadoDegradado, s.Estado == upstream.EstadoSondaFalhou,
+			s.Estado == upstream.EstadoDesabilitado, s.Estado == upstream.EstadoSemConsentimento:
 			d.UpstreamsRuins++
 		}
 	}
@@ -258,6 +268,7 @@ func (a *Aplicacao) painel(w http.ResponseWriter, r *http.Request) {
 	d.Endpoints = len(slugs)
 	for _, slug := range slugs {
 		d.Ferramentas += a.endpoints.Contagem(slug)
+		d.Lapides += len(a.endpoints.Lapides(slug))
 	}
 
 	chaves, err := a.repoChave.Todas(r.Context())

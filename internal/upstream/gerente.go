@@ -17,13 +17,6 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/platform/versao"
 )
 
-// IntervaloTentativaPadrao é a espera entre tentativas de conexão.
-//
-// Constante de propósito: o backoff exponencial com jitter e teto é da fatia 3,
-// e um backoff pela metade seria pior que nenhum — esconderia o problema sem
-// resolver a frequência de tentativa.
-const IntervaloTentativaPadrao = 5 * time.Second
-
 // ErrGerenteParado indica operação de ciclo de vida pedida a um gerente que
 // nunca iniciou ou que já desligou.
 var ErrGerenteParado = errors.New("upstream: gerente não está em execução")
@@ -41,11 +34,13 @@ var ErrGerenteParado = errors.New("upstream: gerente não está em execução")
 //     mesmo upstream em ordem trocada, e o resultado é um upstream sem ninguém
 //     supervisionando — ou dois.
 type Gerente struct {
-	log         *slog.Logger
-	cliente     *http.Client
-	intervalo   time.Duration
-	aoMudar     func(context.Context)
-	credenciais LerCredenciais
+	log           *slog.Logger
+	cliente       *http.Client
+	backoff       Backoff
+	relogio       Relogio
+	tetoAbandonos int
+	aoMudar       func(context.Context)
+	credenciais   LerCredenciais
 
 	comandos  chan comando
 	encerrado chan struct{}
@@ -61,9 +56,17 @@ type servidor struct {
 	cfg         Config
 	estado      Estado
 	ultimoErro  string
+	motivo      string
 	ferramentas []*mcp.Tool
 	sessao      *mcp.ClientSession
 	tentativaEm time.Time
+	proximaEm   time.Time
+	falhas      int
+	// abandonos é o consecutivo desde o último pronto: é o que abandonosEstouraram
+	// compara contra o teto. abandonosTotais nunca zera sozinho (só definir o
+	// apaga) e é o resíduo acumulado que a tela mostra por trás dele.
+	abandonos       int
+	abandonosTotais int
 }
 
 // comando é uma mudança de ciclo de vida pedida de fora.
@@ -84,9 +87,33 @@ type supervisao struct {
 // Opcao ajusta o gerente na construção.
 type Opcao func(*Gerente)
 
-// ComIntervaloTentativa troca a espera entre tentativas de conexão.
+// ComIntervaloTentativa fixa a espera entre tentativas, sem crescimento nem
+// jitter. É o que o teste usa para não depender da curva do backoff.
 func ComIntervaloTentativa(d time.Duration) Opcao {
-	return func(g *Gerente) { g.intervalo = d }
+	return func(g *Gerente) { g.backoff = BackoffFixo(d) }
+}
+
+// ComBackoff troca a curva de reconexão.
+func ComBackoff(b Backoff) Opcao {
+	return func(g *Gerente) { g.backoff = b }
+}
+
+// ComRelogio troca o relógio da supervisão. O teste injeta o seu para o backoff
+// ficar determinístico sem esperar por tempo de verdade.
+func ComRelogio(r Relogio) Opcao {
+	return func(g *Gerente) {
+		if r != nil {
+			g.relogio = r
+		}
+	}
+}
+
+// ComTetoDeAbandonos troca quantos connects abandonados a supervisão de um
+// upstream tolera antes de se desligar sozinha. Zero ou negativo desliga a
+// autoproteção, e aí o resíduo de goroutines é ilimitado — só faz sentido em
+// teste.
+func ComTetoDeAbandonos(n int) Opcao {
+	return func(g *Gerente) { g.tetoAbandonos = n }
 }
 
 // ComClienteHTTP troca o cliente HTTP usado nos upstreams HTTP.
@@ -105,12 +132,14 @@ func AoMudar(fn func(context.Context)) Opcao {
 // outros de subir.
 func NovoGerente(log *slog.Logger, cfgs []Config, opcoes ...Opcao) *Gerente {
 	g := &Gerente{
-		log:        log,
-		cliente:    &http.Client{},
-		intervalo:  IntervaloTentativaPadrao,
-		comandos:   make(chan comando),
-		encerrado:  make(chan struct{}),
-		servidores: make(map[int64]*servidor, len(cfgs)),
+		log:           log,
+		cliente:       &http.Client{},
+		backoff:       BackoffPadrao(),
+		relogio:       relogioReal{},
+		tetoAbandonos: TetoAbandonosPadrao,
+		comandos:      make(chan comando),
+		encerrado:     make(chan struct{}),
+		servidores:    make(map[int64]*servidor, len(cfgs)),
 	}
 	for _, o := range opcoes {
 		o(g)
@@ -269,38 +298,65 @@ func pararSupervisao(supervisoes map[int64]*supervisao, id int64) {
 }
 
 // supervisionar mantém uma sessão viva para um upstream.
+//
+// É o laço da máquina de estados da seção 05: novo → conectando → pronto, e
+// conectando/pronto → degradado → (backoff) → conectando. Não existe transição
+// direta degradado → pronto, porque a conexão pode estar envenenada por um erro
+// transitório (issue #683 do go-sdk) e a única correção conhecida é descartar o
+// transporte e criar outro.
+//
+// A saída de fim de linha é degradado → desabilitado, quando o contador de
+// connects abandonados passa do teto. Aí esta goroutine devolve, e só um
+// Aplicar (o botão de reconectar, ou salvar o upstream) a traz de volta.
 func (g *Gerente) supervisionar(ctx context.Context, id int64) {
+	falhas := 0
 	for {
-		if err := g.conectarEDescobrir(ctx, id); err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			g.marcarDegradado(ctx, id, err)
+		chegouPronto, err := g.conectarEDescobrir(ctx, id)
+		if ctx.Err() != nil {
+			return
+		}
+		if chegouPronto {
+			// A sessão chegou a servir: o que a derrubou é a primeira falha
+			// desta rodada, não a enésima de uma sequência antiga.
+			falhas = 0
+		}
+		if err != nil {
+			falhas++
+			g.marcarDegradado(ctx, id, err, falhas)
 		}
 
-		// Voltar de degradado passa obrigatoriamente por uma sessão nova: a
-		// conexão pode estar envenenada por um erro transitório (issue #683 do
-		// go-sdk) e reaproveitar o transporte reintroduz o bug.
+		if motivo, estourou := g.abandonosEstouraram(id); estourou {
+			g.autoDesabilitar(ctx, id, motivo)
+			return
+		}
+
+		espera := g.backoff.Espera(falhas)
+		g.agendarProxima(id, espera)
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(g.intervalo):
+		case <-g.relogio.Depois(espera):
 		}
 	}
 }
 
 // conectarEDescobrir abre a sessão, lista as ferramentas e só volta quando a
 // sessão morre ou o contexto é cancelado.
-func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) error {
+//
+// O primeiro retorno diz se o upstream chegou a pronto nesta tentativa. É o que
+// separa "caiu depois de horas servindo" de "não conecta desde sempre", e sem
+// essa distinção o backoff de um upstream estável ficaria no teto para sempre
+// depois de um soluço.
+func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) (chegouPronto bool, err error) {
 	cfg, ok := g.config(id)
 	if !ok {
-		return fmt.Errorf("%w: id %d", ErrDesconhecido, id)
+		return false, fmt.Errorf("%w: id %d", ErrDesconhecido, id)
 	}
 	g.marcarConectando(id)
 
 	sessao, err := g.conectar(ctx, cfg)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() {
 		if err := sessao.Close(); err != nil {
@@ -310,7 +366,7 @@ func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) error {
 	}()
 
 	if err := g.descobrir(ctx, id, cfg, sessao); err != nil {
-		return err
+		return false, err
 	}
 
 	// A sessão fica viva enquanto o transporte estiver de pé. Quando ele cai, o
@@ -319,22 +375,22 @@ func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) error {
 	go func() { fim <- sessao.Wait() }()
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return true, ctx.Err()
 	case err := <-fim:
 		if err != nil {
-			return fmt.Errorf("upstream %s: sessão encerrada: %w", cfg.Nome, err)
+			return true, fmt.Errorf("upstream %s: sessão encerrada: %w", cfg.Nome, err)
 		}
-		return fmt.Errorf("upstream %s: sessão encerrada pelo servidor", cfg.Nome)
+		return true, fmt.Errorf("upstream %s: sessão encerrada pelo servidor", cfg.Nome)
 	}
 }
 
-// conectar abre a sessão MCP com timeout.
+// conectar abre a sessão MCP com o watchdog armado.
 //
 // O Connect roda numa goroutine própria e é esperado com select: a issue #1189
 // do go-sdk registra que ele bloqueia além do deadline contra um servidor que
-// não responde, e Go não mata goroutine. O contador de connects abandonados e a
-// desabilitação automática são da fatia 3; aqui a goroutine é abandonada e o
-// fato aparece no log.
+// não responde, e Go não mata goroutine. Vencido o timer, o supervisor abandona
+// a goroutine presa — vazamento deliberado, e é por isso que o abandono é
+// contado, aparece na tela e leva à desabilitação automática no teto.
 func (g *Gerente) conectar(ctx context.Context, cfg Config) (*mcp.ClientSession, error) {
 	if cfg.Tipo != TipoHTTP {
 		return nil, fmt.Errorf("%w: %s", ErrTipoNaoSuportado, cfg.Tipo)
@@ -375,9 +431,15 @@ func (g *Gerente) conectar(ctx context.Context, cfg Config) (*mcp.ClientSession,
 		return r.sessao, nil
 	case <-ctxConexao.Done():
 		// A goroutine acima fica para trás de propósito: é a mitigação da
-		// issue #1189, e o resíduo tem que ser visível.
+		// issue #1189, e o resíduo tem que ser visível. Ela deixa duas
+		// goroutines presas — esta e o coletor abaixo, que espera `<-pronto`
+		// para fechar a sessão se ela chegar tarde —, e as duas só somem no
+		// próximo boot.
+		consecutivos, totais := g.contarAbandono(cfg.ID)
 		g.log.Warn("connect de upstream abandonado por timeout",
-			"upstream", cfg.Nome, "timeout", cfg.Timeout)
+			"upstream", cfg.Nome, "timeout", cfg.Timeout,
+			"abandonos_consecutivos", consecutivos, "abandonos_totais", totais,
+			"teto_abandonos", g.tetoAbandonos)
 		go func() {
 			r := <-pronto
 			if r.sessao != nil {
@@ -403,8 +465,16 @@ func (g *Gerente) descobrir(ctx context.Context, id int64, cfg Config, sessao *m
 	if ok {
 		s.estado = EstadoPronto
 		s.ultimoErro = ""
+		s.motivo = ""
 		s.ferramentas = res.Tools
 		s.sessao = sessao
+		// Pronto zera falhas e abandonos consecutivos: a próxima queda começa a
+		// curva do zero, e um timeout esporádico de connect não acumula por
+		// semanas até desabilitar sozinho um upstream saudável. abandonosTotais
+		// não zera aqui — só definir apaga o resíduo acumulado.
+		s.falhas = 0
+		s.abandonos = 0
+		s.proximaEm = time.Time{}
 	}
 	g.mu.Unlock()
 	if !ok {
@@ -488,6 +558,11 @@ func (g *Gerente) Situacoes() []Situacao {
 	return out
 }
 
+// TetoDeAbandonos devolve quantos connects abandonados a supervisão tolera. A
+// tela mostra o número ao lado do contador, porque "3 abandonos" só significa
+// alguma coisa ao lado do teto.
+func (g *Gerente) TetoDeAbandonos() int { return g.tetoAbandonos }
+
 // Situacao devolve o retrato de um upstream. O segundo retorno é falso quando o
 // upstream não está sob supervisão — desabilitado, por exemplo.
 func (g *Gerente) Situacao(upstreamID int64) (Situacao, bool) {
@@ -502,11 +577,16 @@ func (g *Gerente) Situacao(upstreamID int64) (Situacao, bool) {
 
 func (s *servidor) situacao() Situacao {
 	return Situacao{
-		Config:      s.cfg,
-		Estado:      s.estado,
-		UltimoErro:  s.ultimoErro,
-		Ferramentas: len(s.ferramentas),
-		TentativaEm: s.tentativaEm,
+		Config:          s.cfg,
+		Estado:          s.estado,
+		UltimoErro:      s.ultimoErro,
+		Ferramentas:     len(s.ferramentas),
+		TentativaEm:     s.tentativaEm,
+		ProximaEm:       s.proximaEm,
+		Falhas:          s.falhas,
+		Abandonos:       s.abandonos,
+		AbandonosTotais: s.abandonosTotais,
+		Motivo:          s.motivo,
 	}
 }
 
@@ -536,9 +616,19 @@ func (g *Gerente) definir(cfg Config) {
 	s.cfg = cfg
 	s.estado = EstadoNovo
 	s.ultimoErro = ""
+	s.motivo = ""
 	s.ferramentas = nil
 	s.sessao = nil
 	s.tentativaEm = time.Time{}
+	s.proximaEm = time.Time{}
+	s.falhas = 0
+	// Os dois contadores de abandono zeram junto, e é isto que faz Aplicar
+	// servir de botão de reconectar para um upstream que se desabilitou
+	// sozinho. O resíduo de goroutines presas não some com o contador — ele só
+	// some no próximo boot —, mas quem reaplica está dizendo que quer gastar
+	// mais um teto e ver o total acumulado recomeçar do zero.
+	s.abandonos = 0
+	s.abandonosTotais = 0
 }
 
 // esquecer tira o upstream do mapa e devolve o nome que ele tinha, para o log.
@@ -554,20 +644,23 @@ func (g *Gerente) esquecer(id int64) string {
 }
 
 func (g *Gerente) marcarConectando(id int64) {
+	agora := g.relogio.Agora()
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if s, ok := g.servidores[id]; ok {
 		s.estado = EstadoConectando
-		s.tentativaEm = time.Now()
+		s.tentativaEm = agora
+		s.proximaEm = time.Time{}
 	}
 }
 
-func (g *Gerente) marcarDegradado(ctx context.Context, id int64, causa error) {
+func (g *Gerente) marcarDegradado(ctx context.Context, id int64, causa error, falhas int) {
 	g.mu.Lock()
 	s, ok := g.servidores[id]
 	if ok {
 		s.estado = EstadoDegradado
 		s.ultimoErro = causa.Error()
+		s.falhas = falhas
 		s.sessao = nil
 		// As ferramentas saem do catálogo: ferramenta que não funciona custa
 		// contexto no cliente sem entregar nada (seção 05).
@@ -582,7 +675,81 @@ func (g *Gerente) marcarDegradado(ctx context.Context, id int64, causa error) {
 	if !ok {
 		return
 	}
-	g.log.Warn("upstream degradado", "upstream", nome, "erro", causa)
+	g.log.Warn("upstream degradado", "upstream", nome, "erro", causa, "falhas", falhas)
+	g.notificarMudanca(ctx)
+}
+
+// agendarProxima grava quando o backoff libera a tentativa seguinte. É o número
+// que a tela mostra ao lado do motivo (seção 11).
+func (g *Gerente) agendarProxima(id int64, espera time.Duration) {
+	proximaEm := g.relogio.Agora().Add(espera)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if s, ok := g.servidores[id]; ok {
+		s.proximaEm = proximaEm
+	}
+}
+
+// contarAbandono registra mais um connect deixado para trás. Devolve o
+// consecutivo desde o último pronto (o que abandonosEstouraram compara contra
+// o teto) e o total acumulado (o resíduo que a tela mostra, mesmo depois de o
+// consecutivo zerar).
+func (g *Gerente) contarAbandono(id int64) (consecutivos, totais int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s, ok := g.servidores[id]
+	if !ok {
+		return 0, 0
+	}
+	s.abandonos++
+	s.abandonosTotais++
+	return s.abandonos, s.abandonosTotais
+}
+
+// abandonosEstouraram informa se o upstream passou do teto de abandonos
+// consecutivos e devolve o motivo escrito, que é o que vai para a tela.
+func (g *Gerente) abandonosEstouraram(id int64) (motivo string, estourou bool) {
+	if g.tetoAbandonos <= 0 {
+		return "", false
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	s, ok := g.servidores[id]
+	if !ok || s.abandonos < g.tetoAbandonos {
+		return "", false
+	}
+	return fmt.Sprintf(
+		"%d connects consecutivos abandonados por timeout, teto de %d: a supervisão parou sozinha para não acumular goroutine e socket presos. Reconecte quando o servidor voltar a responder.",
+		s.abandonos, g.tetoAbandonos), true
+}
+
+// autoDesabilitar desliga a supervisão de um upstream que pendura sempre.
+//
+// Nada disso vai ao banco: habilitado continua sendo a intenção do admin, e o
+// próximo boot recomeça em novo → conectando. O que muda é só o estado em
+// memória e o motivo na tela — upstream que se desabilita em silêncio é
+// indistinguível de upstream que alguém apagou (seção 05).
+func (g *Gerente) autoDesabilitar(ctx context.Context, id int64, motivo string) {
+	g.mu.Lock()
+	s, ok := g.servidores[id]
+	nome := ""
+	consecutivos, totais := 0, 0
+	if ok {
+		s.estado = EstadoDesabilitado
+		s.motivo = motivo
+		s.sessao = nil
+		s.ferramentas = nil
+		s.proximaEm = time.Time{}
+		nome, consecutivos, totais = s.cfg.Nome, s.abandonos, s.abandonosTotais
+	}
+	g.mu.Unlock()
+
+	if !ok {
+		return
+	}
+	g.log.Error("upstream desabilitado por autoproteção",
+		"upstream", nome, "upstream_id", id,
+		"abandonos_consecutivos", consecutivos, "abandonos_totais", totais, "teto_abandonos", g.tetoAbandonos)
 	g.notificarMudanca(ctx)
 }
 

@@ -74,6 +74,9 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 									<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Upstreams) }</td>
 									<td class="px-4 py-3" data-numero>
 										@contagemDeFerramentas(l.Ferramentas)
+										if l.Lapides > 0 {
+											<p class="text-xs text-conteudo-tenue">+{ strconv.Itoa(l.Lapides) } lápide(s)</p>
+										}
 									</td>
 								</tr>
 							}
@@ -127,6 +130,9 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 					}
 					@dado("Ferramentas expostas") {
 						<span data-numero>{ strconv.Itoa(len(d.Ferramentas)) }</span>
+						if len(d.Lapides) > 0 {
+							<span class="text-conteudo-tenue">+{ strconv.Itoa(len(d.Lapides)) } lápide(s)</span>
+						}
 					}
 					@dado("Upstreams na composição") {
 						<span data-numero>{ strconv.Itoa(len(d.Composicao)) }</span>

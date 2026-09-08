@@ -75,6 +75,10 @@ type Linha struct {
 	Registro
 	Upstreams   int
 	Ferramentas int
+	// Lapides é quantas ferramentas removidas ainda respondem explicando que
+	// saíram (seção 08.3). Contagem não inclui lápide, mas elas também custam
+	// contexto no cliente, e por isso aparecem ao lado na tela.
+	Lapides int
 	// URL é o endereço público que o cliente MCP usa.
 	URL string
 }
@@ -84,5 +88,8 @@ type Detalhe struct {
 	Registro
 	URL         string
 	Ferramentas []string
-	Composicao  []UpstreamOpcao
+	// Lapides são os nomes das ferramentas removidas que ainda respondem só
+	// para explicar que saíram, até a janela de graça vencer.
+	Lapides    []string
+	Composicao []UpstreamOpcao
 }

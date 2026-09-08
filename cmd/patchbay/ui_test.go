@@ -335,8 +335,28 @@ func TestUI_FluxoCompletoSemReiniciar(t *testing.T) {
 	}
 	esperarFerramentas(t, u, "pessoal", 0)
 
-	if nomes := nomesDeFerramenta(t, sessao); len(nomes) != 0 {
-		t.Errorf("ferramentas depois de desabilitar = %v, quer nenhuma", nomes)
+	// O endpoint não expõe mais nenhuma ferramenta que funcione, mas as duas
+	// continuam listadas como lápide pela janela de graça (fatia 3): o cliente
+	// desta sessão ainda tem a lista antiga, e unknown tool o faria concluir que
+	// o endpoint quebrou em vez de que a configuração mudou.
+	if nomes := nomesDeFerramenta(t, sessao); !slices.Equal(nomes, quer) {
+		t.Errorf("ferramentas depois de desabilitar = %v, quer as lápides %v", nomes, quer)
+	}
+	if lapides := u.app.endpoints.Lapides("pessoal"); !slices.Equal(lapides, quer) {
+		t.Errorf("lápides = %v, quer %v", lapides, quer)
+	}
+	morta, err := sessao.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "somar",
+		Arguments: map[string]any{"a": 2, "b": 40},
+	})
+	if err != nil {
+		t.Fatalf("tools/call na lápide: erro = %v, quer erro de ferramenta", err)
+	}
+	if !morta.IsError {
+		t.Error("tools/call na lápide = sucesso, quer erro de ferramenta explicando que ela saiu")
+	}
+	if texto := textoDe(morta); !strings.Contains(texto, "somar") {
+		t.Errorf("texto da lápide = %q, quer o nome da ferramenta", texto)
 	}
 }
 
@@ -361,8 +381,28 @@ func TestUI_RemoverUpstreamEsvaziaOEndpoint(t *testing.T) {
 	}
 	esperarFerramentas(t, u, "pessoal", 0)
 
-	if nomes := nomesDeFerramenta(t, sessao); len(nomes) != 0 {
-		t.Errorf("ferramentas depois de remover = %v, quer nenhuma", nomes)
+	// Nenhuma ferramenta viva sobrou. As lápides ficam pela janela de graça e
+	// respondem com a explicação — o que a fatia 3 troca por "ferramenta zumbi"
+	// é o unknown tool, não o registro.
+	quer := []string{nomeNormalizado, "somar"}
+	if lapides := u.app.endpoints.Lapides("pessoal"); !slices.Equal(lapides, quer) {
+		t.Errorf("lápides = %v, quer %v", lapides, quer)
+	}
+	morta, err := sessao.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "somar",
+		Arguments: map[string]any{"a": 2, "b": 40},
+	})
+	if err != nil {
+		t.Fatalf("tools/call na lápide: erro = %v, quer erro de ferramenta", err)
+	}
+	if !morta.IsError {
+		t.Error("tools/call na lápide = sucesso, quer erro de ferramenta explicando que ela saiu")
+	}
+
+	// E a sessão do cliente continua de pé: remover upstream não derruba
+	// endpoint.
+	if nomes := nomesDeFerramenta(t, sessao); !slices.Equal(nomes, quer) {
+		t.Errorf("ferramentas depois de remover = %v, quer as lápides %v", nomes, quer)
 	}
 }
 
@@ -801,6 +841,39 @@ func TestUI_TelaDeUpstreamMostraFerramentasDescobertas(t *testing.T) {
 	} {
 		if !strings.Contains(texto, trecho) {
 			t.Errorf("tela de detalhe não contém %q", trecho)
+		}
+	}
+}
+
+// TestUI_ReconectarUpstreamRearmaASupervisao cobre o botão que a seção 11 exige
+// ao lado do estado: o admin tem como agir sobre o upstream que a tela mostra
+// como degradado ou desabilitado por autoproteção, sem editar um campo que ele
+// não quer mudar e sem reiniciar o processo.
+func TestUI_ReconectarUpstreamRearmaASupervisao(t *testing.T) {
+	t.Parallel()
+
+	u := subirUI(t)
+	u.setup(t)
+
+	upstreamID := u.criarUpstream(t, "falso", upstreamFalso(t))
+	u.criarEndpoint(t, "pessoal", "Pessoal", upstreamID)
+	esperarFerramentas(t, u, "pessoal", 2)
+
+	rota := webui.RotaUpstreams + "/" + strconv.FormatInt(upstreamID, 10)
+	res := u.enviarForm(t, rota+"/reconectar", url.Values{})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("reconectar: status = %d, quer %d", res.StatusCode, http.StatusOK)
+	}
+
+	// A sessão antiga foi descartada e uma nova subiu: o catálogo volta sozinho.
+	esperarFerramentas(t, u, "pessoal", 2)
+
+	// A tela de estado carrega o resíduo do watchdog e o agendamento do backoff:
+	// sem esses dois números, o admin não distingue "está tentando" de "desistiu".
+	tela := corpo(t, u.abrir(t, rota))
+	for _, trecho := range []string{"Próxima tentativa", "Connects abandonados", "Falhas consecutivas"} {
+		if !strings.Contains(tela, trecho) {
+			t.Errorf("tela de detalhe não mostra %q", trecho)
 		}
 	}
 }

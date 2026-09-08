@@ -44,6 +44,7 @@ func (a *Admin) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+webui.RotaUpstreams+"/{id}/editar", a.formEditar)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}", a.atualizar)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/remover", a.remover)
+	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/reconectar", a.reconectar)
 }
 
 func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +64,8 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 		l := Linha{Registro: reg, Endpoints: contagens[reg.ID]}
 		if s, ok := a.gerente.Situacao(reg.ID); ok {
 			l.Estado, l.Ferramentas, l.TentativaEm = s.Estado, s.Ferramentas, s.TentativaEm
+			l.ProximaEm, l.Abandonos, l.Motivo = s.ProximaEm, s.Abandonos, s.Motivo
+			l.AbandonosTotais = s.AbandonosTotais
 			l.Supervisionado = true
 			// O último erro em memória é mais novo que o do banco: é o da
 			// tentativa em curso, e é o que o admin precisa ver.
@@ -151,9 +154,16 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d := Detalhe{Registro: reg, Endpoints: slugs, Credenciais: credenciais}
+	d := Detalhe{
+		Registro:      reg,
+		Endpoints:     slugs,
+		Credenciais:   credenciais,
+		TetoAbandonos: a.gerente.TetoDeAbandonos(),
+	}
 	if s, ok := a.gerente.Situacao(reg.ID); ok {
 		d.Estado, d.TentativaEm, d.Supervisionado = s.Estado, s.TentativaEm, true
+		d.ProximaEm, d.Falhas, d.Abandonos, d.Motivo = s.ProximaEm, s.Falhas, s.Abandonos, s.Motivo
+		d.AbandonosTotais = s.AbandonosTotais
 		if s.UltimoErro != "" {
 			d.UltimoErro = s.UltimoErro
 		}
@@ -171,6 +181,29 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	webui.Renderizar(w, r, http.StatusOK, a.log, TelaDetalhe(d, webui.Avisos(r, avisos)))
+}
+
+// reconectar rearma a supervisão de um upstream agora, sem esperar o backoff.
+//
+// É o botão que a seção 11 exige ao lado do motivo: sem ele, um upstream que se
+// desabilitou por conta própria só voltaria com um boot ou com uma edição que
+// não muda nada. Aplicar é a primitiva certa porque reconectar é descartar o
+// transporte e criar outro — a única correção conhecida da issue #683.
+func (a *Admin) reconectar(w http.ResponseWriter, r *http.Request) {
+	reg, ok := a.upstreamDaRota(w, r)
+	if !ok {
+		return
+	}
+	if !reg.Habilitado {
+		// Reconectar um upstream desabilitado seria desfazer a intenção do admin
+		// por um clique que não diz isso.
+		webui.Redirecionar(w, r, rotaDo(reg.ID)+"?aviso=desabilitado")
+		return
+	}
+	a.aplicarNoAr(r.Context(), reg)
+	a.log.Info("reconexão de upstream pedida pela tela",
+		"upstream", reg.Nome, "upstream_id", reg.ID)
+	webui.Redirecionar(w, r, rotaDo(reg.ID)+"?aviso=reconectando")
 }
 
 func (a *Admin) formEditar(w http.ResponseWriter, r *http.Request) {
@@ -355,7 +388,9 @@ func lerHeaders(campos url.Values) []CampoHeader {
 }
 
 var avisos = map[string]webui.Alerta{
-	"criado":   {Tom: webui.TomSucesso, Titulo: "Upstream criado.", Texto: "A conexão já está sendo tentada; o estado abaixo se atualiza a cada recarga."},
-	"salvo":    {Tom: webui.TomSucesso, Titulo: "Upstream salvo.", Texto: "A sessão antiga foi fechada e uma nova está sendo aberta com a configuração nova."},
-	"removido": {Tom: webui.TomInfo, Titulo: "Upstream removido.", Texto: "A sessão e a goroutine de supervisão foram encerradas, e os endpoints já refletem a remoção."},
+	"criado":       {Tom: webui.TomSucesso, Titulo: "Upstream criado.", Texto: "A conexão já está sendo tentada; o estado abaixo se atualiza a cada recarga."},
+	"salvo":        {Tom: webui.TomSucesso, Titulo: "Upstream salvo.", Texto: "A sessão antiga foi fechada e uma nova está sendo aberta com a configuração nova."},
+	"removido":     {Tom: webui.TomInfo, Titulo: "Upstream removido.", Texto: "A sessão e a goroutine de supervisão foram encerradas, e os endpoints já refletem a remoção."},
+	"reconectando": {Tom: webui.TomInfo, Titulo: "Reconexão pedida.", Texto: "A sessão antiga foi descartada, o backoff voltou ao começo e o contador de abandonos zerou."},
+	"desabilitado": {Tom: webui.TomAlerta, Titulo: "O upstream está desabilitado.", Texto: "Habilite-o na edição para que a supervisão volte a tentar."},
 }

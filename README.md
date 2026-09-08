@@ -5,10 +5,10 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: **fatia 6** do épico — segredos cifrados em repouso. Ainda não tem
-> resiliência completa de upstream (fatia 3), composição fina de endpoint
-> (fatia 4), upstream STDIO (fatia 5), OAuth de upstream (fatias 7-8) nem
-> authorization server próprio (fatias 10-11).
+> Estado: **fatia 3** do épico — isolamento e resiliência do upstream, sobre as
+> fatias 1, 2 e 6 já entregues. Ainda não tem composição fina de endpoint
+> (fatia 4), upstream STDIO (fatia 5), OAuth de upstream (fatias 7-8), sonda
+> funcional (fatia 9) nem authorization server próprio (fatias 10-11).
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
@@ -23,12 +23,25 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 - `internal/catalogo` — normalizador obrigatório entre o upstream e o SDK.
   `(*mcp.Server).AddTool` entra em panic em oito pontos com dado que vem do
   `tools/list` de terceiro; ferramenta que não normaliza é descartada com log.
+  Ferramenta que sai do catálogo deixa uma **lápide** por uma janela de graça:
+  continua listada e responde com um erro de ferramenta explicando que saiu, em
+  vez de o cliente receber `unknown tool` e concluir que o endpoint quebrou.
 - `internal/upstream` — uma sessão MCP por servidor HTTP configurado, conectada
   em goroutine de supervisão. Nenhuma operação de upstream no caminho da
   requisição do cliente. **Adicionar, reconfigurar e remover upstream valem em
-  tempo de execução**, sem reiniciar o processo.
+  tempo de execução**, sem reiniciar o processo. A máquina de estados da seção
+  05 completa: watchdog de conexão que abandona o `Connect` preso (issue #1189
+  do go-sdk), contador de connects abandonados com teto e desabilitação
+  automática, e backoff exponencial próprio com jitter e teto — sem
+  `cenkalti/backoff`, com relógio injetado. **Nenhum estado de erro é
+  persistido:** o banco guarda só `habilitado`, e todo boot recomeça em
+  `novo → conectando`.
 - `internal/endpoint` — um `*mcp.Server` e um `StreamableHTTPHandler` vivos por
-  endpoint, servidos em `/mcp/{slug}` com sessão retida.
+  endpoint, servidos em `/mcp/{slug}` com sessão retida. **Catálogo parcial
+  servido sem hesitar:** endpoint com três upstreams e um degradado serve as
+  ferramentas dos outros dois, e `tools/list` vazio é resposta legítima quando
+  nenhum está pronto — nunca erro. Rematerializar dispara `tools/list_changed`
+  e recolhe as lápides vencidas.
 - `internal/apikey` — chave com prefixo legível, verificada por hash SHA-256,
   com escopo de endpoints, plugada em `auth.RequireBearerToken` do go-sdk.
   Credencial em query string vem desligada.
@@ -52,7 +65,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
 | `/admin/setup` | Cria o administrador único. Existe **só** no primeiro acesso |
 | `/admin/login` · `/admin/sair` | Entrada e saída |
 | `/admin/` | Painel: upstreams por estado, endpoints, ferramentas, chaves |
-| `/admin/upstreams` | CRUD de upstream HTTP com bearer e headers estáticos; detalhe com estado, último erro e as ferramentas descobertas (nome exposto, nome original, descrição) |
+| `/admin/upstreams` | CRUD de upstream HTTP com bearer e headers estáticos; detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora |
 | `/admin/endpoints` | CRUD de endpoint com composição de upstreams e contagem de ferramentas |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
 

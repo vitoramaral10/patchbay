@@ -170,7 +170,7 @@ func TestCofre_ValorGuardadoInvalido(t *testing.T) {
 		"versão desconhecida":    {guardado: "pbc9:" + strings.TrimPrefix(valido, "pbc1:"), quer: cripto.ErrFormato},
 		"base64 quebrado":        {guardado: "pbc1:não é base64", quer: cripto.ErrFormato},
 		"corpo curto demais":     {guardado: "pbc1:AAAA", quer: cripto.ErrFormato},
-		"texto cifrado alterado": {guardado: valido[:len(valido)-1] + trocar(valido[len(valido)-1]), quer: cripto.ErrAutenticacao},
+		"texto cifrado alterado": {guardado: corromperMeio(t, valido), quer: cripto.ErrAutenticacao},
 	}
 
 	for nome, tc := range casos {
@@ -261,11 +261,29 @@ func nonceDe(t *testing.T, guardado string) string {
 	return string(selado[:12])
 }
 
-// trocar devolve um byte diferente do recebido, para adulterar o último
-// caractere de um valor guardado sem sair do alfabeto base64url.
-func trocar(b byte) string {
-	if b == 'A' {
-		return "B"
+// corromperMeio decodifica o corpo selado e flipa um bit no meio dele, para
+// adulterar o texto cifrado de verdade.
+//
+// Alternar só o último caractere base64 (como a versão anterior deste teste
+// fazia) mexe apenas nos dois bits de folga do último grupo de 6 bits: em
+// ~8% das cifragens esses bits caem sobre padding que não decodifica em
+// nenhum byte, e às vezes 'A' e 'B' decodificam nos mesmos bytes, deixando o
+// teste passar ou falhar ao acaso. Corromper um byte do meio do ciphertext
+// garante uma falha de autenticação do GCM sempre.
+func corromperMeio(t *testing.T, guardado string) string {
+	t.Helper()
+
+	corpo, temPrefixo := strings.CutPrefix(guardado, "pbc1:")
+	if !temPrefixo {
+		t.Fatalf("valor guardado = %q, quer começar com \"pbc1:\"", guardado)
 	}
-	return "A"
+	selado, err := base64.RawURLEncoding.DecodeString(corpo)
+	if err != nil {
+		t.Fatalf("decodificar valor guardado: erro = %v, quer nil", err)
+	}
+	if len(selado) == 0 {
+		t.Fatal("corpo selado vazio; nada para corromper")
+	}
+	selado[len(selado)/2] ^= 0x01
+	return "pbc1:" + base64.RawURLEncoding.EncodeToString(selado)
 }

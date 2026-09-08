@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -24,6 +25,11 @@ type Servidores struct {
 	cat  Catalogo
 	exec Executor
 	log  *slog.Logger
+
+	// janela é quanto tempo uma ferramenta removida continua registrada como
+	// lápide, e relogio é quem decide que a janela venceu.
+	janela  time.Duration
+	relogio Relogio
 
 	mu      sync.RWMutex
 	porSlug map[string]*vivo
@@ -52,18 +58,30 @@ type vivo struct {
 	reg      Registro
 	servidor *mcp.Server
 	handler  http.Handler
-	expostos []string // nomes registrados, para saber o que remover
+	expostos []string // ferramentas vivas, para saber o que saiu do catálogo
+	// origens diz de qual upstream veio cada ferramenta viva. É o que a lápide
+	// usa para escrever "saiu do upstream X" em vez de um texto genérico.
+	origens map[string]string
+	// lapides são as ferramentas que já saíram do catálogo e continuam
+	// registradas até a janela de graça vencer.
+	lapides map[string]lapide
 }
 
 // NovoServidores monta o registro de endpoints.
-func NovoServidores(repo Repositorio, cat Catalogo, exec Executor, log *slog.Logger) *Servidores {
-	return &Servidores{
+func NovoServidores(repo Repositorio, cat Catalogo, exec Executor, log *slog.Logger, opcoes ...Opcao) *Servidores {
+	s := &Servidores{
 		repo:    repo,
 		cat:     cat,
 		exec:    exec,
 		log:     log,
+		janela:  catalogo.JanelaDeGracaPadrao,
+		relogio: relogioReal{},
 		porSlug: make(map[string]*vivo),
 	}
+	for _, o := range opcoes {
+		o(s)
+	}
+	return s
 }
 
 // Sincronizar acerta o conjunto de endpoints no ar com o banco e rematerializa o
@@ -139,12 +157,18 @@ func (s *Servidores) reconciliar(regs []Registro) (vivos []*vivo, aposentados []
 			v.servidor = s.novoServidorMCP(reg)
 			v.handler = s.novoHandler(v.servidor)
 			v.expostos = nil
+			v.origens = nil
+			// A instância nova nasce sem lápide: as sessões daquele endpoint
+			// foram encerradas, então não existe cliente com a lista antiga em
+			// cache para proteger.
+			v.lapides = nil
 		}
 		v.reg = reg
 	}
 
-	// Endpoint apagado do banco sai do ar. A janela de graça de ferramenta
-	// removida (lápide) é da fatia 3 e vale para ferramenta, não para endpoint.
+	// Endpoint apagado do banco sai do ar. A janela de graça vale para
+	// ferramenta, não para endpoint: manter um endpoint apagado no ar seria
+	// servir uma URL que o admin acabou de dizer que não existe mais.
 	for slug, v := range s.porSlug {
 		if presentes[slug] {
 			continue
@@ -214,7 +238,7 @@ func (s *Servidores) rematerializar(ctx context.Context, v *vivo) error {
 	defer v.materializacao.Unlock()
 
 	s.mu.RLock()
-	reg, srv, antigos := v.reg, v.servidor, v.expostos
+	reg, srv, antigos, origensAntigas := v.reg, v.servidor, v.expostos, v.origens
 	s.mu.RUnlock()
 
 	ferramentas, err := s.cat.Materializar(ctx, reg.ID)
@@ -222,27 +246,30 @@ func (s *Servidores) rematerializar(ctx context.Context, v *vivo) error {
 		return fmt.Errorf("endpoint %s: %w", reg.Slug, err)
 	}
 
+	// Catálogo parcial servido sem hesitar: o que chega aqui é o snapshot de
+	// cada upstream, e um upstream degradado contribui com zero ferramentas em
+	// vez de derrubar a lista inteira (seção 08.3). Lista vazia é resposta
+	// legítima do tools/list; erro não é.
 	novos := make([]string, 0, len(ferramentas))
+	origens := make(map[string]string, len(ferramentas))
 	for _, f := range ferramentas {
 		if s.registrar(srv, f) {
 			novos = append(novos, f.NomeExposto())
+			origens[f.NomeExposto()] = f.UpstreamNome
 		}
 	}
 
-	// O que saiu do catálogo é removido. AddTool e RemoveTools passam por
-	// changeAndNotify, que dispara tools/list_changed com debounce
-	// (mcp/server.go:699).
-	if sumiram := diferenca(antigos, novos); len(sumiram) > 0 {
-		srv.RemoveTools(sumiram...)
-		s.log.Info("ferramentas removidas do endpoint",
-			"endpoint", reg.Slug, "ferramentas", sumiram)
-	}
+	// O que saiu do catálogo vira lápide e só depois é removido. AddTool e
+	// RemoveTools passam por changeAndNotify, que dispara tools/list_changed com
+	// debounce (mcp/server.go:699).
+	s.aplicarLapides(srv, v, reg.Slug, antigos, origensAntigas, novos)
 
 	s.mu.Lock()
 	// Só grava se o servidor não foi trocado embaixo por uma recriação: nesse
 	// caso o conjunto calculado é de outra instância e não descreve esta.
 	if v.servidor == srv {
 		v.expostos = novos
+		v.origens = origens
 	}
 	s.mu.Unlock()
 

@@ -200,11 +200,15 @@ func (f *Form) CompletarHeaders(definidas []CredencialDefinida) {
 // Linha é um upstream na lista da UI.
 type Linha struct {
 	Registro
-	Estado         Estado
-	Ferramentas    int
-	TentativaEm    time.Time
-	Endpoints      int
-	Supervisionado bool
+	Estado          Estado
+	Ferramentas     int
+	TentativaEm     time.Time
+	ProximaEm       time.Time
+	Abandonos       int
+	AbandonosTotais int
+	Motivo          string
+	Endpoints       int
+	Supervisionado  bool
 }
 
 // FerramentaDescoberta é uma ferramenta do último tools/list do upstream, do
@@ -226,8 +230,20 @@ type Detalhe struct {
 	Estado         Estado
 	Supervisionado bool
 	TentativaEm    time.Time
-	Ferramentas    []FerramentaDescoberta
-	Endpoints      []string
+	// ProximaEm é quando o backoff libera a próxima tentativa. Sem ela na tela,
+	// o admin fica clicando em reconectar sem saber que já está agendado.
+	ProximaEm time.Time
+	// Falhas, Abandonos e Motivo são o resíduo visível da mitigação da issue
+	// #1189: cada abandono deixa duas goroutines presas até o próximo boot.
+	Falhas int
+	// Abandonos é o consecutivo desde o último pronto — o que TetoAbandonos
+	// mede — e AbandonosTotais é o acumulado que não zera sozinho.
+	Abandonos       int
+	AbandonosTotais int
+	TetoAbandonos   int
+	Motivo          string
+	Ferramentas     []FerramentaDescoberta
+	Endpoints       []string
 	// Credenciais lista o que está gravado, sem valor nenhum.
 	Credenciais []CredencialDefinida
 }
