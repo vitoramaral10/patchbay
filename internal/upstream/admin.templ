@@ -1,0 +1,346 @@
+package upstream
+
+import (
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/vitoramaral10/patchbay/internal/platform/webui"
+)
+
+func rotaDo(id int64) string { return webui.RotaUpstreams + "/" + strconv.FormatInt(id, 10) }
+
+// tomDoEstado mapeia a máquina de estados nos tons do layout.
+//
+// Desabilitado tem tom próprio e nunca é verde: um verde que significa "não sei"
+// é exatamente a mentira que a seção 11 proíbe.
+func tomDoEstado(e Estado, habilitado, supervisionado bool) webui.Tom {
+	if !habilitado || !supervisionado {
+		return webui.TomNeutro
+	}
+	switch e {
+	case EstadoPronto:
+		return webui.TomSucesso
+	case EstadoDegradado:
+		return webui.TomPerigo
+	case EstadoConectando, EstadoNovo:
+		return webui.TomAlerta
+	default:
+		return webui.TomNeutro
+	}
+}
+
+func rotuloDoEstado(e Estado, habilitado, supervisionado bool) string {
+	if !habilitado {
+		return "desabilitado"
+	}
+	if !supervisionado {
+		return "fora da supervisão"
+	}
+	switch e {
+	case EstadoPronto:
+		return "pronto"
+	case EstadoDegradado:
+		return "degradado"
+	case EstadoConectando:
+		return "conectando"
+	case EstadoNovo:
+		return "iniciando"
+	default:
+		return string(e)
+	}
+}
+
+func instante(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Local().Format("02/01/2006 15:04:05")
+}
+
+// TelaLista é a lista de upstreams.
+templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Upstreams",
+		Subtitulo: "Cada upstream é um servidor MCP externo. O patchbay mantém uma sessão por upstream, aberta fora do caminho da requisição do cliente.",
+		Secao:     webui.SecaoUpstreams,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Acao:      botaoNovo(),
+		Alerta:    alerta,
+	}) {
+		if len(linhas) == 0 {
+			@webui.Vazio("Nenhum upstream ainda.",
+				"Cadastre o primeiro servidor MCP que o patchbay vai agregar. Só HTTP nesta fatia; STDIO e SSE chegam depois.") {
+				@botaoNovo()
+			}
+		} else {
+			@webui.Cartao("") {
+				<div class="overflow-x-auto">
+					<table class="w-full text-left">
+						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+							<tr>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Upstream</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Estado</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Ferramentas</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Endpoints</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Timeout</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-borda">
+							for _, l := range linhas {
+								<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
+									<td class="px-4 py-3">
+										<a href={ templ.SafeURL(rotaDo(l.ID)) } class="pb-link font-medium">{ l.Nome }</a>
+										<p class="max-w-[48ch] truncate font-mono text-xs text-conteudo-tenue">{ l.URL }</p>
+									</td>
+									<td class="px-4 py-3">
+										@webui.Selo(tomDoEstado(l.Estado, l.Habilitado, l.Supervisionado),
+											rotuloDoEstado(l.Estado, l.Habilitado, l.Supervisionado))
+										if l.UltimoErro != "" {
+											<p class="mt-1 max-w-[40ch] truncate text-xs text-perigo" title={ l.UltimoErro }>{ l.UltimoErro }</p>
+										}
+									</td>
+									<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Ferramentas) }</td>
+									<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Endpoints) }</td>
+									<td class="px-4 py-3" data-numero>{ strconv.FormatInt(l.TimeoutMS, 10) } ms</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		}
+	}
+}
+
+templ botaoNovo() {
+	<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo") } class="pb-botao pb-botao-primario">Novo upstream</a>
+}
+
+// TelaDetalhe mostra o estado atual e as ferramentas descobertas.
+templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    d.Nome,
+		Subtitulo: d.URL,
+		Secao:     webui.SecaoUpstreams,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Acao:      acoesDoDetalhe(d),
+		Alerta:    alerta,
+	}) {
+		<div class="flex flex-col gap-6">
+			@webui.Cartao("Estado") {
+				<dl class="grid gap-x-6 gap-y-4 px-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
+					@dado("Situação") {
+						@webui.Selo(tomDoEstado(d.Estado, d.Habilitado, d.Supervisionado),
+							rotuloDoEstado(d.Estado, d.Habilitado, d.Supervisionado))
+					}
+					@dado("Ferramentas descobertas") {
+						<span data-numero>{ strconv.Itoa(len(d.Ferramentas)) }</span>
+					}
+					@dado("Timeout de toda operação") {
+						<span data-numero>{ strconv.FormatInt(d.TimeoutMS, 10) } ms</span>
+					}
+					@dado("Última tentativa") {
+						{ instante(d.TentativaEm) }
+					}
+				</dl>
+				if d.UltimoErro != "" {
+					<div class="border-t border-borda px-4 py-4">
+						<p class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Último erro</p>
+						<p class="mt-1 max-w-[80ch] break-words font-mono text-sm text-perigo">{ d.UltimoErro }</p>
+						<p class="mt-2 max-w-[65ch] text-sm text-conteudo-suave">
+							O upstream continua na lista com o motivo à vista, e a supervisão tenta de novo
+							a cada { strconv.Itoa(int(IntervaloTentativaPadrao.Seconds())) } segundos.
+							Backoff com jitter e a hora da próxima tentativa são da fatia 3.
+						</p>
+					</div>
+				}
+			}
+			@webui.Cartao("Ferramentas descobertas") {
+				if len(d.Ferramentas) == 0 {
+					<p class="px-4 py-6 max-w-[65ch] text-conteudo-suave">
+						Nenhuma ferramenta no último <code class="font-mono">tools/list</code> bem-sucedido.
+						if !d.Habilitado {
+							O upstream está desabilitado, então não há sessão aberta.
+						} else if d.Estado == EstadoDegradado {
+							O upstream está degradado: as ferramentas saem do catálogo enquanto ele não responde,
+							porque ferramenta que não funciona custa contexto no cliente sem entregar nada.
+						} else {
+							A supervisão ainda está conectando.
+						}
+					</p>
+				} else {
+					<div class="overflow-x-auto">
+						<table class="w-full text-left">
+							<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+								<tr>
+									<th scope="col" class="px-4 py-2.5 font-semibold">Nome exposto</th>
+									<th scope="col" class="px-4 py-2.5 font-semibold">Nome no upstream</th>
+									<th scope="col" class="px-4 py-2.5 font-semibold">Descrição</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-borda">
+								for _, f := range d.Ferramentas {
+									<tr>
+										<td class="px-4 py-3 align-top">
+											<code class="font-mono text-sm">{ f.NomeExposto }</code>
+											if len(f.Avisos) > 0 {
+												<p class="mt-1 flex flex-wrap gap-1">
+													for _, aviso := range f.Avisos {
+														@webui.Selo(webui.TomAlerta, strings.ReplaceAll(aviso, "_", " "))
+													}
+												</p>
+											}
+										</td>
+										<td class="px-4 py-3 align-top">
+											<code class="font-mono text-sm text-conteudo-suave">{ f.NomeOriginal }</code>
+										</td>
+										<td class="max-w-[60ch] px-4 py-3 align-top text-conteudo-suave">
+											if f.Descricao == "" {
+												<span class="text-conteudo-tenue">sem descrição</span>
+											} else {
+												{ f.Descricao }
+											}
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				}
+			}
+			@webui.Cartao("Endpoints que incluem este upstream") {
+				if len(d.Endpoints) == 0 {
+					<p class="px-4 py-6 max-w-[65ch] text-conteudo-suave">
+						Nenhum endpoint inclui este upstream, então as ferramentas dele não chegam a cliente nenhum.
+						Edite um endpoint para compô-lo.
+					</p>
+				} else {
+					<ul class="flex flex-wrap gap-2 px-4 py-4">
+						for _, slug := range d.Endpoints {
+							<li class="rounded-md bg-superficie-alta px-2 py-1 font-mono text-xs text-conteudo-suave">{ slug }</li>
+						}
+					</ul>
+				}
+			}
+		</div>
+	}
+}
+
+templ acoesDoDetalhe(d Detalhe) {
+	<div class="flex items-center gap-2">
+		<form
+			method="post"
+			action={ templ.SafeURL(rotaDo(d.ID) + "/remover") }
+			hx-post={ rotaDo(d.ID) + "/remover" }
+			hx-confirm={ avisoDeRemocao(d) }
+			hx-disabled-elt="find button"
+		>
+			<button type="submit" class="pb-botao pb-botao-perigo">Remover</button>
+		</form>
+		<a href={ templ.SafeURL(rotaDo(d.ID) + "/editar") } class="pb-botao pb-botao-primario">Editar</a>
+	</div>
+}
+
+func avisoDeRemocao(d Detalhe) string {
+	base := "Remover o upstream " + d.Nome + "? A sessão é fechada na hora."
+	if len(d.Endpoints) == 0 {
+		return base
+	}
+	return base + " As ferramentas dele saem de " + strconv.Itoa(len(d.Endpoints)) +
+		" endpoint(s): " + strings.Join(d.Endpoints, ", ") + "."
+}
+
+templ dado(rotulo string) {
+	<div>
+		<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">{ rotulo }</dt>
+		<dd class="mt-1 text-conteudo">
+			{ children... }
+		</dd>
+	</div>
+}
+
+// TelaForm serve a criação e a edição de upstream HTTP.
+templ TelaForm(f Form) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    tituloDoForm(f),
+		Subtitulo: "Só upstream MCP Streamable HTTP sem autenticação nesta fatia. Bearer e headers estáticos entram junto com a cifra em repouso.",
+		Secao:     webui.SecaoUpstreams,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+	}) {
+		<form method="post" action={ templ.SafeURL(acaoDoForm(f)) } class="flex max-w-2xl flex-col gap-8">
+			@webui.Cartao("Conexão") {
+				<div class="flex flex-col gap-6 px-4 py-5">
+					@webui.Campo(webui.DadosCampo{
+						Nome:        "nome",
+						Rotulo:      "Nome",
+						Valor:       f.Nome,
+						Ajuda:       "Como o upstream aparece nesta administração e no log.",
+						Erro:        f.Erros["nome"],
+						Obrigatorio: true,
+					})
+					@webui.Campo(webui.DadosCampo{
+						Nome:         "url",
+						Rotulo:       "URL do endpoint MCP",
+						Tipo:         "url",
+						Valor:        f.URL,
+						Ajuda:        "O endereço Streamable HTTP do servidor, normalmente terminando em /mcp.",
+						Erro:         f.Erros["url"],
+						Obrigatorio:  true,
+						Monoespacado: true,
+						Placeholder:  "https://exemplo.com/mcp",
+					})
+					@webui.Campo(webui.DadosCampo{
+						Nome:         "timeout_ms",
+						Rotulo:       "Timeout (ms)",
+						Tipo:         "number",
+						Valor:        strconv.FormatInt(f.TimeoutMS, 10),
+						Ajuda:        "Vale para conectar, listar e chamar ferramenta neste upstream. Entre 250 e 120000.",
+						Erro:         f.Erros["timeout_ms"],
+						Obrigatorio:  true,
+						Monoespacado: true,
+					})
+					<label class="flex items-start gap-3">
+						<input
+							type="checkbox"
+							name="habilitado"
+							value="1"
+							class="mt-0.5 h-4 w-4 accent-[var(--pb-acento)]"
+							checked?={ f.Habilitado }
+						/>
+						<span>
+							<span class="text-sm font-medium text-conteudo">Habilitado</span>
+							<span class="block text-sm text-conteudo-tenue">
+								Desmarcar fecha a sessão na hora e tira as ferramentas dos endpoints, sem apagar o cadastro.
+							</span>
+						</span>
+					</label>
+				</div>
+			}
+			<div class="flex items-center gap-3">
+				<button type="submit" class="pb-botao pb-botao-primario">
+					if f.ID == 0 {
+						Criar upstream
+					} else {
+						Salvar
+					}
+				</button>
+				<a href={ templ.SafeURL(webui.RotaUpstreams) } class="pb-botao pb-botao-secundario">Cancelar</a>
+			</div>
+		</form>
+	}
+}
+
+func tituloDoForm(f Form) string {
+	if f.ID == 0 {
+		return "Novo upstream"
+	}
+	return "Editar upstream"
+}
+
+func acaoDoForm(f Form) string {
+	if f.ID == 0 {
+		return webui.RotaUpstreams
+	}
+	return rotaDo(f.ID)
+}

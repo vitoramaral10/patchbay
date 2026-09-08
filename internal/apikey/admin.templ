@@ -1,0 +1,201 @@
+package apikey
+
+import (
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/vitoramaral10/patchbay/internal/platform/webui"
+)
+
+func instante(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Local().Format("02/01/2006 15:04")
+}
+
+// TelaLista mostra prefixo, criação e último uso de cada chave.
+templ TelaLista(chaves []Chave, alerta *webui.Alerta) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Chaves de API",
+		Subtitulo: "Cada chave dá acesso aos endpoints do escopo dela. É guardada como hash: o texto claro aparece uma vez, na criação.",
+		Secao:     webui.SecaoChaves,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Acao:      botaoNova(),
+		Alerta:    alerta,
+	}) {
+		if len(chaves) == 0 {
+			@webui.Vazio("Nenhuma chave emitida.",
+				"Emita a primeira para um cliente MCP conectar num endpoint. Você verá o texto claro uma única vez.") {
+				@botaoNova()
+			}
+		} else {
+			@webui.Cartao("") {
+				<div class="overflow-x-auto">
+					<table class="w-full text-left">
+						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+							<tr>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Chave</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Prefixo</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Escopo</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Criada</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Último uso</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold"><span class="sr-only">Ações</span></th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-borda">
+							for _, c := range chaves {
+								<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
+									<td class="px-4 py-3">
+										<span class="font-medium">{ c.Nome }</span>
+										if c.Revogada() {
+											<span class="ml-2">
+												@webui.Selo(webui.TomNeutro, "revogada em " + instante(c.RevogadaEm))
+											</span>
+										}
+									</td>
+									<td class="px-4 py-3">
+										<code class="font-mono text-xs text-conteudo-suave">{ c.PrefixoVisivel }</code>
+									</td>
+									<td class="px-4 py-3">
+										if len(c.Endpoints) == 0 {
+											<span class="text-conteudo-tenue">sem endpoint</span>
+										} else {
+											<span class="flex flex-wrap gap-1">
+												for _, slug := range c.Endpoints {
+													<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs text-conteudo-suave">{ slug }</code>
+												}
+											</span>
+										}
+									</td>
+									<td class="px-4 py-3 text-conteudo-suave">{ instante(c.CriadaEm) }</td>
+									<td class="px-4 py-3 text-conteudo-suave">{ instante(c.UltimoUsoEm) }</td>
+									<td class="px-4 py-3 text-right">
+										if !c.Revogada() {
+											<form
+												method="post"
+												action={ templ.SafeURL(webui.RotaChaves + "/" + strconv.FormatInt(c.ID, 10) + "/revogar") }
+												hx-post={ webui.RotaChaves + "/" + strconv.FormatInt(c.ID, 10) + "/revogar" }
+												hx-confirm={ "Revogar a chave " + c.Nome + "? Todo cliente que a usa para " + strings.Join(c.Endpoints, ", ") + " para de funcionar na próxima chamada." }
+												hx-disabled-elt="find button"
+											>
+												<button type="submit" class="pb-botao pb-botao-perigo px-2.5 py-1.5 text-xs">Revogar</button>
+											</form>
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		}
+	}
+}
+
+templ botaoNova() {
+	<a href={ templ.SafeURL(webui.RotaChaves + "/nova") } class="pb-botao pb-botao-primario">Nova chave</a>
+}
+
+// TelaForm é a criação: nome e escopo.
+templ TelaForm(f Form, opcoes []EndpointOpcao) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Nova chave de API",
+		Subtitulo: "O escopo não se edita depois. Para mudar o que uma chave alcança, revogue e emita outra.",
+		Secao:     webui.SecaoChaves,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+	}) {
+		<form method="post" action={ templ.SafeURL(webui.RotaChaves) } class="flex max-w-2xl flex-col gap-8">
+			@webui.Cartao("Identificação") {
+				<div class="px-4 py-5">
+					@webui.Campo(webui.DadosCampo{
+						Nome:        "nome",
+						Rotulo:      "Nome",
+						Valor:       f.Nome,
+						Ajuda:       "Quem vai usar esta chave: “notebook”, “claude code”, “raspberry”.",
+						Erro:        f.Erros["nome"],
+						Obrigatorio: true,
+					})
+				</div>
+			}
+			@webui.Cartao("Escopo") {
+				if f.Erros["endpoint"] != "" {
+					<p class="border-b border-borda px-4 py-3 text-sm text-perigo" role="alert">{ f.Erros["endpoint"] }</p>
+				}
+				if len(opcoes) == 0 {
+					<p class="max-w-[65ch] px-4 py-6 text-conteudo-suave">
+						Nenhum endpoint cadastrado. Crie um endpoint primeiro: a chave existe para dar
+						acesso a um endpoint, e sem endpoint não há escopo possível.
+					</p>
+				} else {
+					<fieldset class="px-4 py-4">
+						<legend class="sr-only">Endpoints desta chave</legend>
+						<ul class="flex flex-col gap-1">
+							for _, o := range opcoes {
+								<li>
+									<label class="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 transition-colors duration-150 ease-out hover:bg-superficie-alta">
+										<input
+											type="checkbox"
+											name="endpoint"
+											value={ strconv.FormatInt(o.ID, 10) }
+											class="h-4 w-4 accent-[var(--pb-acento)]"
+											checked?={ o.Escolhido }
+										/>
+										<span class="flex-1 font-medium">{ o.Rotulo() }</span>
+										<code class="font-mono text-xs text-conteudo-tenue">{ o.Slug }</code>
+									</label>
+								</li>
+							}
+						</ul>
+					</fieldset>
+				}
+			}
+			<div class="flex items-center gap-3">
+				<button type="submit" class="pb-botao pb-botao-primario">Emitir chave</button>
+				<a href={ templ.SafeURL(webui.RotaChaves) } class="pb-botao pb-botao-secundario">Cancelar</a>
+			</div>
+		</form>
+	}
+}
+
+// TelaCriada é a única vez que a chave em claro aparece.
+templ TelaCriada(c Criada) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Chave emitida",
+		Subtitulo: "Copie agora. Ela é guardada como hash e não há como reexibi-la — se for perdida, emita outra.",
+		Secao:     webui.SecaoChaves,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Alerta: &webui.Alerta{
+			Tom:    webui.TomAlerta,
+			Titulo: "Esta é a única vez que a chave aparece.",
+			Texto:  "Depois de sair desta tela só o prefixo " + c.PrefixoVisivel + " continua visível.",
+		},
+	}) {
+		<div class="flex max-w-3xl flex-col gap-6">
+			@webui.Cartao(c.Nome) {
+				<div class="px-4 py-4">
+					<p class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Chave</p>
+					<pre class="mt-1 overflow-x-auto rounded-md bg-superficie-alta px-3 py-2 font-mono text-sm text-conteudo">{ c.Claro }</pre>
+				</div>
+			}
+			@webui.Cartao("Registrar num cliente MCP") {
+				if len(c.Comandos) == 0 {
+					<p class="px-4 py-6 text-conteudo-suave">A chave não tem endpoint no escopo.</p>
+				} else {
+					<div class="flex flex-col gap-4 px-4 py-4">
+						for _, cmd := range c.Comandos {
+							<div>
+								<p class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">{ cmd.Slug }</p>
+								<pre class="mt-1 overflow-x-auto rounded-md bg-superficie-alta px-3 py-2 font-mono text-xs text-conteudo">{ cmd.Linha }</pre>
+							</div>
+						}
+					</div>
+				}
+			}
+			<div>
+				<a href={ templ.SafeURL(webui.RotaChaves) } class="pb-botao pb-botao-primario">Já copiei, voltar à lista</a>
+			</div>
+		</div>
+	}
+}

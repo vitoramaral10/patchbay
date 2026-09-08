@@ -1,0 +1,327 @@
+package endpoint
+
+import (
+	"strconv"
+
+	"github.com/vitoramaral10/patchbay/internal/platform/webui"
+)
+
+func rotaDo(id int64) string { return webui.RotaEndpoints + "/" + strconv.FormatInt(id, 10) }
+
+func tomDoEstado(estado string, habilitado bool) webui.Tom {
+	if !habilitado {
+		return webui.TomNeutro
+	}
+	switch estado {
+	case "pronto":
+		return webui.TomSucesso
+	case "degradado":
+		return webui.TomPerigo
+	case "conectando", "novo":
+		return webui.TomAlerta
+	default:
+		return webui.TomNeutro
+	}
+}
+
+func rotuloDoEstado(estado string, habilitado bool) string {
+	if !habilitado {
+		return "desabilitado"
+	}
+	if estado == "" {
+		return "fora da supervisão"
+	}
+	return estado
+}
+
+// TelaLista é a lista de endpoints.
+templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Endpoints",
+		Subtitulo: "Cada endpoint é uma URL MCP que agrega os upstreams escolhidos e é uma fronteira de autorização própria.",
+		Secao:     webui.SecaoEndpoints,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Acao:      botaoNovo(),
+		Alerta:    alerta,
+	}) {
+		if len(linhas) == 0 {
+			@webui.Vazio("Nenhum endpoint ainda.",
+				"Um endpoint é o que o cliente de IA registra. Crie o primeiro, escolha quais upstreams entram nele e emita uma chave de API.") {
+				@botaoNovo()
+			}
+		} else {
+			@webui.Cartao("") {
+				<div class="overflow-x-auto">
+					<table class="w-full text-left">
+						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+							<tr>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Endpoint</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">URL</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Upstreams</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Ferramentas</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-borda">
+							for _, l := range linhas {
+								<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
+									<td class="px-4 py-3">
+										<a href={ templ.SafeURL(rotaDo(l.ID)) } class="pb-link font-medium">{ l.Titulo() }</a>
+										<p class="text-xs text-conteudo-tenue">{ l.Slug }</p>
+									</td>
+									<td class="px-4 py-3">
+										<code class="font-mono text-xs text-conteudo-suave">{ l.URL }</code>
+									</td>
+									<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Upstreams) }</td>
+									<td class="px-4 py-3" data-numero>
+										@contagemDeFerramentas(l.Ferramentas)
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		}
+	}
+}
+
+// contagemDeFerramentas destaca o endpoint que passou do custo de contexto que
+// um cliente aguenta bem. Quarenta é o número que a seção 11 cita.
+templ contagemDeFerramentas(n int) {
+	if n == 0 {
+		<span class="text-conteudo-tenue">sem ferramentas</span>
+	} else if n > 40 {
+		<span class="font-medium text-alerta" title="Acima de 40 ferramentas o custo de contexto degrada todos os clientes deste endpoint.">
+			{ strconv.Itoa(n) }
+		</span>
+	} else {
+		{ strconv.Itoa(n) }
+	}
+}
+
+templ botaoNovo() {
+	<a href={ templ.SafeURL(webui.RotaEndpoints + "/novo") } class="pb-botao pb-botao-primario">Novo endpoint</a>
+}
+
+// TelaDetalhe mostra a URL, a composição e as ferramentas resultantes.
+templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    d.Titulo(),
+		Subtitulo: d.Descricao,
+		Secao:     webui.SecaoEndpoints,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Acao:      acoesDoDetalhe(d),
+		Alerta:    alerta,
+	}) {
+		<div class="flex flex-col gap-6">
+			@webui.Cartao("Como conectar") {
+				<dl class="grid gap-x-6 gap-y-4 px-4 py-4 sm:grid-cols-2">
+					@dado("Slug") {
+						<code class="font-mono">{ d.Slug }</code>
+						<p class="mt-1 text-xs text-conteudo-tenue">
+							O slug entra na URL e no público-alvo de todo token deste endpoint: ele não muda depois de criado.
+						</p>
+					}
+					@dado("URL MCP") {
+						<code class="font-mono break-all">{ d.URL }</code>
+					}
+					@dado("Ferramentas expostas") {
+						<span data-numero>{ strconv.Itoa(len(d.Ferramentas)) }</span>
+					}
+					@dado("Upstreams na composição") {
+						<span data-numero>{ strconv.Itoa(len(d.Composicao)) }</span>
+					}
+				</dl>
+			}
+			@webui.Cartao("Composição") {
+				if len(d.Composicao) == 0 {
+					<p class="px-4 py-6 text-conteudo-suave">
+						Nenhum upstream compõe este endpoint, então ele responde <code class="font-mono">tools/list</code> vazio.
+						Edite o endpoint para escolher os upstreams.
+					</p>
+				} else {
+					<ul class="divide-y divide-borda">
+						for _, u := range d.Composicao {
+							<li class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+								<span class="font-medium">{ u.Nome }</span>
+								<span class="flex items-center gap-3">
+									<span class="text-sm text-conteudo-suave" data-numero>
+										{ strconv.Itoa(u.Ferramentas) } ferramentas
+									</span>
+									@webui.Selo(tomDoEstado(u.Estado, u.Habilitado), rotuloDoEstado(u.Estado, u.Habilitado))
+								</span>
+							</li>
+						}
+					</ul>
+				}
+			}
+			@webui.Cartao("Ferramentas resultantes") {
+				if len(d.Ferramentas) == 0 {
+					<p class="px-4 py-6 text-conteudo-suave">
+						Nenhuma ferramenta no ar. Lista vazia é resposta legítima: o cliente recebe
+						<code class="font-mono">tools/list</code> sem itens em vez de erro, e volta a ver as
+						ferramentas quando algum upstream ficar pronto.
+					</p>
+				} else {
+					<ul class="flex flex-wrap gap-2 px-4 py-4">
+						for _, nome := range d.Ferramentas {
+							<li class="rounded-md bg-superficie-alta px-2 py-1 font-mono text-xs text-conteudo-suave">{ nome }</li>
+						}
+					</ul>
+				}
+			}
+			@webui.Cartao("Instruções enviadas ao cliente") {
+				if d.Instrucoes == "" {
+					<p class="px-4 py-6 text-conteudo-suave">Nenhuma instrução configurada.</p>
+				} else {
+					<p class="max-w-[65ch] whitespace-pre-wrap px-4 py-4 text-conteudo-suave">{ d.Instrucoes }</p>
+				}
+			}
+		</div>
+	}
+}
+
+templ acoesDoDetalhe(d Detalhe) {
+	<div class="flex items-center gap-2">
+		<form
+			method="post"
+			action={ templ.SafeURL(rotaDo(d.ID) + "/remover") }
+			hx-post={ rotaDo(d.ID) + "/remover" }
+			hx-confirm={ "Remover o endpoint " + d.Slug + "? As chaves de API que só tinham escopo nele param de funcionar, e as sessões abertas são encerradas." }
+			hx-disabled-elt="find button"
+		>
+			<button type="submit" class="pb-botao pb-botao-perigo">Remover</button>
+		</form>
+		<a href={ templ.SafeURL(rotaDo(d.ID) + "/editar") } class="pb-botao pb-botao-primario">Editar</a>
+	</div>
+}
+
+templ dado(rotulo string) {
+	<div>
+		<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">{ rotulo }</dt>
+		<dd class="mt-1 text-conteudo">
+			{ children... }
+		</dd>
+	</div>
+}
+
+// TelaForm serve a criação e a edição.
+templ TelaForm(f Form, opcoes []UpstreamOpcao) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    tituloDoForm(f),
+		Subtitulo: subtituloDoForm(f),
+		Secao:     webui.SecaoEndpoints,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+	}) {
+		<form method="post" action={ templ.SafeURL(acaoDoForm(f)) } class="flex max-w-3xl flex-col gap-8">
+			@webui.Cartao("Identificação") {
+				<div class="flex flex-col gap-6 px-4 py-5">
+					if f.SlugFixo {
+						<div class="flex flex-col gap-1.5">
+							<span class="text-sm font-medium text-conteudo">Slug</span>
+							<code class="font-mono text-conteudo">{ f.Slug }</code>
+							<p class="text-sm text-conteudo-tenue">
+								Não muda: ele está na URL e no público-alvo de toda credencial deste endpoint.
+								Para trocar o slug, crie outro endpoint e emita chaves novas.
+							</p>
+						</div>
+					} else {
+						@webui.Campo(webui.DadosCampo{
+							Nome:         "slug",
+							Rotulo:       "Slug",
+							Valor:        f.Slug,
+							Ajuda:        "Vai na URL: /mcp/<slug>. Minúsculas, números e hífen. Não muda depois de criado.",
+							Erro:         f.Erros["slug"],
+							Obrigatorio:  true,
+							Monoespacado: true,
+							Placeholder:  "pessoal",
+						})
+					}
+					@webui.Campo(webui.DadosCampo{
+						Nome:        "nome",
+						Rotulo:      "Nome",
+						Valor:       f.Nome,
+						Ajuda:       "Como o endpoint aparece nesta administração.",
+						Erro:        f.Erros["nome"],
+						Obrigatorio: true,
+					})
+					@webui.CampoTexto(webui.DadosCampo{
+						Nome:   "descricao",
+						Rotulo: "Descrição",
+						Valor:  f.Descricao,
+						Ajuda:  "Título que o cliente MCP vê no initialize.",
+					})
+					@webui.CampoTexto(webui.DadosCampo{
+						Nome:   "instrucoes",
+						Rotulo: "Instruções para o cliente",
+						Valor:  f.Instrucoes,
+						Ajuda:  "Texto enviado no initialize. Alterar nome, descrição ou instruções recria o servidor MCP e encerra as sessões abertas deste endpoint; mudar só a composição não encerra nada.",
+					})
+				</div>
+			}
+			@webui.Cartao("Composição") {
+				if len(opcoes) == 0 {
+					<p class="px-4 py-6 text-conteudo-suave">
+						Nenhum upstream cadastrado. Crie um upstream primeiro — um endpoint sem upstream
+						responde <code class="font-mono">tools/list</code> vazio.
+					</p>
+				} else {
+					<fieldset class="px-4 py-4">
+						<legend class="sr-only">Upstreams deste endpoint</legend>
+						<ul class="flex flex-col gap-1">
+							for _, o := range opcoes {
+								<li>
+									<label class="flex cursor-pointer flex-wrap items-center gap-3 rounded-md px-2 py-2 transition-colors duration-150 ease-out hover:bg-superficie-alta">
+										<input
+											type="checkbox"
+											name="upstream"
+											value={ strconv.FormatInt(o.ID, 10) }
+											class="h-4 w-4 accent-[var(--pb-acento)]"
+											checked?={ o.Escolhido }
+										/>
+										<span class="flex-1 font-medium">{ o.Nome }</span>
+										<span class="text-sm text-conteudo-suave" data-numero>
+											{ strconv.Itoa(o.Ferramentas) } ferramentas
+										</span>
+										@webui.Selo(tomDoEstado(o.Estado, o.Habilitado), rotuloDoEstado(o.Estado, o.Habilitado))
+									</label>
+								</li>
+							}
+						</ul>
+					</fieldset>
+				}
+			}
+			<div class="flex items-center gap-3">
+				<button type="submit" class="pb-botao pb-botao-primario">
+					if f.SlugFixo {
+						Salvar
+					} else {
+						Criar endpoint
+					}
+				</button>
+				<a href={ templ.SafeURL(webui.RotaEndpoints) } class="pb-botao pb-botao-secundario">Cancelar</a>
+			</div>
+		</form>
+	}
+}
+
+func tituloDoForm(f Form) string {
+	if f.SlugFixo {
+		return "Editar endpoint"
+	}
+	return "Novo endpoint"
+}
+
+func subtituloDoForm(f Form) string {
+	if f.SlugFixo {
+		return "A mudança entra em vigor na hora, sem reiniciar o patchbay."
+	}
+	return "O slug entra na URL e é contrato: escolha com cuidado, porque ele não muda depois."
+}
+
+func acaoDoForm(f Form) string {
+	if f.SlugFixo {
+		return rotaDo(f.ID)
+	}
+	return webui.RotaEndpoints
+}

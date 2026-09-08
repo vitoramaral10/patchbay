@@ -1,0 +1,80 @@
+package main
+
+import (
+	"strconv"
+
+	"github.com/vitoramaral10/patchbay/internal/platform/webui"
+)
+
+// dadosPainel é o retrato que a tela inicial mostra.
+type dadosPainel struct {
+	Upstreams        int
+	UpstreamsProntos int
+	UpstreamsRuins   int
+	Endpoints        int
+	Ferramentas      int
+	Chaves           int
+	ChavesAtivas     int
+	URLPublica       string
+}
+
+// telaPainel é a primeira tela depois do login: o que está no ar, e o próximo
+// passo quando não há nada.
+templ telaPainel(d dadosPainel, alerta *webui.Alerta) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Painel",
+		Subtitulo: "O que está no ar agora. Toda mudança feita nesta administração vale na hora, sem reiniciar o patchbay.",
+		Secao:     webui.SecaoPainel,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Alerta:    alerta,
+	}) {
+		if d.Upstreams == 0 && d.Endpoints == 0 {
+			@webui.Vazio("O patchbay está vazio.",
+				"O caminho é: cadastrar um upstream, criar um endpoint que o inclua e emitir uma chave de API. Depois disso um cliente MCP conecta.") {
+				<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo") } class="pb-botao pb-botao-primario">Cadastrar o primeiro upstream</a>
+			}
+		} else {
+			<div class="flex flex-col gap-6">
+				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+					@indicador("Upstreams", strconv.Itoa(d.Upstreams), rodapeUpstreams(d), webui.RotaUpstreams)
+					@indicador("Endpoints", strconv.Itoa(d.Endpoints), "no ar", webui.RotaEndpoints)
+					@indicador("Ferramentas expostas", strconv.Itoa(d.Ferramentas), "somando todos os endpoints", webui.RotaEndpoints)
+					@indicador("Chaves ativas", strconv.Itoa(d.ChavesAtivas), rodapeChaves(d), webui.RotaChaves)
+				</div>
+				@webui.Cartao("URL pública") {
+					<div class="px-4 py-4">
+						<code class="font-mono text-sm break-all text-conteudo">{ d.URLPublica }</code>
+						<p class="mt-2 max-w-[65ch] text-conteudo-suave">
+							É esta a base das URLs de endpoint que os clientes registram. Ela vem da
+							configuração, não da requisição: o TLS é terminado por um proxy na frente do
+							patchbay, então ele não descobre o endereço externo olhando o que chega.
+						</p>
+					</div>
+				}
+			</div>
+		}
+	}
+}
+
+func rodapeUpstreams(d dadosPainel) string {
+	if d.UpstreamsRuins > 0 {
+		return strconv.Itoa(d.UpstreamsProntos) + " prontos, " + strconv.Itoa(d.UpstreamsRuins) + " degradados"
+	}
+	return strconv.Itoa(d.UpstreamsProntos) + " prontos"
+}
+
+func rodapeChaves(d dadosPainel) string {
+	revogadas := d.Chaves - d.ChavesAtivas
+	if revogadas > 0 {
+		return strconv.Itoa(revogadas) + " revogadas"
+	}
+	return "nenhuma revogada"
+}
+
+templ indicador(rotulo, valor, rodape, rota string) {
+	<a href={ templ.SafeURL(rota) } class="pb-cartao flex flex-col gap-1 px-4 py-4 transition-colors duration-150 ease-out hover:bg-superficie-alta">
+		<span class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">{ rotulo }</span>
+		<span class="text-2xl font-semibold tracking-tight text-conteudo tabular-nums">{ valor }</span>
+		<span class="text-sm text-conteudo-tenue">{ rodape }</span>
+	</a>
+}

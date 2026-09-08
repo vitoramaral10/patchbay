@@ -1,0 +1,120 @@
+package admin
+
+import "github.com/vitoramaral10/patchbay/internal/platform/webui"
+
+// FormSetup é o estado do formulário do primeiro acesso, reexibido com o erro
+// quando a validação recusa.
+type FormSetup struct {
+	Usuario     string
+	Senha       string
+	Confirmar   string
+	ErroUsuario string
+	ErroSenha   string
+}
+
+// FormLogin é o estado do formulário de entrada.
+type FormLogin struct {
+	Usuario string
+	Destino string
+	Erro    string
+	Expirou bool
+}
+
+func (f FormLogin) destinoOuPainel() string {
+	if f.Destino == "" {
+		return webui.RotaPainel
+	}
+	return f.Destino
+}
+
+// TelaSetup é o primeiro acesso: cria o admin único.
+templ TelaSetup(f FormSetup) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Primeiro acesso",
+		Subtitulo: "Escolha o usuário e a senha do administrador do patchbay. Ele é único, e esta tela deixa de existir depois disso.",
+	}) {
+		@cartaoCentral() {
+			<form method="post" action={ templ.SafeURL(webui.RotaSetup) } class="flex flex-col gap-6">
+				@webui.Campo(webui.DadosCampo{
+					Nome:         "usuario",
+					Rotulo:       "Usuário",
+					Valor:        f.Usuario,
+					Erro:         f.ErroUsuario,
+					Obrigatorio:  true,
+					AutoComplete: "username",
+				})
+				@webui.Campo(webui.DadosCampo{
+					Nome:         "senha",
+					Rotulo:       "Senha",
+					Tipo:         "password",
+					Ajuda:        "Pelo menos 12 caracteres. Guardada em argon2id, e não há como recuperá-la.",
+					Erro:         f.ErroSenha,
+					Obrigatorio:  true,
+					AutoComplete: "new-password",
+				})
+				@webui.Campo(webui.DadosCampo{
+					Nome:         "confirmar",
+					Rotulo:       "Repita a senha",
+					Tipo:         "password",
+					Obrigatorio:  true,
+					AutoComplete: "new-password",
+				})
+				<button type="submit" class="pb-botao pb-botao-primario w-full">Criar administrador</button>
+			</form>
+		}
+	}
+}
+
+// TelaLogin é a entrada.
+templ TelaLogin(f FormLogin) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Entrar",
+		Subtitulo: "Administração do patchbay.",
+		Alerta:    alertaLogin(f),
+	}) {
+		@cartaoCentral() {
+			<form method="post" action={ templ.SafeURL(webui.RotaLogin) } class="flex flex-col gap-6">
+				if f.Destino != "" {
+					<input type="hidden" name="destino" value={ f.Destino }/>
+				}
+				@webui.Campo(webui.DadosCampo{
+					Nome:         "usuario",
+					Rotulo:       "Usuário",
+					Valor:        f.Usuario,
+					Obrigatorio:  true,
+					AutoComplete: "username",
+				})
+				@webui.Campo(webui.DadosCampo{
+					Nome:         "senha",
+					Rotulo:       "Senha",
+					Tipo:         "password",
+					Obrigatorio:  true,
+					AutoComplete: "current-password",
+				})
+				<button type="submit" class="pb-botao pb-botao-primario w-full">Entrar</button>
+			</form>
+		}
+	}
+}
+
+func alertaLogin(f FormLogin) *webui.Alerta {
+	switch {
+	case f.Erro != "":
+		return &webui.Alerta{Tom: webui.TomPerigo, Titulo: f.Erro, Texto: "Confira o usuário e digite a senha de novo."}
+	case f.Expirou:
+		return &webui.Alerta{Tom: webui.TomAlerta, Titulo: "Sua sessão expirou.", Texto: "Entre de novo para continuar."}
+	default:
+		return nil
+	}
+}
+
+// cartaoCentral é a moldura estreita das duas telas sem navegação. É o único
+// lugar da UI em que centralizar é certo: não há conteúdo ao redor para ancorar
+// a leitura na borda esquerda.
+templ cartaoCentral() {
+	<div class="mx-auto w-full max-w-md">
+		<div class="pb-cartao p-6">
+			{ children... }
+		</div>
+	</div>
+}

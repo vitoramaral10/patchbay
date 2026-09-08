@@ -1,0 +1,302 @@
+package webui
+
+// DadosPagina é o que o shell precisa saber para desenhar uma tela.
+type DadosPagina struct {
+	// Titulo vira o <title> e o <h1>. Único por tela.
+	Titulo string
+	// Subtitulo é a linha de contexto abaixo do título.
+	Subtitulo string
+	// Secao marca o item ativo da navegação. Vazio esconde a navegação, que é
+	// o caso das telas de setup e de login.
+	Secao string
+	// Usuario aparece no canto quando há sessão.
+	Usuario string
+	// Acao é a única ação primária da tela, no cabeçalho.
+	Acao templ.Component
+	// Alerta é a mensagem de resultado da ação anterior.
+	Alerta *Alerta
+}
+
+// Tom classifica um alerta ou um selo. Cor nunca é o único portador da
+// informação: o rótulo de texto vai junto, sempre.
+type Tom string
+
+// Tons possíveis.
+const (
+	TomNeutro  Tom = "neutro"
+	TomInfo    Tom = "info"
+	TomSucesso Tom = "sucesso"
+	TomAlerta  Tom = "alerta"
+	TomPerigo  Tom = "perigo"
+)
+
+// Alerta é a mensagem de resultado de uma ação.
+type Alerta struct {
+	Tom   Tom
+	Titulo string
+	Texto  string
+}
+
+func classesAlerta(t Tom) string {
+	switch t {
+	case TomSucesso:
+		return "border-sucesso/40 bg-sucesso-fraco text-conteudo"
+	case TomAlerta:
+		return "border-alerta/40 bg-alerta-fraco text-conteudo"
+	case TomPerigo:
+		return "border-perigo/40 bg-perigo-fraco text-conteudo"
+	case TomInfo:
+		return "border-info/40 bg-info-fraco text-conteudo"
+	default:
+		return "border-borda bg-superficie-alta text-conteudo"
+	}
+}
+
+func classesSelo(t Tom) string {
+	switch t {
+	case TomSucesso:
+		return "bg-sucesso-fraco text-sucesso"
+	case TomAlerta:
+		return "bg-alerta-fraco text-alerta"
+	case TomPerigo:
+		return "bg-perigo-fraco text-perigo"
+	case TomInfo:
+		return "bg-info-fraco text-info"
+	default:
+		return "bg-superficie-alta text-conteudo-suave"
+	}
+}
+
+func classesNav(ativo bool) string {
+	if ativo {
+		return "bg-acento-fraco text-acento"
+	}
+	return "text-conteudo-suave hover:bg-superficie-alta hover:text-conteudo"
+}
+
+// Pagina é o shell de toda tela da UI de administração.
+templ Pagina(p DadosPagina) {
+	<!DOCTYPE html>
+	<html lang="pt-BR">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="robots" content="noindex, nofollow"/>
+			<title>{ p.Titulo } · patchbay</title>
+			<link rel="stylesheet" href={ URLCSS() }/>
+			<script src={ URLHTMX() } defer></script>
+			<script src={ URLHTMXSSE() } defer></script>
+		</head>
+		<body class="min-h-screen">
+			<a
+				href="#conteudo"
+				class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-superficie focus:px-3 focus:py-2 focus:text-conteudo"
+			>
+				Pular para o conteúdo
+			</a>
+			if p.Secao != "" {
+				@barra(p)
+			}
+			<main id="conteudo" class="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+				<header class="mb-8 flex flex-wrap items-end justify-between gap-4">
+					<div class="min-w-0">
+						<h1 class="text-2xl font-semibold tracking-tight text-conteudo">{ p.Titulo }</h1>
+						if p.Subtitulo != "" {
+							<p class="mt-1 max-w-[65ch] text-conteudo-suave">{ p.Subtitulo }</p>
+						}
+					</div>
+					if p.Acao != nil {
+						<div class="shrink-0">
+							@p.Acao
+						</div>
+					}
+				</header>
+				if p.Alerta != nil {
+					@AlertaCaixa(*p.Alerta)
+				}
+				{ children... }
+			</main>
+		</body>
+	</html>
+}
+
+templ barra(p DadosPagina) {
+	<div class="border-b border-borda bg-superficie">
+		<div class="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
+			<a href={ templ.SafeURL(RotaPainel) } class="flex items-center gap-2 font-semibold tracking-tight text-conteudo">
+				<span aria-hidden="true" class="inline-block h-2.5 w-2.5 rounded-full bg-acento"></span>
+				patchbay
+			</a>
+			<nav aria-label="Seções" class="flex flex-1 flex-wrap items-center gap-1">
+				for _, item := range navegacao {
+					<a
+						href={ templ.SafeURL(item.Rota) }
+						class={ "rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 ease-out",
+							classesNav(item.Secao == p.Secao) }
+						if item.Secao == p.Secao {
+							aria-current="page"
+						}
+					>
+						{ item.Rotulo }
+					</a>
+				}
+			</nav>
+			if p.Usuario != "" {
+				<form method="post" action={ templ.SafeURL(RotaSair) } class="flex items-center gap-3">
+					<span class="text-sm text-conteudo-tenue">{ p.Usuario }</span>
+					<button type="submit" class="pb-botao pb-botao-secundario px-2.5 py-1.5 text-xs">Sair</button>
+				</form>
+			}
+		</div>
+	</div>
+}
+
+// AlertaCaixa mostra o resultado da ação anterior. Erro diz o que houve e o que
+// fazer; nunca imprime detalhe interno.
+templ AlertaCaixa(a Alerta) {
+	<div
+		class={ "mb-6 rounded-md border px-4 py-3", classesAlerta(a.Tom) }
+		if a.Tom == TomPerigo {
+			role="alert"
+		} else {
+			role="status"
+		}
+	>
+		if a.Titulo != "" {
+			<p class="font-medium">{ a.Titulo }</p>
+		}
+		if a.Texto != "" {
+			<p class="mt-0.5 text-conteudo-suave">{ a.Texto }</p>
+		}
+	</div>
+}
+
+// Selo é o rótulo de estado. Sempre com texto: cor sozinha não informa.
+templ Selo(t Tom, texto string) {
+	<span class={ "pb-selo", classesSelo(t) }>
+		<span aria-hidden="true" class="inline-block h-1.5 w-1.5 rounded-full bg-current"></span>
+		{ texto }
+	</span>
+}
+
+// DadosCampo descreve um campo de formulário.
+type DadosCampo struct {
+	Nome      string
+	Rotulo    string
+	Valor     string
+	Tipo      string // text, password, url, number; vazio = text
+	Ajuda     string
+	Erro      string
+	Obrigatorio bool
+	SoLeitura bool
+	Placeholder string
+	AutoComplete string
+	Monoespacado bool
+}
+
+func (c DadosCampo) tipo() string {
+	if c.Tipo == "" {
+		return "text"
+	}
+	return c.Tipo
+}
+
+func (c DadosCampo) descritoPor() string {
+	switch {
+	case c.Erro != "":
+		return c.Nome + "-erro"
+	case c.Ajuda != "":
+		return c.Nome + "-ajuda"
+	default:
+		return ""
+	}
+}
+
+// Campo é o par rótulo + entrada. Label sempre existe: placeholder não é label,
+// porque some ao digitar e some para o leitor de tela.
+templ Campo(c DadosCampo) {
+	<div class="flex flex-col gap-1.5">
+		<label for={ c.Nome } class="text-sm font-medium text-conteudo">
+			{ c.Rotulo }
+			if c.Obrigatorio {
+				<span class="text-perigo" aria-hidden="true">*</span>
+				<span class="sr-only">(obrigatório)</span>
+			}
+		</label>
+		<input
+			class={ "pb-campo", templ.KV("font-mono", c.Monoespacado) }
+			id={ c.Nome }
+			name={ c.Nome }
+			type={ c.tipo() }
+			value={ c.Valor }
+			if c.Placeholder != "" {
+				placeholder={ c.Placeholder }
+			}
+			if c.AutoComplete != "" {
+				autocomplete={ c.AutoComplete }
+			}
+			if c.Obrigatorio {
+				required
+			}
+			if c.SoLeitura {
+				readonly
+			}
+			if c.Erro != "" {
+				aria-invalid="true"
+			}
+			if c.descritoPor() != "" {
+				aria-describedby={ c.descritoPor() }
+			}
+		/>
+		if c.Erro != "" {
+			<p id={ c.Nome + "-erro" } class="text-sm text-perigo">{ c.Erro }</p>
+		} else if c.Ajuda != "" {
+			<p id={ c.Nome + "-ajuda" } class="text-sm text-conteudo-tenue">{ c.Ajuda }</p>
+		}
+	</div>
+}
+
+// CampoTexto é o Campo de várias linhas.
+templ CampoTexto(c DadosCampo) {
+	<div class="flex flex-col gap-1.5">
+		<label for={ c.Nome } class="text-sm font-medium text-conteudo">{ c.Rotulo }</label>
+		<textarea
+			class="pb-campo min-h-24 resize-y"
+			id={ c.Nome }
+			name={ c.Nome }
+			rows="4"
+			if c.Placeholder != "" {
+				placeholder={ c.Placeholder }
+			}
+			if c.descritoPor() != "" {
+				aria-describedby={ c.descritoPor() }
+			}
+		>{ c.Valor }</textarea>
+		if c.Erro != "" {
+			<p id={ c.Nome + "-erro" } class="text-sm text-perigo">{ c.Erro }</p>
+		} else if c.Ajuda != "" {
+			<p id={ c.Nome + "-ajuda" } class="text-sm text-conteudo-tenue">{ c.Ajuda }</p>
+		}
+	</div>
+}
+
+// Vazio é o estado de lista sem nenhum item: uma frase do que aparece ali e a
+// ação que cria o primeiro. Diferente de busca sem resultado, que não existe
+// nesta UI.
+templ Vazio(titulo, texto string) {
+	<div class="pb-cartao flex flex-col items-center gap-3 px-6 py-14 text-center">
+		<p class="text-base font-medium text-conteudo">{ titulo }</p>
+		<p class="max-w-[55ch] text-conteudo-suave">{ texto }</p>
+		{ children... }
+	</div>
+}
+
+// Cartao agrupa conteúdo com um título de seção.
+templ Cartao(titulo string) {
+	<section class="pb-cartao overflow-hidden">
+		if titulo != "" {
+			<h2 class="border-b border-borda px-4 py-3 text-base font-semibold text-conteudo">{ titulo }</h2>
+		}
+		{ children... }
+	</section>
+}

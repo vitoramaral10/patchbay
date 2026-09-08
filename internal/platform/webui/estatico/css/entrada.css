@@ -1,0 +1,247 @@
+/*
+ * Fonte do CSS da UI de administração. Compilada pelo Tailwind CLI standalone
+ * (`task ui:css`) para estatico/css/patchbay.css, que é commitado — `go build
+ * ./...` não pode depender de toolchain de front-end.
+ *
+ * Duas camadas de token, e nenhum componente toca a de baixo:
+ *
+ *   :root / @media (prefers-color-scheme: dark)   ← os valores, um par por papel
+ *                       ↓
+ *   @theme inline                                 ← os utilitários do Tailwind
+ *                       ↓
+ *   class="bg-superficie text-conteudo-suave"     ← o que o .templ escreve
+ *
+ * Nenhum `dark:` aparece em componente: o tema troca os valores, não as
+ * classes. Tema por prefers-color-scheme e nada mais — não há alternador, que é
+ * decisão do estudo (a UI é de um administrador, não um produto de consumo).
+ */
+
+@import "tailwindcss";
+
+/* O CSS é compilado a partir dos .templ de todas as features. */
+@source "../../../../**/*.templ";
+
+:root {
+    color-scheme: light dark;
+
+    /* Superfície — três níveis, e só um sinal por nível. */
+    --pb-fundo: oklch(0.983 0.004 235);
+    --pb-superficie: oklch(1 0 0);
+    --pb-superficie-alta: oklch(0.962 0.006 235);
+
+    /* Texto — três níveis, todos acima de 4.5:1 sobre fundo e superfície. */
+    --pb-conteudo: oklch(0.21 0.015 245);
+    --pb-conteudo-suave: oklch(0.5 0.014 245);
+    --pb-conteudo-tenue: oklch(0.52 0.01 245);
+
+    --pb-borda: oklch(0.9 0.008 235);
+    /* borda-forte é a borda de campo e de controle: precisa de 3:1 contra as
+     * superfícies, medido, não estimado. Em 0.72 dava 2.47:1. */
+    --pb-borda-forte: oklch(0.62 0.012 235);
+
+    /* Ação — um accent só. Estado semântico não é accent. */
+    --pb-acento: oklch(0.5 0.1 205);
+    --pb-acento-hover: oklch(0.43 0.1 205);
+    --pb-acento-fg: oklch(0.99 0 0);
+    --pb-acento-fraco: oklch(0.955 0.025 205);
+
+    --pb-perigo: oklch(0.5 0.19 25);
+    --pb-perigo-fg: oklch(0.99 0 0);
+    --pb-perigo-fraco: oklch(0.96 0.03 25);
+
+    --pb-alerta: oklch(0.5 0.13 70);
+    --pb-alerta-fraco: oklch(0.96 0.05 85);
+
+    --pb-sucesso: oklch(0.47 0.12 155);
+    --pb-sucesso-fraco: oklch(0.95 0.05 155);
+
+    --pb-info: oklch(0.5 0.1 255);
+    --pb-info-fraco: oklch(0.96 0.03 255);
+
+    --pb-anel: oklch(0.55 0.13 205);
+}
+
+/*
+ * Escuro não é inversão: é o mesmo conjunto de papéis com outros valores.
+ * Nunca #000 (vibra com texto claro) nem #FFF (sangra); o accent dessatura e
+ * clareia, porque saturado no escuro fica néon; elevação vem de superfície mais
+ * clara, não de sombra.
+ */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --pb-fundo: oklch(0.165 0.012 250);
+        --pb-superficie: oklch(0.208 0.013 250);
+        --pb-superficie-alta: oklch(0.25 0.014 250);
+
+        --pb-conteudo: oklch(0.93 0.006 250);
+        --pb-conteudo-suave: oklch(0.76 0.01 250);
+        --pb-conteudo-tenue: oklch(0.68 0.01 250);
+
+        --pb-borda: oklch(0.32 0.014 250);
+        /* mesmo motivo do tema claro: em 0.46 dava 2.50:1. */
+        --pb-borda-forte: oklch(0.545 0.016 250);
+
+        --pb-acento: oklch(0.78 0.08 200);
+        --pb-acento-hover: oklch(0.86 0.07 200);
+        --pb-acento-fg: oklch(0.17 0.02 250);
+        --pb-acento-fraco: oklch(0.28 0.04 205);
+
+        --pb-perigo: oklch(0.75 0.13 25);
+        --pb-perigo-fg: oklch(0.17 0.02 25);
+        --pb-perigo-fraco: oklch(0.29 0.06 25);
+
+        --pb-alerta: oklch(0.82 0.11 80);
+        --pb-alerta-fraco: oklch(0.3 0.05 80);
+
+        --pb-sucesso: oklch(0.78 0.11 155);
+        --pb-sucesso-fraco: oklch(0.27 0.05 155);
+
+        --pb-info: oklch(0.79 0.09 255);
+        --pb-info-fraco: oklch(0.28 0.05 255);
+
+        --pb-anel: oklch(0.72 0.11 200);
+    }
+}
+
+@theme inline {
+    --color-fundo: var(--pb-fundo);
+    --color-superficie: var(--pb-superficie);
+    --color-superficie-alta: var(--pb-superficie-alta);
+
+    --color-conteudo: var(--pb-conteudo);
+    --color-conteudo-suave: var(--pb-conteudo-suave);
+    --color-conteudo-tenue: var(--pb-conteudo-tenue);
+
+    --color-borda: var(--pb-borda);
+    --color-borda-forte: var(--pb-borda-forte);
+
+    --color-acento: var(--pb-acento);
+    --color-acento-hover: var(--pb-acento-hover);
+    --color-acento-fg: var(--pb-acento-fg);
+    --color-acento-fraco: var(--pb-acento-fraco);
+
+    --color-perigo: var(--pb-perigo);
+    --color-perigo-fg: var(--pb-perigo-fg);
+    --color-perigo-fraco: var(--pb-perigo-fraco);
+
+    --color-alerta: var(--pb-alerta);
+    --color-alerta-fraco: var(--pb-alerta-fraco);
+
+    --color-sucesso: var(--pb-sucesso);
+    --color-sucesso-fraco: var(--pb-sucesso-fraco);
+
+    --color-info: var(--pb-info);
+    --color-info-fraco: var(--pb-info-fraco);
+
+    --color-anel: var(--pb-anel);
+
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+
+    --font-sans:
+        ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+    --font-mono:
+        ui-monospace, "Cascadia Mono", "Segoe UI Mono", "JetBrains Mono",
+        Menlo, Consolas, monospace;
+}
+
+@layer base {
+    body {
+        background-color: var(--pb-fundo);
+        color: var(--pb-conteudo);
+        font-family: var(--font-sans);
+        font-size: 0.875rem;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    /*
+     * Anel de foco em tudo que foca, com offset para não colar na borda.
+     * focus-visible e não focus: o anel não deve aparecer no clique de mouse.
+     */
+    :focus-visible {
+        outline: 2px solid var(--pb-anel);
+        outline-offset: 2px;
+        border-radius: var(--radius-sm);
+    }
+
+    /* Toda coluna de número: sem isso as casas dançam a cada render. */
+    td:where([data-numero]),
+    th:where([data-numero]) {
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+    }
+}
+
+@layer components {
+    /*
+     * Os cinco componentes que aparecem em toda tela. Ficam aqui, e não
+     * repetidos em cada .templ, para que "botão primário" tenha um lugar só —
+     * é a mesma razão de existir o `cva` no mundo React.
+     */
+    .pb-botao {
+        @apply inline-flex items-center justify-center gap-2 rounded-md border
+        border-transparent px-3 py-2 text-sm font-medium transition-colors
+        duration-150 ease-out;
+    }
+    .pb-botao:disabled {
+        @apply cursor-not-allowed opacity-60;
+    }
+    .pb-botao-primario {
+        @apply bg-acento text-acento-fg;
+    }
+    .pb-botao-primario:hover:not(:disabled) {
+        @apply bg-acento-hover;
+    }
+    .pb-botao-secundario {
+        @apply border-borda bg-superficie text-conteudo;
+    }
+    .pb-botao-secundario:hover:not(:disabled) {
+        @apply bg-superficie-alta;
+    }
+    .pb-botao-perigo {
+        @apply border-perigo/40 bg-perigo-fraco text-perigo;
+    }
+    .pb-botao-perigo:hover:not(:disabled) {
+        @apply bg-perigo text-perigo-fg;
+    }
+
+    .pb-campo {
+        @apply w-full rounded-md border border-borda-forte bg-superficie px-3
+        py-2 text-sm text-conteudo transition-colors duration-150 ease-out;
+    }
+    .pb-campo::placeholder {
+        @apply text-conteudo-tenue;
+    }
+    .pb-campo[aria-invalid="true"] {
+        @apply border-perigo;
+    }
+
+    .pb-cartao {
+        @apply rounded-lg border border-borda bg-superficie;
+    }
+
+    .pb-selo {
+        @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5
+        text-xs font-medium;
+    }
+
+    .pb-link {
+        @apply text-acento underline decoration-acento/40 underline-offset-2;
+    }
+    .pb-link:hover {
+        @apply decoration-acento;
+    }
+}
+
+/* Reduza a duração, não a mudança de estado. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+    }
+}
