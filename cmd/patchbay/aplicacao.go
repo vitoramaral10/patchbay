@@ -168,6 +168,15 @@ func (a *Aplicacao) Iniciar(ctx context.Context) {
 		defer a.wg.Done()
 		a.limparSessoes(ctx)
 	}()
+
+	// A lápide de ferramenta vence sozinha, e a rematerialização só acontece
+	// quando algo muda: sem esta varredura, a ferramenta que saiu ficaria no
+	// tools/list explicando que saiu para sempre.
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		a.endpoints.VigiarLapides(ctx)
+	}()
 }
 
 // limparSessoes varre as sessões vencidas até o ctx ser cancelado.

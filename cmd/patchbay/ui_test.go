@@ -335,8 +335,28 @@ func TestUI_FluxoCompletoSemReiniciar(t *testing.T) {
 	}
 	esperarFerramentas(t, u, "pessoal", 0)
 
-	if nomes := nomesDeFerramenta(t, sessao); len(nomes) != 0 {
-		t.Errorf("ferramentas depois de desabilitar = %v, quer nenhuma", nomes)
+	// O endpoint não expõe mais nenhuma ferramenta que funcione, mas as duas
+	// continuam listadas como lápide pela janela de graça (fatia 3): o cliente
+	// desta sessão ainda tem a lista antiga, e unknown tool o faria concluir que
+	// o endpoint quebrou em vez de que a configuração mudou.
+	if nomes := nomesDeFerramenta(t, sessao); !slices.Equal(nomes, quer) {
+		t.Errorf("ferramentas depois de desabilitar = %v, quer as lápides %v", nomes, quer)
+	}
+	if lapides := u.app.endpoints.Lapides("pessoal"); !slices.Equal(lapides, quer) {
+		t.Errorf("lápides = %v, quer %v", lapides, quer)
+	}
+	morta, err := sessao.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "somar",
+		Arguments: map[string]any{"a": 2, "b": 40},
+	})
+	if err != nil {
+		t.Fatalf("tools/call na lápide: erro = %v, quer erro de ferramenta", err)
+	}
+	if !morta.IsError {
+		t.Error("tools/call na lápide = sucesso, quer erro de ferramenta explicando que ela saiu")
+	}
+	if texto := textoDe(morta); !strings.Contains(texto, "somar") {
+		t.Errorf("texto da lápide = %q, quer o nome da ferramenta", texto)
 	}
 }
 
@@ -361,8 +381,28 @@ func TestUI_RemoverUpstreamEsvaziaOEndpoint(t *testing.T) {
 	}
 	esperarFerramentas(t, u, "pessoal", 0)
 
-	if nomes := nomesDeFerramenta(t, sessao); len(nomes) != 0 {
-		t.Errorf("ferramentas depois de remover = %v, quer nenhuma", nomes)
+	// Nenhuma ferramenta viva sobrou. As lápides ficam pela janela de graça e
+	// respondem com a explicação — o que a fatia 3 troca por "ferramenta zumbi"
+	// é o unknown tool, não o registro.
+	quer := []string{nomeNormalizado, "somar"}
+	if lapides := u.app.endpoints.Lapides("pessoal"); !slices.Equal(lapides, quer) {
+		t.Errorf("lápides = %v, quer %v", lapides, quer)
+	}
+	morta, err := sessao.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "somar",
+		Arguments: map[string]any{"a": 2, "b": 40},
+	})
+	if err != nil {
+		t.Fatalf("tools/call na lápide: erro = %v, quer erro de ferramenta", err)
+	}
+	if !morta.IsError {
+		t.Error("tools/call na lápide = sucesso, quer erro de ferramenta explicando que ela saiu")
+	}
+
+	// E a sessão do cliente continua de pé: remover upstream não derruba
+	// endpoint.
+	if nomes := nomesDeFerramenta(t, sessao); !slices.Equal(nomes, quer) {
+		t.Errorf("ferramentas depois de remover = %v, quer as lápides %v", nomes, quer)
 	}
 }
 

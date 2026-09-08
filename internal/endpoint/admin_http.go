@@ -59,6 +59,7 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 			Registro:    reg,
 			Upstreams:   contagens[reg.ID],
 			Ferramentas: a.srv.Contagem(reg.Slug),
+			Lapides:     len(a.srv.Lapides(reg.Slug)),
 			URL:         a.urlDo(reg.Slug),
 		})
 	}
@@ -120,6 +121,7 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 		Registro:    reg,
 		URL:         a.urlDo(reg.Slug),
 		Ferramentas: a.srv.Expostos(reg.Slug),
+		Lapides:     a.srv.Lapides(reg.Slug),
 		Composicao:  composicao,
 	}, webui.Avisos(r, avisos)))
 }

@@ -76,12 +76,22 @@ func (executorFake) Chamar(context.Context, int64, string, json.RawMessage) (*mc
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil
 }
 
+// montar sobe o registro de endpoints com a lápide desligada.
+//
+// A janela de graça é o assunto de lapide_test.go; nos testes de composição e de
+// corrida ela só embaralharia a asserção, porque a ferramenta que saiu continua
+// listada de propósito enquanto a janela não vence.
 func montar(t *testing.T, reg endpoint.Registro, nomes ...string) (*endpoint.Servidores, *repoFake, *catalogoFake) {
+	t.Helper()
+	return montarCom(t, []endpoint.Opcao{endpoint.ComJanelaDeGraca(0)}, reg, nomes...)
+}
+
+func montarCom(t *testing.T, opcoes []endpoint.Opcao, reg endpoint.Registro, nomes ...string) (*endpoint.Servidores, *repoFake, *catalogoFake) {
 	t.Helper()
 
 	repo := &repoFake{regs: []endpoint.Registro{reg}}
 	cat := &catalogoFake{ferramentas: ferramentasChamadas(nomes...)}
-	sut := endpoint.NovoServidores(repo, cat, executorFake{}, slog.New(slog.DiscardHandler))
+	sut := endpoint.NovoServidores(repo, cat, executorFake{}, slog.New(slog.DiscardHandler), opcoes...)
 	if err := sut.Sincronizar(context.Background()); err != nil {
 		t.Fatalf("Sincronizar inicial: erro = %v, quer nil", err)
 	}
@@ -180,8 +190,11 @@ func TestServidores_ListChangedChegaAoCliente(t *testing.T) {
 
 	select {
 	case <-avisado:
-	case <-time.After(10 * time.Second):
-		t.Fatal("tools/list_changed não chegou ao cliente em 10s")
+	case <-time.After(30 * time.Second):
+		// Já é espera por sinal (canal), não por relógio; o orçamento de 10s
+		// só se mostrou curto demais sob carga (2/4 rodadas), nunca sob carga
+		// leve. 30s dá folga sem trocar o mecanismo de sincronização.
+		t.Fatal("tools/list_changed não chegou ao cliente em 30s")
 	}
 	if nomes := nomesDoServidor(t, sessao); !slices.Equal(nomes, []string{"alfa", "gama"}) {
 		t.Errorf("ferramentas = %v, quer [alfa gama]", nomes)
