@@ -12,6 +12,7 @@ import (
 
 	"github.com/vitoramaral10/patchbay/internal/admin"
 	"github.com/vitoramaral10/patchbay/internal/apikey"
+	"github.com/vitoramaral10/patchbay/internal/authsrv"
 	"github.com/vitoramaral10/patchbay/internal/catalogo"
 	"github.com/vitoramaral10/patchbay/internal/endpoint"
 	"github.com/vitoramaral10/patchbay/internal/platform/cripto"
@@ -38,6 +39,7 @@ type Aplicacao struct {
 	st    *store.Store
 	chave *apikey.Servico
 	adm   *admin.Servico
+	oauth *authsrv.Servico
 
 	gerente   *upstream.Gerente
 	endpoints *endpoint.Servidores
@@ -45,11 +47,14 @@ type Aplicacao struct {
 	repoUpstream *upstream.RepositorioSQLite
 	repoEndpoint *endpoint.RepositorioSQLite
 	repoChave    *apikey.RepositorioSQLite
+	repoOAuth    *authsrv.RepositorioSQLite
 
 	admHTTP    *admin.HTTP
+	oauthHTTP  *authsrv.HTTP
 	adminUp    *upstream.Admin
 	adminEnd   *endpoint.Admin
 	adminChave *apikey.Admin
+	adminOAuth *authsrv.Admin
 
 	mu         sync.Mutex
 	observados []func()
@@ -83,11 +88,19 @@ func montar(ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logg
 	a.repoUpstream = upstream.NovoRepositorioSQLite(leitura, escrita, cofre)
 	a.repoEndpoint = endpoint.NovoRepositorioSQLite(leitura, escrita)
 	a.repoChave = apikey.NovoRepositorioSQLite(leitura, escrita)
+	a.repoOAuth = authsrv.NovoRepositorioSQLite(leitura, escrita)
 
 	a.chave = apikey.NovoServico(a.repoChave, log.With("componente", "apikey"))
 	a.adm = admin.NovoServico(
 		admin.NovoRepositorioSQLite(leitura, escrita),
 		log.With("componente", "admin"),
+	)
+	// O escopo é injetado porque o nome "endpoint:<slug>" é contrato dos dois
+	// verificadores de bearer, e nenhuma feature pode importar a outra.
+	a.oauth = authsrv.NovoServico(
+		a.repoOAuth, endpointsParaOAuth{repo: a.repoEndpoint},
+		cfg.PublicURL, apikey.Escopo,
+		log.With("componente", "authsrv"),
 	)
 
 	cfgs, err := upstream.Habilitados(ctx, leitura)
@@ -133,6 +146,11 @@ func montar(ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logg
 		endpointsParaChave{repo: a.repoEndpoint},
 		cfg.PublicURL, log.With("componente", "admin_chave"),
 	)
+	a.oauthHTTP = authsrv.NovoHTTP(a.oauth, log.With("componente", "authsrv_http"))
+	a.adminOAuth = authsrv.NovoAdmin(
+		a.repoOAuth, endpointsParaOAuth{repo: a.repoEndpoint},
+		cfg.PublicURL, log.With("componente", "admin_oauth"),
+	)
 
 	// Materializa o que der para materializar antes de escutar: o endpoint sobe
 	// servindo catálogo vazio se nenhum upstream conectou, nunca travando.
@@ -152,8 +170,9 @@ func (a *Aplicacao) Observar(fn func()) {
 	a.observados = append(a.observados, fn)
 }
 
-// Iniciar sobe as goroutines de fundo: a supervisão dos upstreams, o gravador de
-// "último uso" das chaves e a limpeza de sessão de admin. Todas morrem com o ctx.
+// Iniciar sobe as goroutines de fundo: a supervisão dos upstreams, os dois
+// gravadores de "último uso" (chave de API e token OAuth) e a limpeza de estado
+// vencido. Todas morrem com o ctx.
 func (a *Aplicacao) Iniciar(ctx context.Context) {
 	a.gerente.Iniciar(ctx)
 
@@ -166,17 +185,28 @@ func (a *Aplicacao) Iniciar(ctx context.Context) {
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
+		a.oauth.GravarUsos(ctx)
+	}()
+
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
 		a.limparSessoes(ctx)
 	}()
 }
 
-// limparSessoes varre as sessões vencidas até o ctx ser cancelado.
+// limparSessoes varre o que venceu até o ctx ser cancelado: sessão de admin,
+// código de autorização e token do AS. Nada disso autentica mais nada — a
+// varredura só evita que as tabelas cresçam para sempre.
 func (a *Aplicacao) limparSessoes(ctx context.Context) {
 	tique := time.NewTicker(intervaloLimpezaSessao)
 	defer tique.Stop()
 	for {
 		if err := a.adm.LimparSessoes(ctx); err != nil && ctx.Err() == nil {
 			a.log.Warn("falha ao limpar sessões de admin", "erro", err)
+		}
+		if err := a.oauth.Limpar(ctx); err != nil && ctx.Err() == nil {
+			a.log.Warn("falha ao limpar estado vencido do authorization server", "erro", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -188,16 +218,24 @@ func (a *Aplicacao) limparSessoes(ctx context.Context) {
 
 // Handler monta o roteamento HTTP.
 //
-// Três espaços de URL: /mcp/{slug} é o transporte MCP autenticado por chave de
-// API, /static/ são os arquivos da UI e /admin/ é a administração atrás da sessão
-// de admin.
+// Quatro espaços de URL: /mcp/{slug} é o transporte MCP, autenticado por chave
+// de API ou por token do authorization server; /.well-known/ e /oauth/ são o
+// authorization server; /static/ são os arquivos da UI; e /admin/ é a
+// administração atrás da sessão de admin.
 func (a *Aplicacao) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(endpoint.Rota, a.endpoints.Handler(
-		endpoint.Autorizacao{Verificar: a.chave.Verificar, Escopo: apikey.Escopo},
+		endpoint.Autorizacao{
+			Verificar: verificadorDeBearer(a.chave, a.oauth),
+			Escopo:    apikey.Escopo,
+		},
 		a.cfg.PublicURL,
 		a.log,
 	))
+
+	// Metadata, token e revogação são o protocolo: não passam por sessão de
+	// admin, porque quem autentica ali é o cliente OAuth.
+	a.oauthHTTP.Rotas(mux)
 	mux.HandleFunc("GET /saude", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok\n"))
@@ -215,7 +253,16 @@ func (a *Aplicacao) Handler() http.Handler {
 	a.adminUp.Rotas(protegido)
 	a.adminEnd.Rotas(protegido)
 	a.adminChave.Rotas(protegido)
+	a.adminOAuth.Rotas(protegido)
 	mux.Handle(webui.RotaPainel, a.admHTTP.Proteger(protegido))
+
+	// O authorize endpoint é o único do AS que exige sessão de admin: o
+	// "usuário" deste authorization server é o administrador do patchbay, e o
+	// mesmo portão da UI serve aqui — sem sessão ele redireciona para o login
+	// carregando o destino, então o clique do consentimento não se perde.
+	autorizar := http.NewServeMux()
+	a.oauthHTTP.RotasAutorizacao(autorizar)
+	mux.Handle(authsrv.RotaAutorizar, a.admHTTP.Proteger(autorizar))
 
 	// Proteção de Origin nativa do net/http: requisição de navegador
 	// cross-origin com método não seguro é recusada com 403. Cliente que não é
@@ -228,6 +275,13 @@ func (a *Aplicacao) Handler() http.Handler {
 		if err := protecao.AddTrustedOrigin(origem); err != nil {
 			a.log.Warn("origem confiável recusada", "origem", origem, "erro", err)
 		}
+	}
+	// O token e o revocation endpoint saem da proteção: são API de protocolo,
+	// chamados de outra origem por desenho, e a defesa deles é a autenticação de
+	// cliente mais o PKCE — não o Origin. Recusá-los com 403 quebraria um
+	// cliente MCP que rode no navegador.
+	for _, padrao := range authsrv.PadroesSemProtecaoDeOrigem {
+		protecao.AddInsecureBypassPattern(padrao)
 	}
 	return protecao.Handler(mux)
 }
