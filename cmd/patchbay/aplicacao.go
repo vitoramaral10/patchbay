@@ -199,6 +199,14 @@ func montar(
 		// reconexão seguinte, sem cache a invalidar e sem segredo passeando
 		// pela estrutura que alimenta a UI.
 		upstream.ComCredenciais(a.repoUpstream.Credenciais),
+		// A sonda funcional deixa rastro na mesma trilha das chamadas de
+		// cliente, marcada como origem sonda. É a única costura da fatia 9 com
+		// a 12, e ela cabe aqui pelo mesmo motivo da captura do endpoint:
+		// nenhuma das duas features conhece a outra.
+		upstream.ComObservadorDeSonda(trilhaDaSonda{registrador: a.registrador}),
+		// Mesma costura, para a evidência que fica só em memória: sem redator
+		// injetado, Pedido e Resposta chegariam crus a SituacaoSonda.
+		upstream.ComRedator(redatorDeSonda),
 	)
 
 	cat := catalogo.NovoServico(
