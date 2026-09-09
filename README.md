@@ -5,12 +5,13 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: fatias **1, 2, 3, 4, 5, 6 e 10** do épico entregues — catálogo e
+> Estado: fatias **1, 2, 3, 4, 5, 6, 10 e 12** do épico entregues — catálogo e
 > endpoint, resiliência de upstream, composição fina do endpoint, upstream
-> STDIO com supervisor de processo, segredos cifrados em repouso e o
-> authorization server essencial. OAuth de upstream (fatias 7-8), sonda
-> funcional (fatia 9) e CIMD/DCR/redirect URI de loopback (fatia 11) seguem
-> pendentes.
+> STDIO com supervisor de processo, segredos cifrados em repouso, o
+> authorization server essencial e a observabilidade (trilha por chamada, tela
+> filtrável, log ao vivo por SSE e redação de segredo). OAuth de upstream
+> (fatias 7-8), sonda funcional (fatia 9) e CIMD/DCR/redirect URI de loopback
+> (fatia 11) seguem pendentes.
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
@@ -66,6 +67,12 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
   por HKDF-SHA256 da chave mestra, nonce sorteado por valor, formato de
   armazenamento versionado e AAD com a linha de origem. Mais o canário que
   detecta chave mestra trocada no boot.
+- `internal/trilha` — a observabilidade: uma linha por `tools/call` gravada
+  **fora do caminho da latência**, o log ao vivo por SSE e a redação de segredo
+  dos dois. A captura no caminho da requisição é um envio não bloqueante num
+  canal com buffer; um consumidor único grava em lote no pool de escrita, e ao
+  encher a fila descarta **contando** — o contador aparece na tela. Ver
+  [Observabilidade](#observabilidade).
 - `internal/platform/webui` — o layout da UI: tokens de cor semânticos em duas
   camadas, componentes de página, e htmx + extensão de SSE vendorizados dentro
   do binário.
@@ -82,6 +89,8 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
 | `/admin/upstreams` | CRUD de upstream HTTP (bearer e headers estáticos) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora |
 | `/admin/endpoints` | CRUD de endpoint com composição fina — quais upstreams entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada upstream dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
+| `/admin/trilha` | Trilha por chamada de ferramenta, filtrável por endpoint, upstream, ferramenta, resultado e período, com os contadores de chamadas por minuto, erros, timeouts e **descartes** |
+| `/admin/logs/ao-vivo` | Log do processo e chamadas de ferramenta em tempo real, por SSE, com token e header de autorização redigidos |
 
 **Nada exige reiniciar o processo.** Criar, editar, desabilitar ou remover um
 upstream reconfigura a supervisão na mesma requisição; mudar a composição de um
@@ -373,10 +382,124 @@ Guarde-a onde você guarda segredo de produção, e faça backup dela junto com 
   imprimem a marca mesmo quando alguém esquece; sair do tipo exige chamar
   `Revelar()`, que é grep-ável. Nenhuma mensagem de erro da cifra carrega o
   valor guardado.
+- **Redação no log do processo**: além do tipo `cripto.Segredo`, o `slog.Handler`
+  inteiro passa por `trilha.HandlerLog`, que apaga por chave sensível e por
+  padrão de valor (bearer, JWT, marcas do patchbay) antes de a linha ser
+  escrita. A tela de log ao vivo é a via mais fácil de vazar exatamente o que a
+  cifra em repouso protege — ver [Observabilidade](#observabilidade).
 - **Nunca em query string**: a credencial de upstream vai em header, injetada
   por um `http.RoundTripper` por upstream. Query string vaza em log de proxy,
   em histórico e em `Referer` — e é o vazamento que a cifra em repouso não teria
   como desfazer.
+
+## Observabilidade
+
+Uma linha por `tools/call`, e nenhuma delas no caminho da latência.
+
+O SQLite aceita **um escritor por vez** e a trilha é a escrita mais frequente do
+sistema. Se ela entrasse na transação da chamada, cada `tools/call` passaria a
+esperar pela fila de escrita e o gateway serializaria por causa do log. O
+desenho, então, é:
+
+```
+tools/call ──► upstream ──► resposta ao cliente
+                  │
+                  └─► Observar(): envio não bloqueante numa fila de 1024
+                          │  (fila cheia → descarta e conta; nunca espera)
+                          ▼
+                   consumidor único ──┬─► lote de até 128 → uma transação
+                                      └─► hub SSE → cada tela aberta
+```
+
+O gancho de captura é uma interface de um método
+(`endpoint.Observador`), declarada no pacote que a consome e ligada em `main` —
+`internal/endpoint` não conhece `internal/trilha`. Ele roda no despacho da
+chamada, depois de o resultado estar pronto.
+
+**O descarte é resíduo assumido, e ele aparece na tela.** Sob rajada a fila
+enche e a linha se perde; o contador de descartes está sempre visível em
+`/admin/trilha`, com aviso quando é maior que zero. Trilha que mente é pior que
+trilha faltando. Falha de gravação — o banco recusou um lote que a fila já
+tinha aceitado — é contada à parte, em `Registrador.FalhasGravacao`: são
+diagnósticos diferentes ("a fila não escoa" contra "o banco está recusando"),
+e a tela mostra os dois.
+
+No desligamento, o consumidor só para depois de o servidor HTTP confirmar que
+não há requisição em curso (`Aplicacao.PararConsumoDaTrilha`, chamada depois
+de `srv.Shutdown` retornar) — parar no cancelamento do `ctx` do serviço, que
+chega antes, perderia sem contar como descarte a chamada que termina durante
+essa janela.
+
+A tela pagina por cursor `(ts, id)` da última linha vista, não por `OFFSET`:
+numa tabela que só cresce, `OFFSET` fica mais caro a cada página, e a
+comparação de tupla usa o mesmo índice sem escanear as páginas já vistas. Por
+isso só existe o link "mais antigas" — sem numeração nem "voltar".
+
+**A trilha guarda tamanho, nunca conteúdo.** Argumento e resultado de ferramenta
+são dado de terceiro e o caminho mais curto para um segredo entrar no banco em
+claro. O que se diagnostica com eles é "grande demais", e para isso o número
+basta. O que a linha carrega é: instante, endpoint, upstream, nome exposto e
+nome original da ferramenta, desfecho (`ok`/`erro`/`timeout`), duração, bytes de
+entrada e de saída, id de sessão **anonimizado** (SHA-256 truncado), a
+credencial na forma `apikey:<id>`/`oauth:<client_id>` e a era do protocolo MCP
+negociada naquela sessão.
+
+**Retenção de 7 dias**, varrida de hora em hora em lotes de 500 linhas. Em lotes
+pequenos porque a varredura não pode segurar o escritor único: um `DELETE` sem
+limite seria uma transação de tamanho imprevisível no primeiro boot depois de
+meses parado.
+
+### Log ao vivo
+
+`/admin/logs/ao-vivo` é `templ` + `htmx` + a extensão oficial `htmx-ext-sse`
+sobre um `http.Flusher` comum, servido em `/admin/logs/ao-vivo/fluxo`. O stream
+entrega **fragmento de HTML**, não JSON: montar a linha aqui, com `templ`, é o
+que garante o escape de tudo que veio de terceiro sem um render em JavaScript
+escrito à mão.
+
+Cada tela aberta tem a própria fila de 128 mensagens. Quando ela enche — aba de
+fundo, conexão congelada por um proxy — a linha é descartada **só para aquela
+tela**, e nunca vira espera para o processo. Esse descarte também aparece na
+tela.
+
+O único JavaScript escrito à mão da UI é
+`internal/platform/webui/estatico/js/log-ao-vivo.js`, com um teto de linhas no
+DOM: a extensão de SSE não tem modificador de "no máximo N filhos", e uma aba
+deixada aberta a noite inteira acumularia dezenas de milhares de nós.
+
+### Redação de segredo
+
+O `slog.Handler` do processo é embrulhado por `trilha.HandlerLog`, que redige
+**antes de delegar ao handler de baixo** — a redação vale para o stderr, para o
+arquivo e para a tela pelo mesmo caminho. Redigir só na tela deixaria o
+vazamento no destino que ninguém revisa.
+
+Duas regras, e a segunda é a que pega o vazamento que mais acontece:
+
+- **Por chave**: o valor de um atributo cuja chave contenha `authorization`,
+  `token`, `secret`, `senha`, `password`, `chave`, `cookie`, `credencial`,
+  `bearer`, `verifier` ou `pkce` sai como `«redigido»`. Vale dentro de
+  `slog.Group`, inclusive quando a chave sensível é a **de fora** do grupo.
+  `key` solto não entra na lista: ele casaria com `api_key_id`, que é um número
+  de linha e é o que permite achar a chave na tela.
+- **Por valor**, independente da chave: `Bearer …`/`Basic …` (o esquema fica, o
+  resto some), JWT (`eyJ….….…`), todo segredo emitido pelo próprio patchbay
+  (`pbk_`, `pbat_`, `pbrt_`, `pbac_`, `pbcs_`) e a marca de credencial de
+  provedor conhecido (`ghp_`/`gho_`/`github_pat_` do GitHub, `sk-ant-` da
+  Anthropic, `sk-` de vinte ou mais caracteres da OpenAI, `xoxb-`/`xoxp-` do
+  Slack, `glpat-` do GitLab, `ya29.` do Google, `AKIA…` da AWS). Nas marcas do
+  próprio patchbay a redação **preserva o prefixo visível** —
+  `pbk_a1b2c3d4_«redigido»` — que é o mesmo prefixo que a UI mostra: o admin
+  sabe de qual credencial o log falava sem que o log a entregue. Um parâmetro
+  de query com nome sensível (`api_key`, `code`, `state`, `sig`...) dentro de
+  uma URL também sai redigido — é o formato em que um `*url.Error` do
+  `net/url` embute a URL inteira na mensagem.
+
+A mesma redação roda sobre a mensagem de erro antes de ela virar linha da
+trilha: a resposta de um upstream pode repetir o header que ele recusou. O
+limite conhecido: um header estático de upstream é texto livre, e nada garante
+que ele siga um dos formatos acima — nesse caso só a redação por chave
+continua valendo.
 
 ## Verificar
 
