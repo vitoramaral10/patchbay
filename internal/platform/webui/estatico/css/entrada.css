@@ -160,11 +160,17 @@
     /*
      * Anel de foco em tudo que foca, com offset para não colar na borda.
      * focus-visible e não focus: o anel não deve aparecer no clique de mouse.
+     *
+     * Sem `border-radius` aqui de propósito: definir o raio no `:focus-visible`
+     * reescreve o raio do próprio elemento enquanto ele está focado, e o botão
+     * (rounded-md, 0.5rem) encolhia para 0.375rem ao receber foco de teclado —
+     * a forma mudava só para quem navega por Tab. O `outline` já acompanha o
+     * `border-radius` de quem ele contorna em todo navegador atual, então cada
+     * elemento mantém a própria forma e o anel segue.
      */
     :focus-visible {
         outline: 2px solid var(--pb-anel);
         outline-offset: 2px;
-        border-radius: var(--radius-sm);
     }
 
     /* Toda coluna de número: sem isso as casas dançam a cada render. */
