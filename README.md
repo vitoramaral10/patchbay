@@ -5,12 +5,13 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: fatias **1, 2, 3, 4, 5, 6 e 10** do épico entregues — catálogo e
+> Estado: fatias **1, 2, 3, 4, 5, 6, 10 e 16** do épico entregues — catálogo e
 > endpoint, resiliência de upstream, composição fina do endpoint, upstream
-> STDIO com supervisor de processo, segredos cifrados em repouso e o
-> authorization server essencial. OAuth de upstream (fatias 7-8), sonda
-> funcional (fatia 9) e CIMD/DCR/redirect URI de loopback (fatia 11) seguem
-> pendentes.
+> STDIO com supervisor de processo, segredos cifrados em repouso, o
+> authorization server essencial e o empacotamento (binário multiplataforma
+> por `goreleaser`, imagem Docker distroless). OAuth de upstream (fatias 7-8),
+> sonda funcional (fatia 9) e CIMD/DCR/redirect URI de loopback (fatia 11)
+> seguem pendentes.
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
@@ -302,6 +303,91 @@ A URL pública é o que a UI mostra aos clientes e o que decide o atributo
 `Secure` do cookie de sessão: o TLS é terminado por um proxy reverso na frente
 do patchbay, então o processo não descobre o esquema externo olhando a
 requisição.
+
+## Instalação e deploy
+
+Três formas de rodar em produção, do mais simples ao mais isolado.
+
+### Binário
+
+Baixe o arquivo da plataforma em
+[Releases](https://github.com/vitoramaral10/patchbay/releases) — `linux_amd64`,
+`linux_arm64`, `darwin_arm64` ou `windows_amd64` — e confira o checksum contra
+`patchbay_<versão>_checksums.txt`, publicado junto. O `.goreleaser.yaml`
+compila os quatro com `CGO_ENABLED=0`, então não há biblioteca nativa para
+instalar antes.
+
+```sh
+tar -xzf patchbay_<versão>_linux_amd64.tar.gz
+export PATCHBAY_MASTER_KEY=...        # ver "Chave mestra" abaixo
+export PATCHBAY_DATA_DIR=/var/lib/patchbay
+export PATCHBAY_PUBLIC_URL=https://patchbay.exemplo.com
+./patchbay serve
+```
+
+O TLS **não** é terminado pelo patchbay: coloque um proxy reverso na frente
+(Caddy, Nginx, Traefik) e aponte `PATCHBAY_PUBLIC_URL` para o esquema e host
+públicos — é o que a UI mostra ao cliente MCP e o que decide o atributo
+`Secure` do cookie de sessão de admin.
+
+### Docker
+
+A imagem publicada é `ghcr.io/vitoramaral10/patchbay`, multi-arch
+(`linux/amd64`, `linux/arm64`), a partir de `gcr.io/distroless/static-debian12:nonroot`
+— sem shell, sem gerenciador de pacotes, processo como usuário não-root.
+
+```sh
+docker run --rm \
+  -e PATCHBAY_MASTER_KEY=... \
+  -e PATCHBAY_PUBLIC_URL=https://patchbay.exemplo.com \
+  -p 8787:8787 \
+  -v patchbay-dados:/dados \
+  ghcr.io/vitoramaral10/patchbay:latest
+```
+
+Sem `HEALTHCHECK` no `Dockerfile`: a base distroless não tem `curl` nem shell
+para escrevê-lo. O Kubernetes ignora `HEALTHCHECK` de qualquer forma — a sonda
+de vida/prontidão é HTTP direta contra o gateway; em Compose, veja o exemplo
+abaixo, que não depende de sonda alguma para subir.
+
+### Docker Compose (com TLS)
+
+`docker-compose.yml` sobe o patchbay e um Caddy na frente, com TLS automático
+via ACME e o hardening de runtime que o Dockerfile sozinho não consegue
+impor: `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges`, rootfs
+gravável só no volume do data dir.
+
+```sh
+cp secrets.env.exemplo secrets.env
+docker compose run --rm patchbay chave-mestra gerar   # cole o resultado em secrets.env
+$EDITOR Caddyfile                                     # troque pelo seu domínio
+docker compose up -d
+```
+
+### Chave mestra: onde guardar e o que acontece se perder
+
+A chave mestra é gerada uma única vez pelo próprio binário
+(`cmd/patchbay/chave.go`), não por uma ferramenta externa:
+
+```sh
+patchbay chave-mestra gerar   # ou: docker compose run --rm patchbay chave-mestra gerar
+```
+
+Guarde-a como segredo de produção — gerenciador de segredo do provedor de
+nuvem, `secrets.env` fora do controle de versão, cofre de senha da equipe —
+nunca em texto plano num repositório. **Perdê-la é perder tudo o que ela cifra
+em repouso**: bearer e headers de upstream, e futuramente tokens de OAuth. Não
+existe recuperação nem chave mestra alternativa; sem ela, o caminho é apagar o
+banco e recadastrar upstreams do zero. Detalhes de por que a falha é dura e
+como o canário detecta chave trocada estão em [Chave mestra](#chave-mestra).
+
+### Atualizar a versão do Go
+
+`modernc.org/sqlite` depende de `modernc.org/libc`, que segue a versão do Go
+do `go.mod`. Ao subir o `go` do `go.mod` (e o `golang:*` do `Dockerfile`),
+rode `go get -u modernc.org/libc modernc.org/sqlite && go mod tidy` e reveja o
+changelog de `modernc.org/libc` — ele já quebrou build em bump de minor do Go
+por depender de detalhe de runtime não exportado.
 
 ## Chave mestra
 
