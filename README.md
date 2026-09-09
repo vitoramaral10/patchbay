@@ -123,7 +123,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário.
 | `/admin/setup` | Cria o administrador único. Existe **só** no primeiro acesso |
 | `/admin/login` · `/admin/sair` | Entrada e saída |
 | `/admin/` | Painel: MCPs por estado, endpoints, ferramentas, chaves |
-| `/admin/mcps` | CRUD de MCP HTTP e SSE (bearer e headers estáticos, ou OAuth) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora, e botão **Autorizar** no modo OAuth |
+| `/admin/mcps` | CRUD de MCP HTTP e SSE (bearer e headers estáticos, ou OAuth) e STDIO (comando, argumentos e ambiente), à mão ou colando a linha de `claude mcp add` que a documentação do servidor publica; detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora, e botão **Autorizar** no modo OAuth |
 | `/admin/biblioteca` | Catálogo de servidores MCP remotos **lido do mcpservers.org na hora**, com busca por nome e resumo. **Adicionar** busca o endpoint e a forma de autenticação naquele servidor e abre o formulário de MCP preenchido. Nada é guardado: sem saída para a internet, a tela explica e aponta para o cadastro à mão |
 | `/admin/endpoints` | CRUD de endpoint com composição fina — quais MCPs entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada MCP dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
@@ -232,6 +232,67 @@ formulário errado. As amostras em `internal/biblioteca/testdata/` são páginas
 verdade do site, e são elas que dizem, no `go test`, que a marcação ainda é a
 que o código espera. Só URL `https` é aceita: um endpoint em texto claro
 carregaria o bearer do upstream sem cifra.
+
+## Adicionar colando o comando de instalação
+
+Quase todo servidor MCP publica a instalação como uma linha só:
+
+    claude mcp add --transport http --scope user exemplo https://mcp.exemplo.com/mcp --header "Authorization: Bearer o-seu-token"
+
+Transcrever essa linha para o formulário é trabalho mecânico com quatro chances
+de errar — transporte, URL, nome do header e token —, e nenhum dos quatro dá
+erro de formulário: dá MCP degradado depois. Em `/admin/mcps`, **Colar comando
+de instalação** troca isso por um Ctrl+V.
+
+O que o patchbay lê: `--transport` (e, quando ele falta, o formato do destino
+decide), `--header`, `--env`, `--scope`, o `--` que separa as opções do processo
+a lançar, aspas simples e duplas, quebra de linha com contrabarra, e o `$` do
+prompt que vem junto no copiar-colar. Opção que ele não conhece é **recusa**, e
+não descarte silencioso: uma flag nova pode ser a que muda o significado do
+resto da linha.
+
+Três traduções valem a pena saber:
+
+- **`Authorization: Bearer <token>` vira o bearer**, não um header. O patchbay
+  monta o `Authorization` a partir do slot de bearer, e o banco recusa gravá-lo
+  como header. Outro esquema de autenticação (`Basic`, por exemplo) é recusado
+  com a explicação, em vez de virar um header que não funcionaria.
+- **Todo `--env` vai para o bloco cifrado.** O comando não diz quais variáveis
+  são segredo; cifrar o que não precisava não custa nada, deixar um
+  `GITHUB_TOKEN` em claro custa o token. A tela avisa, e a edição move depois o
+  que não for segredo.
+- **`--scope` não vira nada** e aparece como aviso: escopo de instalação é
+  conceito do Claude Code. Aqui quem decide a visibilidade do MCP são os
+  endpoints a que ele for ligado.
+
+**O token de exemplo é recusado.** Um `Bearer [your API token]` colado como está
+gravaria uma credencial que só falha na primeira chamada, e o sintoma chegaria
+dias depois como 401 sem ninguém lembrar do cadastro. Marcador entre colchetes
+ou sinais, `${VARIAVEL}` e valor começando em `your` param na tela de colar, com
+o pedido de trocar pelo token de verdade.
+
+### Colar, conferir, criar
+
+O clique em **Ler o comando** não grava nada: ele mostra o cadastro que o
+comando descreve — nome, transporte, destino, timeout e *quais* credenciais
+vieram — e só o botão seguinte escreve. A conferência é o mesmo desenho do
+import de YAML, e existe principalmente pelo caso STDIO: um `npx -y algo`
+copiado de um README que ninguém leu não pode virar processo filho do patchbay
+sem alguém ver o que ele executa. Nesse caso a tela ainda abre com um alerta
+dizendo isso.
+
+Entre as duas telas, **o comando fica guardado no processo**, e para o navegador
+vai só um identificador opaco, válido uma vez e por quinze minutos. É o que
+permite mostrar a conferência sem pôr o token do `--header` dentro de um HTML —
+a mesma regra que faz o formulário nunca reexibir credencial gravada. A caixa de
+colar é a única exceção, e deliberada: quando a leitura falha, o comando volta
+para ela, porque corrigir o token exige tê-lo ali para editar.
+
+Quem grava é o caminho de sempre — a mesma validação do formulário, o mesmo
+`Criar` que cifra bearer, headers e variáveis na transação do `INSERT`, o mesmo
+hot-apply que abre a sessão sem reiniciar. O comando colado é entrada, não
+atalho: se este fluxo tivesse escrita própria, seria por ela que um campo novo
+entraria no banco sem entrar na supervisão.
 
 ## Composição do endpoint
 
