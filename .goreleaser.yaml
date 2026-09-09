@@ -90,6 +90,9 @@ release:
   github:
     owner: vitoramaral10
     name: patchbay
+  # Tag com sufixo de pré-lançamento sai marcada como pre-release no GitHub,
+  # para o beta não virar o download padrão de quem abre a página do projeto.
+  prerelease: auto
 
 snapshot:
   version_template: "{{ .Version }}-snapshot-{{ .ShortCommit }}"
