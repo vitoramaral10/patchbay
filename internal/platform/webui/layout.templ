@@ -291,6 +291,26 @@ templ Vazio(titulo, texto string) {
 	</div>
 }
 
+// Tabela é a tabela de listagem: o embrulho que rola na horizontal, a <table> e
+// a legenda. Os filhos são o <thead> e o <tbody>.
+//
+// Existe por causa da legenda. O par embrulho + tabela estava copiado igual em
+// nove lugares, e só um deles tinha <caption> — as outras oito não diziam a um
+// leitor de tela o que estavam listando. Sendo componente, a legenda deixa de
+// ser algo de que alguém precisa lembrar e passa a ser o argumento que não dá
+// para omitir.
+//
+// A legenda é sr-only: a tela já tem o título do cartão acima, e repetir a
+// frase seria ruído para quem enxerga.
+templ Tabela(legenda string) {
+	<div class="overflow-x-auto">
+		<table class="w-full text-left">
+			<caption class="sr-only">{ legenda }</caption>
+			{ children... }
+		</table>
+	</div>
+}
+
 // BotaoAcao é o botão de uma ação htmx. Enquanto a requisição está no ar o
 // rótulo troca para Pendente e o htmx desliga o botão, para que o clique não
 // suma no vazio numa chamada que sai para um MCP remoto.

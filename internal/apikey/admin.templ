@@ -32,63 +32,61 @@ templ TelaLista(chaves []Chave, alerta *webui.Alerta) {
 			}
 		} else {
 			@webui.Cartao("") {
-				<div class="overflow-x-auto">
-					<table class="w-full text-left">
-						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
-							<tr>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Chave</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Prefixo</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Escopo</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Criada</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Último uso</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold"><span class="sr-only">Ações</span></th>
+				@webui.Tabela("Chaves de API emitidas, com escopo e último uso") {
+					<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+						<tr>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Chave</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Prefixo</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Escopo</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Criada</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Último uso</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold"><span class="sr-only">Ações</span></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-borda">
+						for _, c := range chaves {
+							<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
+								<td class="px-4 py-3">
+									<span class="font-medium">{ c.Nome }</span>
+									if c.Revogada() {
+										<span class="ml-2">
+											@webui.Selo(webui.TomNeutro, "revogada em " + instante(c.RevogadaEm))
+										</span>
+									}
+								</td>
+								<td class="px-4 py-3">
+									<code class="font-mono text-xs text-conteudo-suave">{ c.PrefixoVisivel }</code>
+								</td>
+								<td class="px-4 py-3">
+									if len(c.Endpoints) == 0 {
+										<span class="text-conteudo-tenue">sem endpoint</span>
+									} else {
+										<span class="flex flex-wrap gap-1">
+											for _, slug := range c.Endpoints {
+												<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs text-conteudo-suave">{ slug }</code>
+											}
+										</span>
+									}
+								</td>
+								<td class="px-4 py-3 text-conteudo-suave">{ instante(c.CriadaEm) }</td>
+								<td class="px-4 py-3 text-conteudo-suave">{ instante(c.UltimoUsoEm) }</td>
+								<td class="px-4 py-3 text-right">
+									if !c.Revogada() {
+										<form
+											method="post"
+											action={ templ.SafeURL(webui.RotaChaves + "/" + strconv.FormatInt(c.ID, 10) + "/revogar") }
+											hx-post={ webui.RotaChaves + "/" + strconv.FormatInt(c.ID, 10) + "/revogar" }
+											hx-confirm={ "Revogar a chave " + c.Nome + "? Todo cliente que a usa para " + strings.Join(c.Endpoints, ", ") + " para de funcionar na próxima chamada." }
+											hx-disabled-elt="find button"
+										>
+											@webui.BotaoAcao("pb-botao-perigo px-2.5 py-1.5 text-xs", "Revogar", "Revogando…")
+										</form>
+									}
+								</td>
 							</tr>
-						</thead>
-						<tbody class="divide-y divide-borda">
-							for _, c := range chaves {
-								<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
-									<td class="px-4 py-3">
-										<span class="font-medium">{ c.Nome }</span>
-										if c.Revogada() {
-											<span class="ml-2">
-												@webui.Selo(webui.TomNeutro, "revogada em " + instante(c.RevogadaEm))
-											</span>
-										}
-									</td>
-									<td class="px-4 py-3">
-										<code class="font-mono text-xs text-conteudo-suave">{ c.PrefixoVisivel }</code>
-									</td>
-									<td class="px-4 py-3">
-										if len(c.Endpoints) == 0 {
-											<span class="text-conteudo-tenue">sem endpoint</span>
-										} else {
-											<span class="flex flex-wrap gap-1">
-												for _, slug := range c.Endpoints {
-													<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs text-conteudo-suave">{ slug }</code>
-												}
-											</span>
-										}
-									</td>
-									<td class="px-4 py-3 text-conteudo-suave">{ instante(c.CriadaEm) }</td>
-									<td class="px-4 py-3 text-conteudo-suave">{ instante(c.UltimoUsoEm) }</td>
-									<td class="px-4 py-3 text-right">
-										if !c.Revogada() {
-											<form
-												method="post"
-												action={ templ.SafeURL(webui.RotaChaves + "/" + strconv.FormatInt(c.ID, 10) + "/revogar") }
-												hx-post={ webui.RotaChaves + "/" + strconv.FormatInt(c.ID, 10) + "/revogar" }
-												hx-confirm={ "Revogar a chave " + c.Nome + "? Todo cliente que a usa para " + strings.Join(c.Endpoints, ", ") + " para de funcionar na próxima chamada." }
-												hx-disabled-elt="find button"
-											>
-												@webui.BotaoAcao("pb-botao-perigo px-2.5 py-1.5 text-xs", "Revogar", "Revogando…")
-											</form>
-										}
-									</td>
-								</tr>
-							}
-						</tbody>
-					</table>
-				</div>
+						}
+					</tbody>
+				}
 			}
 		}
 	}

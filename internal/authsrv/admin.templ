@@ -105,53 +105,51 @@ templ TelaClientes(clientes []Cliente, alerta *webui.Alerta) {
 			}
 		} else {
 			@webui.Cartao("") {
-				<div class="overflow-x-auto">
-					<table class="w-full text-left">
-						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
-							<tr>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Cliente</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">client_id</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Origem</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Tipo</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Endpoints</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Registrado</th>
+				@webui.Tabela("Clientes OAuth registrados, com origem e escopo") {
+					<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+						<tr>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Cliente</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">client_id</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Origem</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Tipo</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Endpoints</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Registrado</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-borda">
+						for _, c := range clientes {
+							<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
+								<td class="px-4 py-3">
+									<a href={ templ.SafeURL(rotaCliente(c)) } class="font-medium text-acento hover:underline">{ c.Nome }</a>
+									if c.Revogado() {
+										<span class="ml-2">
+											@webui.Selo(webui.TomNeutro, "revogado em " + instante(c.RevogadoEm))
+										</span>
+									}
+								</td>
+								<td class="px-4 py-3">
+									<code class="font-mono text-xs text-conteudo-suave">{ c.ClientID }</code>
+								</td>
+								<td class="px-4 py-3">
+									@webui.Selo(tomDaOrigem(c), origemDoCliente(c))
+								</td>
+								<td class="px-4 py-3 text-conteudo-suave">{ tipoDoCliente(c) }</td>
+								<td class="px-4 py-3">
+									if c.EscopoAberto {
+										<span class="text-xs text-conteudo-suave">{ escopoDoCliente(c) }</span>
+									} else {
+										<span class="flex flex-wrap gap-1">
+											for _, e := range c.Endpoints {
+												<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs text-conteudo-suave">{ e.Slug }</code>
+											}
+										</span>
+									}
+								</td>
+								<td class="px-4 py-3 text-conteudo-suave">{ instante(c.CriadoEm) }</td>
 							</tr>
-						</thead>
-						<tbody class="divide-y divide-borda">
-							for _, c := range clientes {
-								<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
-									<td class="px-4 py-3">
-										<a href={ templ.SafeURL(rotaCliente(c)) } class="font-medium text-acento hover:underline">{ c.Nome }</a>
-										if c.Revogado() {
-											<span class="ml-2">
-												@webui.Selo(webui.TomNeutro, "revogado em " + instante(c.RevogadoEm))
-											</span>
-										}
-									</td>
-									<td class="px-4 py-3">
-										<code class="font-mono text-xs text-conteudo-suave">{ c.ClientID }</code>
-									</td>
-									<td class="px-4 py-3">
-										@webui.Selo(tomDaOrigem(c), origemDoCliente(c))
-									</td>
-									<td class="px-4 py-3 text-conteudo-suave">{ tipoDoCliente(c) }</td>
-									<td class="px-4 py-3">
-										if c.EscopoAberto {
-											<span class="text-xs text-conteudo-suave">{ escopoDoCliente(c) }</span>
-										} else {
-											<span class="flex flex-wrap gap-1">
-												for _, e := range c.Endpoints {
-													<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs text-conteudo-suave">{ e.Slug }</code>
-												}
-											</span>
-										}
-									</td>
-									<td class="px-4 py-3 text-conteudo-suave">{ instante(c.CriadoEm) }</td>
-								</tr>
-							}
-						</tbody>
-					</table>
-				</div>
+						}
+					</tbody>
+				}
 			}
 		}
 	}
@@ -408,54 +406,52 @@ templ TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.
 						pedir autorização e você aceitar.
 					</p>
 				} else {
-					<div class="overflow-x-auto">
-						<table class="w-full text-left">
-							<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
-								<tr>
-									<th scope="col" class="px-4 py-2.5 font-semibold">Família</th>
-									<th scope="col" class="px-4 py-2.5 font-semibold">Endpoint</th>
-									<th scope="col" class="px-4 py-2.5 font-semibold">Estado</th>
-									<th scope="col" class="px-4 py-2.5 font-semibold">Concedida</th>
-									<th scope="col" class="px-4 py-2.5 font-semibold">Último uso</th>
-									<th scope="col" class="px-4 py-2.5 font-semibold"><span class="sr-only">Ações</span></th>
+					@webui.Tabela("Sessões abertas deste cliente, com estado e último uso") {
+						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+							<tr>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Família</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Endpoint</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Estado</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Concedida</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Último uso</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold"><span class="sr-only">Ações</span></th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-borda">
+							for _, s := range sessoes {
+								<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
+									<td class="px-4 py-3">
+										<code class="font-mono text-xs text-conteudo-suave">{ s.Curta() }</code>
+									</td>
+									<td class="px-4 py-3">
+										<code class="font-mono text-xs text-conteudo-suave">{ s.EndpointSlug }</code>
+									</td>
+									<td class="px-4 py-3">
+										if s.Ativa() {
+											@webui.Selo(webui.TomSucesso, "ativa · "+strconv.Itoa(s.Ativos)+" de "+strconv.Itoa(s.Total)+" tokens")
+										} else {
+											@webui.Selo(webui.TomNeutro, "encerrada")
+										}
+									</td>
+									<td class="px-4 py-3 text-conteudo-suave">{ instante(s.CriadaEm) }</td>
+									<td class="px-4 py-3 text-conteudo-suave">{ instante(s.UltimoUsoEm) }</td>
+									<td class="px-4 py-3 text-right">
+										if s.Ativa() {
+											<form
+												method="post"
+												action={ templ.SafeURL(rotaCliente(c) + "/sessoes/" + s.FamiliaID + "/revogar") }
+												hx-post={ rotaCliente(c) + "/sessoes/" + s.FamiliaID + "/revogar" }
+												hx-confirm={ "Revogar esta sessão? O cliente para de acessar " + s.EndpointSlug + " na próxima chamada e precisa do consentimento de novo." }
+												hx-disabled-elt="find button"
+											>
+												@webui.BotaoAcao("pb-botao-perigo px-2.5 py-1.5 text-xs", "Revogar", "Revogando…")
+											</form>
+										}
+									</td>
 								</tr>
-							</thead>
-							<tbody class="divide-y divide-borda">
-								for _, s := range sessoes {
-									<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
-										<td class="px-4 py-3">
-											<code class="font-mono text-xs text-conteudo-suave">{ s.Curta() }</code>
-										</td>
-										<td class="px-4 py-3">
-											<code class="font-mono text-xs text-conteudo-suave">{ s.EndpointSlug }</code>
-										</td>
-										<td class="px-4 py-3">
-											if s.Ativa() {
-												@webui.Selo(webui.TomSucesso, "ativa · "+strconv.Itoa(s.Ativos)+" de "+strconv.Itoa(s.Total)+" tokens")
-											} else {
-												@webui.Selo(webui.TomNeutro, "encerrada")
-											}
-										</td>
-										<td class="px-4 py-3 text-conteudo-suave">{ instante(s.CriadaEm) }</td>
-										<td class="px-4 py-3 text-conteudo-suave">{ instante(s.UltimoUsoEm) }</td>
-										<td class="px-4 py-3 text-right">
-											if s.Ativa() {
-												<form
-													method="post"
-													action={ templ.SafeURL(rotaCliente(c) + "/sessoes/" + s.FamiliaID + "/revogar") }
-													hx-post={ rotaCliente(c) + "/sessoes/" + s.FamiliaID + "/revogar" }
-													hx-confirm={ "Revogar esta sessão? O cliente para de acessar " + s.EndpointSlug + " na próxima chamada e precisa do consentimento de novo." }
-													hx-disabled-elt="find button"
-												>
-													@webui.BotaoAcao("pb-botao-perigo px-2.5 py-1.5 text-xs", "Revogar", "Revogando…")
-												</form>
-											}
-										</td>
-									</tr>
-								}
-							</tbody>
-						</table>
-					</div>
+							}
+						</tbody>
+					}
 				}
 			}
 		</div>
