@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vitoramaral10/patchbay/internal/apikey"
 	"github.com/vitoramaral10/patchbay/internal/authsrv"
@@ -85,6 +87,16 @@ func (i *instalacao) povoar(t *testing.T) {
 		Nome: "notion", Tipo: upstream.TipoHTTP, URL: "https://mcp.notion.com/mcp",
 		TimeoutMS: 15000, Habilitado: true,
 		Bearer: cripto.Segredo("token-do-notion"),
+		// A sonda entra aqui para que a ida e volta do YAML a cubra: sem ela no
+		// arquivo, um import apagaria em silêncio a configuração de sonda de
+		// todo upstream do banco.
+		SondaHabilitada:  true,
+		SondaFerramenta:  "notion-search",
+		SondaArgs:        `{"query":"ping"}`,
+		SondaEspera:      "resultado",
+		SondaIntervaloMS: 900000,
+		SondaTimeoutMS:   10000,
+		SondaTolerancia:  3,
 	}
 	if !http.Validar() {
 		t.Fatalf("formulário http recusado: %v", http.Erros)
@@ -133,6 +145,24 @@ func (i *instalacao) povoar(t *testing.T) {
 	if _, err := i.chaves.Emitir(ctx, "desenvolvimento", emitida, []int64{idEndpoint}); err != nil {
 		t.Fatalf("emitir chave: erro = %v, quer nil", err)
 	}
+}
+
+// upstreamPorNome acha o upstream pelo nome, que é a chave que o YAML usa — o
+// id é interno e não atravessa o arquivo.
+func upstreamPorNome(t *testing.T, i *instalacao, nome string) upstream.Registro {
+	t.Helper()
+
+	regs, err := i.upstreams.Todos(context.Background())
+	if err != nil {
+		t.Fatalf("listar upstreams: erro = %v, quer nil", err)
+	}
+	for _, reg := range regs {
+		if reg.Nome == nome {
+			return reg
+		}
+	}
+	t.Fatalf("upstream %q não está no banco", nome)
+	return upstream.Registro{}
 }
 
 // TestConfiguracao_IdaEVoltaEntreInstalacoes é o critério da fatia com os
@@ -201,6 +231,19 @@ func TestConfiguracao_IdaEVoltaEntreInstalacoes(t *testing.T) {
 	slices.Sort(regras)
 	if quer := []string{"excluir write_* ", "renomear read_* ler_*"}; !slices.Equal(regras, quer) {
 		t.Errorf("regras = %q, quer %q", regras, quer)
+	}
+
+	// A sonda funcional atravessa inteira. Ela não é segredo e não é estado: é
+	// configuração, e um import que a apagasse tiraria as ferramentas do
+	// catálogo no primeiro upstream que quebrasse, sem ninguém ter pedido.
+	sondado := upstreamPorNome(t, destino, "notion")
+	quer := upstream.Sonda{
+		Habilitada: true, Ferramenta: "notion-search",
+		Args: []byte(`{"query":"ping"}`), Espera: "resultado",
+		Intervalo: 900 * time.Second, Timeout: 10 * time.Second, Tolerancia: 3,
+	}
+	if !reflect.DeepEqual(sondado.Sonda, quer) {
+		t.Errorf("sonda no destino = %+v, quer %+v", sondado.Sonda, quer)
 	}
 
 	// Sem a variável de ambiente, os slots de credencial não vêm junto: o segredo

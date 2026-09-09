@@ -30,6 +30,7 @@ func divergenciasDeUpstream(noYAML, noBanco Upstream) []Divergencia {
 		{nome: "env", emA: mapaEmTexto(a.Env), emB: mapaEmTexto(b.Env), soParaTipoDe: TipoSTDIO},
 		{nome: "timeout_ms", emA: strconv.FormatInt(a.TimeoutMS, 10), emB: strconv.FormatInt(b.TimeoutMS, 10)},
 		{nome: "habilitado", emA: strconv.FormatBool(a.Habilitado), emB: strconv.FormatBool(b.Habilitado)},
+		{nome: "sonda", emA: sondaEmTexto(a.Sonda), emB: sondaEmTexto(b.Sonda)},
 	}
 
 	var out []Divergencia
@@ -108,6 +109,23 @@ func vinculoEmTexto(v Vinculo) string {
 		partes = append(partes, r.Linha())
 	}
 	return strings.Join(partes, "; ")
+}
+
+// sondaEmTexto resume a sonda funcional numa linha comparável. "desligada"
+// quando não há bloco nenhum — o mesmo texto que sondaCanonica também produz
+// para uma sonda desligada e sem ferramenta, então os dois lados nunca
+// divergem só porque um grava nulo e o outro grava o bloco vazio.
+func sondaEmTexto(s *SondaDoUpstream) string {
+	if s == nil {
+		return "desligada"
+	}
+	return "habilitada=" + strconv.FormatBool(s.Habilitada) +
+		" ferramenta=" + s.Ferramenta +
+		" args=" + s.Args +
+		" espera=" + s.Espera +
+		" intervalo_ms=" + strconv.FormatInt(s.IntervaloMS, 10) +
+		" timeout_ms=" + strconv.FormatInt(s.TimeoutMS, 10) +
+		" tolerancia=" + strconv.Itoa(s.Tolerancia)
 }
 
 func listaEmTexto(v []string) string { return strings.Join(v, " ") }
