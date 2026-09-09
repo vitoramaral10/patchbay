@@ -63,7 +63,7 @@ func executar(args []string, saida *os.File) error {
 		return comandoChaveMestra(args, saida)
 
 	case "versao", "version":
-		_, _ = fmt.Fprintf(saida, "patchbay %s\n", versao.Numero)
+		_, _ = fmt.Fprintf(saida, "patchbay %s\n", versao.String())
 		return nil
 
 	case "ajuda", "help":
