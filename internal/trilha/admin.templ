@@ -1,0 +1,448 @@
+package trilha
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/vitoramaral10/patchbay/internal/platform/webui"
+)
+
+// arquivoJSAoVivo é o único JavaScript escrito à mão da UI: o teto de linhas do
+// log ao vivo. Vem do mesmo embed.FS dos outros estáticos.
+const arquivoJSAoVivo = "js/log-ao-vivo.js"
+
+// instante é o carimbo de tempo da trilha, com milissegundo.
+//
+// Com milissegundo porque a coluna ts é em milissegundo: sob rajada, várias
+// chamadas caem no mesmo segundo, e a ordem dentro da rajada é exatamente o que
+// se olha ao diagnosticar.
+func instante(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Local().Format("02/01 15:04:05.000")
+}
+
+func hora(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Local().Format("15:04:05.000")
+}
+
+// duracao formata milissegundos ou segundos, com uma casa. Número de duração é
+// para comparar entre linhas, e três casas de milissegundo só atrapalham.
+func duracao(d time.Duration) string {
+	switch {
+	case d <= 0:
+		return "—"
+	case d < time.Second:
+		return strconv.FormatInt(d.Milliseconds(), 10) + " ms"
+	default:
+		return strconv.FormatFloat(d.Seconds(), 'f', 1, 64) + " s"
+	}
+}
+
+// tamanho formata bytes. Sem casa decimal em bytes crus: "413 B" é a informação,
+// "413,0 B" é ruído.
+func tamanho(n int) string {
+	switch {
+	case n <= 0:
+		return "—"
+	case n < 1024:
+		return strconv.Itoa(n) + " B"
+	case n < 1024*1024:
+		return strconv.FormatFloat(float64(n)/1024, 'f', 1, 64) + " kB"
+	default:
+		return strconv.FormatFloat(float64(n)/(1024*1024), 'f', 1, 64) + " MB"
+	}
+}
+
+// tomDoResultado dá a cor do selo. O texto vai junto sempre: cor sozinha não
+// informa, e "timeout" é o caso em que a diferença mais importa.
+func tomDoResultado(r Resultado) webui.Tom {
+	switch r {
+	case ResultadoOK:
+		return webui.TomSucesso
+	case ResultadoTimeout:
+		return webui.TomAlerta
+	case ResultadoErro:
+		return webui.TomPerigo
+	default:
+		return webui.TomNeutro
+	}
+}
+
+// tomDoNivel dá a cor do selo de nível de log.
+func tomDoNivel(nivel string) webui.Tom {
+	switch nivel {
+	case "ERROR":
+		return webui.TomPerigo
+	case "WARN":
+		return webui.TomAlerta
+	case "DEBUG":
+		return webui.TomNeutro
+	default:
+		return webui.TomInfo
+	}
+}
+
+func ouTraco(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
+// TelaTrilha é a trilha por chamada, filtrável pelos cinco eixos da seção 11.
+templ TelaTrilha(p Pagina) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Trilha de chamadas",
+		Subtitulo: "Uma linha por tools/call, gravada depois de responder. Ela guarda tamanho de entrada e de saída — nunca o conteúdo do argumento nem do resultado.",
+		Secao:     webui.SecaoTrilha,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Acao:      linkAoVivo(),
+	}) {
+		<div class="flex flex-col gap-6">
+			@contadores(p.Resumo, p.Descarte)
+			@filtros(p.Filtro, p.Opcoes)
+			if len(p.Eventos) == 0 {
+				if p.Filtro.Vazio() {
+					@webui.Vazio("Nenhuma chamada registrada.",
+						"A trilha se preenche sozinha na primeira vez que um cliente MCP chamar uma ferramenta de um endpoint.")
+				} else {
+					@webui.Vazio("Nada casa com este filtro.",
+						"Alargue o período ou limpe um dos campos. A retenção apaga o que passou de sete dias, então o que é mais antigo que isso não está aqui.") {
+						<a href={ templ.SafeURL(webui.RotaTrilha) } class="pb-botao pb-botao-secundario">Limpar filtro</a>
+					}
+				}
+			} else {
+				@webui.Cartao("") {
+					<div class="overflow-x-auto">
+						<table class="w-full text-left">
+							<caption class="sr-only">Chamadas de ferramenta, da mais recente para a mais antiga</caption>
+							<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+								<tr>
+									<th scope="col" class="px-3 py-2.5 font-semibold">Quando</th>
+									<th scope="col" class="px-3 py-2.5 font-semibold">Endpoint</th>
+									<th scope="col" class="px-3 py-2.5 font-semibold">Upstream</th>
+									<th scope="col" class="px-3 py-2.5 font-semibold">Ferramenta</th>
+									<th scope="col" class="px-3 py-2.5 font-semibold">Resultado</th>
+									<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Duração</th>
+									<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Entrada</th>
+									<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Saída</th>
+									<th scope="col" class="px-3 py-2.5 font-semibold">Quem chamou</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-borda">
+								for _, e := range p.Eventos {
+									<tr class="align-top transition-colors duration-150 ease-out hover:bg-superficie-alta">
+										<td class="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-conteudo-suave">{ instante(e.Inicio) }</td>
+										<td class="px-3 py-2.5">
+											<code class="font-mono text-xs">{ ouTraco(e.EndpointSlug) }</code>
+										</td>
+										<td class="px-3 py-2.5">{ ouTraco(e.UpstreamNome) }</td>
+										<td class="px-3 py-2.5">
+											<code class="font-mono text-xs text-conteudo">{ ouTraco(e.Ferramenta) }</code>
+											if e.Original != "" && e.Original != e.Ferramenta {
+												<div class="text-xs text-conteudo-tenue">
+													no upstream: <code class="font-mono">{ e.Original }</code>
+												</div>
+											}
+										</td>
+										<td class="px-3 py-2.5">
+											@webui.Selo(tomDoResultado(e.Resultado), e.Resultado.Rotulo())
+											if e.Erro != "" {
+												<div class="mt-1 max-w-[42ch] break-words text-xs text-conteudo-suave">{ e.Erro }</div>
+											}
+										</td>
+										<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ duracao(e.Duracao) }</td>
+										<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ tamanho(e.BytesEntrada) }</td>
+										<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ tamanho(e.BytesSaida) }</td>
+										<td class="px-3 py-2.5 text-xs text-conteudo-suave">
+											<div>{ ouTraco(e.Credencial) }</div>
+											if e.Sessao != "" {
+												<div class="text-conteudo-tenue">sessão <code class="font-mono">{ e.Sessao }</code></div>
+											}
+											if e.Era != "" {
+												<div class="text-conteudo-tenue">era { e.Era }</div>
+											}
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				}
+				@paginacao(p)
+			}
+		</div>
+	}
+}
+
+templ linkAoVivo() {
+	<a href={ templ.SafeURL(webui.RotaLogsAoVivo) } class="pb-botao pb-botao-secundario">Log ao vivo</a>
+}
+
+templ linkTrilha() {
+	<a href={ templ.SafeURL(webui.RotaTrilha) } class="pb-botao pb-botao-secundario">Trilha de chamadas</a>
+}
+
+// contadores é o painel da fatia: taxa, erros e — obrigatoriamente — descartes.
+//
+// O descarte aparece sempre, e não só quando é maior que zero: um contador que
+// só existe quando há problema é um contador que ninguém aprende a ler.
+templ contadores(r Resumo, d Descarte) {
+	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+		@indicador("Chamadas por minuto", r.PorMinuto(), r.RotuloJanela(), webui.TomNeutro)
+		@indicador("Erros", strconv.FormatInt(r.Erros, 10), r.RotuloJanela(), tomSeHouver(r.Erros, webui.TomPerigo))
+		@indicador("Timeouts", strconv.FormatInt(r.Timeouts, 10), r.RotuloJanela(), tomSeHouver(r.Timeouts, webui.TomAlerta))
+		@indicador("Descartes da trilha", strconv.FormatUint(d.Eventos, 10), rodapeDescarte(d), tomSeHouver(int64(d.Eventos), webui.TomAlerta))
+		@indicador("Falhas de gravação", strconv.FormatUint(d.FalhasGravacao, 10), "aceitas na fila, recusadas pelo banco", tomSeHouver(int64(d.FalhasGravacao), webui.TomAlerta))
+	</div>
+	if d.Eventos > 0 || d.Mensagens > 0 {
+		@webui.AlertaCaixa(webui.Alerta{
+			Tom:    webui.TomAlerta,
+			Titulo: "A trilha perdeu linhas desde que o processo subiu.",
+			Texto:  "A fila de gravação tem tamanho fixo e descarta quando enche, para que o log não segure o único escritor do SQLite. O número está aqui porque trilha que mente é pior que trilha faltando: as chamadas descartadas aconteceram e não estão na tabela abaixo.",
+		})
+	}
+	if d.FalhasGravacao > 0 {
+		@webui.AlertaCaixa(webui.Alerta{
+			Tom:    webui.TomAlerta,
+			Titulo: "O banco recusou gravar algumas chamadas.",
+			Texto:  "Estas chamadas saíram da fila — não foi fila cheia — mas a escrita no SQLite falhou. É outro problema do descarte acima, e o log do processo tem o erro de cada tentativa.",
+		})
+	}
+}
+
+func tomSeHouver(n int64, t webui.Tom) webui.Tom {
+	if n > 0 {
+		return t
+	}
+	return webui.TomNeutro
+}
+
+func rodapeDescarte(d Descarte) string {
+	return strconv.FormatUint(d.Gravados, 10) + " gravadas desde o boot"
+}
+
+templ indicador(rotulo, valor, rodape string, tom webui.Tom) {
+	<div class="pb-cartao flex flex-col gap-1 px-4 py-4">
+		<span class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">{ rotulo }</span>
+		<span class="text-2xl font-semibold tracking-tight tabular-nums text-conteudo">{ valor }</span>
+		<span class="flex items-center gap-2 text-sm text-conteudo-tenue">
+			{ rodape }
+			if tom != webui.TomNeutro {
+				@webui.Selo(tom, "atenção")
+			}
+		</span>
+	</div>
+}
+
+// filtros é um formulário GET comum: o recorte vive na URL, então uma tela
+// filtrada é um link que se manda para outra pessoa.
+templ filtros(f Filtro, o Opcoes) {
+	@webui.Cartao("Filtro") {
+		<form method="get" action={ templ.SafeURL(webui.RotaTrilha) } class="flex flex-col gap-4 px-4 py-4">
+			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+				@seletor("endpoint", "Endpoint", "todos", f.Endpoint, o.Endpoints)
+				@seletor("upstream", "Upstream", "todos", f.Upstream, o.Upstreams)
+				<div class="flex flex-col gap-1.5">
+					<label for="ferramenta" class="text-sm font-medium text-conteudo">Ferramenta</label>
+					<input
+						id="ferramenta"
+						name="ferramenta"
+						type="search"
+						class="pb-campo font-mono"
+						value={ f.Ferramenta }
+						placeholder="parte do nome"
+						list="ferramentas-da-trilha"
+						aria-describedby="ferramenta-ajuda"
+					/>
+					<datalist id="ferramentas-da-trilha">
+						for _, nome := range o.Ferramentas {
+							<option value={ nome }></option>
+						}
+					</datalist>
+					<p id="ferramenta-ajuda" class="text-sm text-conteudo-tenue">Casa por pedaço, no nome exposto ou no original.</p>
+				</div>
+				@seletorResultado(f.Resultado)
+				@seletorPeriodo(f.Periodo)
+			</div>
+			<div class="flex items-center gap-3">
+				<button type="submit" class="pb-botao pb-botao-primario">Filtrar</button>
+				<a href={ templ.SafeURL(webui.RotaTrilha) } class="pb-botao pb-botao-secundario">Limpar</a>
+			</div>
+		</form>
+	}
+}
+
+templ seletor(nome, rotulo, vazio, escolhido string, opcoes []string) {
+	<div class="flex flex-col gap-1.5">
+		<label for={ nome } class="text-sm font-medium text-conteudo">{ rotulo }</label>
+		<select id={ nome } name={ nome } class="pb-campo">
+			<option value="" selected?={ escolhido == "" }>{ vazio }</option>
+			for _, v := range opcoes {
+				<option value={ v } selected?={ v == escolhido }>{ v }</option>
+			}
+			if escolhido != "" && !contem(opcoes, escolhido) {
+				// O valor filtrado pode não estar mais na trilha (retenção) e
+				// ainda assim estar na URL: sem esta opção, o formulário
+				// silenciosamente trocaria o filtro em vigor por "todos".
+				<option value={ escolhido } selected>{ escolhido }</option>
+			}
+		</select>
+	</div>
+}
+
+func contem(lista []string, v string) bool {
+	for _, x := range lista {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+templ seletorResultado(escolhido Resultado) {
+	<div class="flex flex-col gap-1.5">
+		<label for="resultado" class="text-sm font-medium text-conteudo">Resultado</label>
+		<select id="resultado" name="resultado" class="pb-campo">
+			<option value="" selected?={ escolhido == "" }>todos</option>
+			for _, r := range []Resultado{ResultadoOK, ResultadoErro, ResultadoTimeout} {
+				<option value={ string(r) } selected?={ r == escolhido }>{ r.Rotulo() }</option>
+			}
+		</select>
+	</div>
+}
+
+templ seletorPeriodo(escolhido Periodo) {
+	<div class="flex flex-col gap-1.5">
+		<label for="periodo" class="text-sm font-medium text-conteudo">Período</label>
+		<select id="periodo" name="periodo" class="pb-campo">
+			for _, p := range Periodos() {
+				<option value={ string(p.Valor) } selected?={ p.Valor == escolhido }>{ p.Rotulo }</option>
+			}
+		</select>
+	</div>
+}
+
+// paginacao é só "mais antigas": a página seguinte é por cursor (ts, id) da
+// última linha vista, e não por número — o que a seção 11 pediu para trocar o
+// OFFSET (caro numa tabela que só cresce) por uma comparação que o índice
+// resolve sem escanear as páginas já vistas. Sem número de página não há como
+// voltar sem guardar uma pilha de cursores, e a tela não precisa disso: quem
+// quer voltar limpa o filtro ou usa o botão do navegador.
+templ paginacao(p Pagina) {
+	if p.TemMais && len(p.Eventos) > 0 {
+		<nav class="flex items-center justify-end" aria-label="Paginação da trilha">
+			<a href={ templ.SafeURL(webui.RotaTrilha + p.Filtro.Query(ultimoCursor(p.Eventos))) } class="pb-botao pb-botao-secundario" rel="next">Mais antigas</a>
+		</nav>
+	}
+}
+
+// ultimoCursor devolve o (ts, id) da última linha da página, que é o cursor da
+// próxima.
+func ultimoCursor(eventos []Evento) (int64, int64) {
+	ultimo := eventos[len(eventos)-1]
+	return ultimo.Inicio.UTC().UnixMilli(), ultimo.ID
+}
+
+// TelaAoVivo é o log ao vivo por SSE.
+//
+// Duas listas e não uma: a linha de log e a linha de chamada respondem a
+// perguntas diferentes, e intercalá-las obrigaria a ler as duas para achar
+// qualquer uma. O htmx casa o nome do evento SSE com sse-swap, então a separação
+// custa um atributo.
+templ TelaAoVivo(d Descarte, limite int) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Log ao vivo",
+		Subtitulo: "O que o processo está registrando agora, por SSE. Chave sensível (token, senha, header de autorização) e marca de credencial reconhecível (JWT, chave do patchbay, ghp_, sk-ant-, AKIA...) saem redigidas antes de o log ser escrito, não só antes de aparecer aqui. O que isto não alcança: um header estático de upstream que não segue nenhum desses formatos passa como texto livre.",
+		Secao:     webui.SecaoLogs,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Acao:      linkTrilha(),
+	}) {
+		<script src={ webui.URL(arquivoJSAoVivo) } defer></script>
+		<div
+			class="flex flex-col gap-6"
+			hx-ext="sse"
+			sse-connect={ webui.RotaLogsFluxo }
+		>
+			<p class="max-w-[80ch] text-conteudo-suave">
+				A tela mantém as últimas { strconv.Itoa(limite) } linhas de cada lista e descarta o
+				resto. Se a conexão cair, o navegador reconecta sozinho — e o que passou enquanto ela
+				estava fora não volta: o histórico completo de chamadas está na
+				<a href={ templ.SafeURL(webui.RotaTrilha) } class="pb-link">trilha</a>.
+			</p>
+			if d.Mensagens > 0 {
+				@webui.AlertaCaixa(webui.Alerta{
+					Tom:    webui.TomAlerta,
+					Titulo: "Alguma tela de log ficou para trás e perdeu linhas.",
+					Texto:  "Cada tela aberta tem a própria fila com tamanho fixo. Quando ela enche — aba de fundo, conexão congelada por um proxy — a linha é descartada só para aquela tela, e nunca vira espera para o processo.",
+				})
+			}
+			@webui.Cartao("Chamadas de ferramenta") {
+				<ul
+					id="chamadas-ao-vivo"
+					class="divide-y divide-borda"
+					sse-swap="chamada"
+					hx-swap="afterbegin"
+					data-limite={ strconv.Itoa(limite) }
+					aria-live="polite"
+					aria-label="Chamadas de ferramenta ao vivo"
+				>
+					<li class="px-4 py-6 text-conteudo-tenue" data-vazio>Esperando a próxima chamada de ferramenta…</li>
+				</ul>
+			}
+			@webui.Cartao("Log do processo") {
+				<ul
+					id="log-ao-vivo"
+					class="divide-y divide-borda"
+					sse-swap="log"
+					hx-swap="afterbegin"
+					data-limite={ strconv.Itoa(limite) }
+					aria-live="polite"
+					aria-label="Log do processo ao vivo"
+				>
+					<li class="px-4 py-6 text-conteudo-tenue" data-vazio>Esperando a próxima linha de log…</li>
+				</ul>
+			}
+		</div>
+	}
+}
+
+// LinhaDeLog é o fragmento que o SSE entrega por linha de log.
+templ LinhaDeLog(l LinhaLog) {
+	<li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2">
+		<span class="font-mono text-xs text-conteudo-tenue">{ hora(l.Instante) }</span>
+		@webui.Selo(tomDoNivel(l.Nivel), l.Nivel)
+		<span class="font-medium text-conteudo">{ l.Mensagem }</span>
+		if len(l.Atributos) > 0 {
+			<span class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+				for _, a := range l.Atributos {
+					<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs text-conteudo-suave">
+						{ a.Chave }={ a.Valor }
+					</code>
+				}
+			</span>
+		}
+	</li>
+}
+
+// LinhaDeChamada é o fragmento que o SSE entrega por chamada de ferramenta.
+templ LinhaDeChamada(e Evento) {
+	<li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2">
+		<span class="font-mono text-xs text-conteudo-tenue">{ hora(e.Inicio) }</span>
+		@webui.Selo(tomDoResultado(e.Resultado), e.Resultado.Rotulo())
+		<code class="font-mono text-conteudo">{ ouTraco(e.Ferramenta) }</code>
+		<span class="text-xs text-conteudo-suave">
+			{ ouTraco(e.EndpointSlug) } → { ouTraco(e.UpstreamNome) }
+		</span>
+		<span class="font-mono text-xs text-conteudo-tenue tabular-nums">{ duracao(e.Duracao) }</span>
+		<span class="font-mono text-xs text-conteudo-tenue tabular-nums">{ tamanho(e.BytesEntrada) } → { tamanho(e.BytesSaida) }</span>
+		if e.Erro != "" {
+			<span class="max-w-[60ch] break-words text-xs text-perigo">{ e.Erro }</span>
+		}
+	</li>
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/authsrv"
 	"github.com/vitoramaral10/patchbay/internal/catalogo"
 	"github.com/vitoramaral10/patchbay/internal/endpoint"
+	"github.com/vitoramaral10/patchbay/internal/trilha"
 	"github.com/vitoramaral10/patchbay/internal/upstream"
 )
 
@@ -91,6 +92,55 @@ func (a endpointsParaOAuth) Todos(ctx context.Context) ([]authsrv.EndpointRef, e
 		out = append(out, authsrv.EndpointRef{ID: reg.ID, Slug: reg.Slug, Nome: reg.Nome})
 	}
 	return out, nil
+}
+
+// trilhaDoEndpoint liga o gancho de captura do endpoint à fila da trilha.
+//
+// É a costura mais fina do arquivo de propósito: as duas features declaram o
+// mesmo punhado de campos com nomes próprios, e traduzi-los aqui é o preço de
+// nenhuma das duas conhecer a outra. O tipo do resultado é traduzido em vez de
+// compartilhado pelo mesmo motivo.
+type trilhaDoEndpoint struct {
+	registrador *trilha.Registrador
+}
+
+// Observar implementa endpoint.Observador. Não bloqueia: Registrador.Observar é
+// um envio não bloqueante num canal com buffer, e fila cheia descarta contando.
+func (t trilhaDoEndpoint) Observar(c endpoint.Chamada) {
+	t.registrador.Observar(trilha.Evento{
+		Inicio:       c.Inicio,
+		Duracao:      c.Duracao,
+		EndpointID:   c.EndpointID,
+		EndpointSlug: c.EndpointSlug,
+		UpstreamID:   c.UpstreamID,
+		UpstreamNome: c.UpstreamNome,
+		Ferramenta:   c.Ferramenta,
+		Original:     c.Original,
+		Resultado:    resultadoDaTrilha(c.Resultado),
+		Erro:         c.Erro,
+		BytesEntrada: c.BytesEntrada,
+		BytesSaida:   c.BytesSaida,
+		Sessao:       c.Sessao,
+		Credencial:   c.Credencial,
+		Era:          c.Era,
+	})
+}
+
+// resultadoDaTrilha traduz o vocabulário de desfecho de uma feature no da outra.
+//
+// Os textos são iguais hoje, e a tradução existe justamente para que continuem
+// podendo divergir: o dia em que o endpoint precisar de um quarto desfecho, o
+// compilador aponta este switch em vez de gravar um valor que o CHECK da
+// migração recusa.
+func resultadoDaTrilha(r endpoint.ResultadoChamada) trilha.Resultado {
+	switch r {
+	case endpoint.ChamadaOK:
+		return trilha.ResultadoOK
+	case endpoint.ChamadaTimeout:
+		return trilha.ResultadoTimeout
+	default:
+		return trilha.ResultadoErro
+	}
 }
 
 // verificadorDeBearer combina as duas credenciais que abrem /mcp/{slug}: a
