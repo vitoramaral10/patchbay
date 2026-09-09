@@ -146,7 +146,7 @@ func TelaBiblioteca(p Pagina) templ.Component {
 		})
 		templ_7745c5c3_Err = webui.Pagina(webui.DadosPagina{
 			Titulo:    "Biblioteca",
-			Subtitulo: "Servidores MCP remotos publicados pelo mcpservers.org, lidos na hora. Adicionar busca o endpoint e a forma de autenticação e abre o formulário de upstream preenchido — você confere e salva.",
+			Subtitulo: "Servidores MCP remotos publicados pelo mcpservers.org, lidos na hora. Adicionar busca o endpoint e a forma de autenticação e abre o formulário de MCP preenchido — você confere e salva.",
 			Secao:     webui.SecaoBiblioteca,
 			Usuario:   webui.UsuarioDoContexto(ctx),
 			Alerta:    p.Alerta,
@@ -201,7 +201,7 @@ func Resultados(itens []Item, termo string, total int, falha Falha) templ.Compon
 		default:
 			if len(itens) == 0 {
 				templ_7745c5c3_Err = aviso("Nenhum servidor com esse termo.",
-					"A origem publica só servidores MCP remotos. Se o que você quer não está aqui — ou é um processo local —, cadastre o upstream à mão.").Render(ctx, templ_7745c5c3_Buffer)
+					"A origem publica só servidores MCP remotos. Se o que você quer não está aqui — ou é um processo local —, cadastre o MCP à mão.").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

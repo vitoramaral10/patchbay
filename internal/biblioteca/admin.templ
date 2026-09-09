@@ -27,7 +27,7 @@ func resumoDoRecorte(mostrados, total int, termo string) string {
 templ TelaBiblioteca(p Pagina) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "Biblioteca",
-		Subtitulo: "Servidores MCP remotos publicados pelo mcpservers.org, lidos na hora. Adicionar busca o endpoint e a forma de autenticação e abre o formulário de upstream preenchido — você confere e salva.",
+		Subtitulo: "Servidores MCP remotos publicados pelo mcpservers.org, lidos na hora. Adicionar busca o endpoint e a forma de autenticação e abre o formulário de MCP preenchido — você confere e salva.",
 		Secao:     webui.SecaoBiblioteca,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Alerta:    p.Alerta,
@@ -83,7 +83,7 @@ templ Resultados(itens []Item, termo string, total int, falha Falha) {
 			default:
 				if len(itens) == 0 {
 					@aviso("Nenhum servidor com esse termo.",
-						"A origem publica só servidores MCP remotos. Se o que você quer não está aqui — ou é um processo local —, cadastre o upstream à mão.")
+						"A origem publica só servidores MCP remotos. Se o que você quer não está aqui — ou é um processo local —, cadastre o MCP à mão.")
 				} else {
 					<p class="text-sm text-conteudo-suave">{ resumoDoRecorte(len(itens), total, termo) }</p>
 					<ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
