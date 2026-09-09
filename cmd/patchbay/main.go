@@ -5,12 +5,14 @@
 //
 //	patchbay serve                sobe o gateway
 //	patchbay seed                 cria endpoint, upstream e chave de desenvolvimento
+//	patchbay export               escreve a configuração em YAML
+//	patchbay import arquivo.yaml  aplica um YAML, com --dry-run e mescla
 //	patchbay chave-mestra gerar   sorteia a chave de PATCHBAY_MASTER_KEY
 //	patchbay versao               imprime a versão
 //
-// serve e seed exigem PATCHBAY_MASTER_KEY: sem ela não há como ler nem gravar
-// segredo em repouso, e subir sem cifra seria a corrupção silenciosa que a
-// seção 14 do estudo recusa.
+// serve, seed, export e import exigem PATCHBAY_MASTER_KEY: sem ela não há como
+// ler nem gravar segredo em repouso, e subir sem cifra seria a corrupção
+// silenciosa que a seção 14 do estudo recusa.
 package main
 
 import (
@@ -59,6 +61,12 @@ func executar(args []string, saida *os.File) error {
 	case "seed":
 		return comandoSeed(ctx, args, saida)
 
+	case "export":
+		return comandoExport(ctx, args, saida)
+
+	case "import":
+		return comandoImport(ctx, args, saida)
+
 	case "chave-mestra":
 		return comandoChaveMestra(args, saida)
 
@@ -84,6 +92,8 @@ func imprimirAjuda(saida *os.File) {
 subcomandos:
   serve                sobe o gateway (padrão)
   seed                 cria endpoint, upstream HTTP e chave de API de desenvolvimento
+  export               escreve a configuração versionável em YAML   [-o arquivo] [--forcar]
+  import               aplica um YAML   arquivo [--dry-run] [--remover-ausentes]
   chave-mestra gerar   sorteia a chave de PATCHBAY_MASTER_KEY
   versao               imprime a versão
   ajuda                imprime esta mensagem
