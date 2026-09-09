@@ -41,10 +41,26 @@ type Registro struct {
 	TimeoutMS  int64
 	Habilitado bool
 	UltimoErro string
+	// Modo é como o patchbay se apresenta ao upstream: estatica ou oauth. Vazio
+	// é estatica. Nenhum segredo passa por aqui — Registro alimenta a tela.
+	Modo string
 }
 
 // STDIO informa se o upstream é um processo local.
 func (r Registro) STDIO() bool { return r.Tipo == TipoSTDIO }
+
+// ModoEfetivo normaliza o modo de credencial. Vazio é estatica.
+func (r Registro) ModoEfetivo() string {
+	if r.Modo == ModoOAuth {
+		return ModoOAuth
+	}
+	return ModoEstatica
+}
+
+// UsaOAuth informa se o upstream se autentica por consentimento OAuth.
+func (r Registro) UsaOAuth() bool {
+	return r.ModoEfetivo() == ModoOAuth && (r.Tipo == TipoHTTP || r.Tipo == TipoSSE)
+}
 
 // Descricao é a linha de identificação do upstream na lista: a URL para HTTP, a
 // linha de comando para STDIO.
@@ -66,6 +82,7 @@ func (r Registro) Config() Config {
 		Args:    r.Args,
 		Env:     r.Env,
 		Timeout: time.Duration(r.TimeoutMS) * time.Millisecond,
+		Modo:    r.ModoEfetivo(),
 	}
 }
 
@@ -174,19 +191,65 @@ type Form struct {
 
 	Headers []CampoHeader
 
+	// Modo é estatica ou oauth. Só vale para http e sse.
+	Modo string
+	// OAuthClientID é o client_id do cliente pré-registrado. Vazio deixa a ordem
+	// do SDK cair em CIMD ou em registro dinâmico.
+	//
+	// Pré-registro é caminho de primeira classe e não recuperação de erro: o
+	// Google não anuncia registration_endpoint nem CIMD, então sem este campo ele
+	// simplesmente não funciona.
+	OAuthClientID string
+	// OAuthSegredo é o client_secret novo. Vazio mantém o gravado.
+	OAuthSegredo cripto.Segredo
+	// OAuthSegredoDefinido diz se há segredo gravado, sem revelá-lo.
+	OAuthSegredoDefinido bool
+	// OAuthSegredoLimpar apaga o segredo gravado, o que transforma o cliente em
+	// público — é o certo para provedor que não emite segredo.
+	OAuthSegredoLimpar bool
+	// OAuthIssuer é o issuer do authorization server a que o cliente
+	// pré-registrado pertence. Vazio desliga a conferência; preenchido, recusa
+	// usar a credencial com outro AS (SEP-2352).
+	OAuthIssuer string
+	// OAuthDisponivel diz se este processo tem broker de OAuth. Falso esconde o
+	// modo da tela: oferecer um fluxo que ninguém completaria é pior que não
+	// oferecer.
+	OAuthDisponivel bool
+	// OAuthRedirectURI é o redirect_uri completo (URL pública mais o caminho do
+	// callback) que a tela mostra para o admin colar no cadastro do cliente no
+	// provedor. Só é preenchido quando OAuthDisponivel.
+	OAuthRedirectURI string
+
 	Erros map[string]string
 }
 
 // TipoEfetivo normaliza o tipo do formulário. Vazio é http.
 func (f Form) TipoEfetivo() string {
-	if f.Tipo == TipoSTDIO {
+	switch f.Tipo {
+	case TipoSTDIO:
 		return TipoSTDIO
+	case TipoSSE:
+		return TipoSSE
+	default:
+		return TipoHTTP
 	}
-	return TipoHTTP
 }
 
 // STDIO informa se o formulário descreve um processo local.
 func (f Form) STDIO() bool { return f.TipoEfetivo() == TipoSTDIO }
+
+// ModoEfetivo normaliza o modo de credencial. Vazio é estatica, e STDIO nunca
+// tem modo: o processo filho recebe credencial por variável de ambiente, e um
+// fluxo de redirect de navegador não tem onde encaixar ali.
+func (f Form) ModoEfetivo() string {
+	if f.Modo == ModoOAuth && !f.STDIO() {
+		return ModoOAuth
+	}
+	return ModoEstatica
+}
+
+// UsaOAuth informa se o formulário descreve um upstream com consentimento OAuth.
+func (f Form) UsaOAuth() bool { return f.ModoEfetivo() == ModoOAuth }
 
 // Validar preenche Erros e informa se o formulário passa.
 func (f *Form) Validar() bool {
@@ -206,14 +269,58 @@ func (f *Form) Validar() bool {
 		f.Erros["timeout_ms"] = "Use um valor entre 250 e 120000 milissegundos."
 	}
 	f.validarCredenciais()
+	f.validarOAuth()
 	return len(f.Erros) == 0
+}
+
+// validarOAuth recusa a combinação que produziria dois Authorization e o issuer
+// que não é URL.
+//
+// Bearer estático junto com OAuth é o caso a barrar: os dois montam o mesmo
+// header, o servidor escolhe um sem dizer qual, e o sintoma é 401 intermitente
+// que ninguém liga a um formulário salvo semanas antes.
+func (f *Form) validarOAuth() {
+	f.OAuthClientID = strings.TrimSpace(f.OAuthClientID)
+	f.OAuthIssuer = strings.TrimSpace(f.OAuthIssuer)
+
+	if !f.UsaOAuth() {
+		if f.Modo == ModoOAuth && f.STDIO() {
+			f.Erros["modo"] = "Upstream STDIO não usa OAuth: a credencial dele vai por variável de ambiente."
+		}
+		return
+	}
+
+	if !f.Bearer.Vazio() || f.BearerDefinido && !f.BearerLimpar {
+		f.Erros["modo"] = "No modo OAuth o Authorization vem do token. " +
+			"Limpe o bearer estático antes de trocar de modo."
+	}
+	if f.OAuthClientID != "" && !ValorDeHeaderValido(f.OAuthClientID) {
+		f.Erros["oauth_client_id"] = "O client_id não pode ter quebra de linha nem caractere de controle."
+	}
+	if !ValorDeHeaderValido(f.OAuthSegredo.Revelar()) {
+		f.Erros["oauth_segredo"] = "O client_secret não pode ter quebra de linha nem caractere de controle."
+	}
+	if f.OAuthIssuer != "" {
+		u, err := url.Parse(f.OAuthIssuer)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			f.Erros["oauth_issuer"] = "O issuer é uma URL, como https://accounts.google.com."
+		}
+	}
+	if f.OAuthIssuer != "" && f.OAuthClientID == "" {
+		f.Erros["oauth_issuer"] = "O issuer só vale com client_id pré-registrado: é ele que " +
+			"a conferência protege."
+	}
 }
 
 func (f *Form) validarURL() {
 	f.URL = strings.TrimSpace(f.URL)
+	vazia := "Informe a URL do endpoint MCP Streamable HTTP do servidor."
+	if f.TipoEfetivo() == TipoSSE {
+		vazia = "Informe a URL do endpoint SSE do servidor."
+	}
 	switch u, err := url.Parse(f.URL); {
 	case f.URL == "":
-		f.Erros["url"] = "Informe a URL do endpoint MCP Streamable HTTP do servidor."
+		f.Erros["url"] = vazia
 	case err != nil || u.Host == "":
 		f.Erros["url"] = "URL inválida. Use algo como https://exemplo.com/mcp."
 	case u.Scheme != "http" && u.Scheme != "https":
@@ -521,6 +628,21 @@ func (f *Form) CompletarEnvSecretos(definidas []CredencialDefinida) {
 	}
 }
 
+// CompletarOAuth traz para o formulário o que está gravado de OAuth.
+//
+// Recebe o estado em vez de ler do banco: o formulário é dado, e quem consulta é
+// a borda HTTP. O que o admin digitou tem prioridade — esta função também roda ao
+// reexibir um formulário recusado pela validação.
+func (f *Form) CompletarOAuth(e EstadoOAuth) {
+	f.OAuthSegredoDefinido = e.SegredoDefinido
+	if f.OAuthClientID == "" {
+		f.OAuthClientID = e.ClientID
+	}
+	if f.OAuthIssuer == "" {
+		f.OAuthIssuer = e.Issuer
+	}
+}
+
 // TextoDeArgs e TextoDeEnv devolvem o que a caixa de texto do formulário mostra
 // ao editar um upstream existente.
 func TextoDeArgs(args []string) string { return strings.Join(args, "\n") }
@@ -595,7 +717,22 @@ type Detalhe struct {
 	Endpoints       []string
 	// Credenciais lista o que está gravado, sem valor nenhum.
 	Credenciais []CredencialDefinida
+	// OAuth é o que a tela mostra do consentimento, sem nenhum segredo e sem
+	// decifrar nada.
+	OAuth EstadoOAuth
 }
+
+// UsaOAuth informa se o upstream se autentica por consentimento OAuth.
+func (d Detalhe) UsaOAuth() bool { return d.Registro.UsaOAuth() }
+
+// PodeAutorizar informa se o botão "Autorizar" faz sentido agora.
+//
+// Habilitado é pré-requisito: um upstream fora da supervisão não tem quem monte
+// a URL de autorização, e um botão que não faz nada é pior que nenhum botão.
+func (d Detalhe) PodeAutorizar() bool { return d.UsaOAuth() && d.Habilitado }
+
+// RotuloDoRegistro é como o registro de cliente aparece na tela.
+func (d Detalhe) RotuloDoRegistro() string { return RotuloDoRegistro(d.OAuth.Registro) }
 
 // TemBearer informa se há bearer gravado.
 func (d Detalhe) TemBearer() bool {

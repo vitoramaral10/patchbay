@@ -10,11 +10,16 @@
 // A máquina de estados é a da seção 05: nenhum estado de erro é persistido, e
 // voltar de degradado passa obrigatoriamente por uma sessão nova. O backoff com
 // jitter e teto, o watchdog de conexão com contador de abandonos e a
-// desabilitação automática ao passar do teto estão aqui; sonda_falhou e
-// sem_consentimento são estados declarados que só as fatias 9 e 7 sabem entrar.
+// desabilitação automática ao passar do teto estão aqui; sonda_falhou é estado
+// declarado que só a fatia 9 sabe entrar.
 //
-// Dois transportes chegam nessa máquina pelo mesmo caminho: o Streamable HTTP e
-// o STDIO. No STDIO o upstream é um processo filho, e o ciclo de vida dele —
+// sem_consentimento é do OAuth de upstream (fatias 7 e 8, em oauth*.go): um
+// upstream que se autentica por consentimento e não tem token utilizável para
+// nele e espera um clique do admin, em vez de reconectar em laço para tomar 401.
+//
+// Três transportes chegam nessa máquina pelo mesmo caminho: o Streamable HTTP, o
+// SSE legado e o STDIO. No STDIO o upstream é um processo filho, e o ciclo de
+// vida dele —
 // árvore própria no sistema operacional, morte da árvore inteira, restart pelo
 // mesmo backoff — está em stdio.go, sobre internal/platform/stdioproc. É um
 // processo por servidor configurado, compartilhado por todas as sessões de
@@ -29,8 +34,8 @@ import (
 	"time"
 )
 
-// Tipos de upstream. http vem da fatia 1 e stdio da fatia 5; sse existe no
-// schema porque a forma é contrato (seções 08.4 e 08.8).
+// Tipos de upstream: http (Streamable HTTP) da fatia 1, stdio da fatia 5 e sse
+// (o HTTP+SSE da revisão 2024-11-05) da fatia 14.
 const (
 	TipoHTTP  = "http"
 	TipoSSE   = "sse"
@@ -109,6 +114,32 @@ type Config struct {
 	// não passam por aqui — elas são lidas cifradas do banco a cada início de
 	// processo, como as credenciais de HTTP, e nunca alimentam a UI nem o log.
 	Env map[string]string
+
+	// Modo é como o patchbay se apresenta a um upstream HTTP ou SSE: estatica
+	// (bearer e headers colados pelo admin) ou oauth. Vazio é estatica, para que
+	// um upstream cadastrado antes da fatia 7 continue significando o que
+	// significava. STDIO ignora o campo: ele não fala HTTP.
+	//
+	// Só o modo entra aqui; nem o token nem o client_secret. Config alimenta a UI
+	// e o log, e segredo nenhum passa por ela — as credenciais são lidas cifradas
+	// do banco no momento de abrir a sessão.
+	Modo string
+}
+
+// ModoEfetivo normaliza o modo de credencial. Vazio é estatica.
+func (c Config) ModoEfetivo() string {
+	if c.Modo == ModoOAuth {
+		return ModoOAuth
+	}
+	return ModoEstatica
+}
+
+// UsaOAuth informa se este upstream se autentica por consentimento OAuth.
+//
+// STDIO nunca usa: o processo filho recebe credencial por variável de ambiente, e
+// um fluxo de redirect de navegador não tem onde encaixar ali.
+func (c Config) UsaOAuth() bool {
+	return c.Modo == ModoOAuth && (c.Tipo == TipoHTTP || c.Tipo == TipoSSE)
 }
 
 // Validar recusa configuração que o gerente não sabe supervisionar.
@@ -120,7 +151,7 @@ func (c Config) Validar() error {
 		return fmt.Errorf("upstream %s: timeout precisa ser positivo", c.Nome)
 	}
 	switch c.Tipo {
-	case TipoHTTP:
+	case TipoHTTP, TipoSSE:
 		if c.URL == "" {
 			return fmt.Errorf("upstream %s: url vazia", c.Nome)
 		}
@@ -130,8 +161,6 @@ func (c Config) Validar() error {
 			return fmt.Errorf("upstream %s: comando vazio", c.Nome)
 		}
 		return nil
-	case TipoSSE:
-		return fmt.Errorf("%w: %s", ErrTipoNaoSuportado, c.Tipo)
 	default:
 		return fmt.Errorf("%w: %s", ErrTipoNaoSuportado, c.Tipo)
 	}

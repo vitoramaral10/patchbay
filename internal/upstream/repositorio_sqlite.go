@@ -32,7 +32,7 @@ func NovoRepositorioSQLite(leitura, escrita *sql.DB, cifrador Cifrador) *Reposit
 	return &RepositorioSQLite{leitura: leitura, escrita: escrita, cifrador: cifrador}
 }
 
-const colunas = `id, nome, tipo, url, comando, args, env, timeout_ms, habilitado, ultimo_erro`
+const colunas = `id, nome, tipo, url, comando, args, env, timeout_ms, habilitado, ultimo_erro, modo_credencial`
 
 func lerRegistro(scan func(...any) error) (Registro, error) {
 	var (
@@ -41,7 +41,7 @@ func lerRegistro(scan func(...any) error) (Registro, error) {
 		habilitado int
 	)
 	if err := scan(&r.ID, &r.Nome, &r.Tipo, &r.URL, &r.Comando, &args, &ambi,
-		&r.TimeoutMS, &habilitado, &r.UltimoErro); err != nil {
+		&r.TimeoutMS, &habilitado, &r.UltimoErro, &r.Modo); err != nil {
 		return Registro{}, err
 	}
 	var err error
@@ -109,11 +109,12 @@ func (r *RepositorioSQLite) Criar(ctx context.Context, f Form) (int64, error) {
 
 	var id int64
 	err = tx.QueryRowContext(ctx, `
-INSERT INTO upstream (nome, tipo, url, comando, args, env, timeout_ms, habilitado, criado_em)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO upstream (nome, tipo, url, comando, args, env, timeout_ms, habilitado,
+                      modo_credencial, criado_em)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id`,
 		f.Nome, f.TipoEfetivo(), f.URL, f.Comando, args, ambi,
-		f.TimeoutMS, booleanoSQL(f.Habilitado), time.Now().Unix()).Scan(&id)
+		f.TimeoutMS, booleanoSQL(f.Habilitado), f.ModoEfetivo(), time.Now().Unix()).Scan(&id)
 	if err != nil {
 		if nomeEmUso(ctx, r.leitura, f.Nome, 0) {
 			return 0, ErrNomeEmUso
@@ -121,6 +122,9 @@ RETURNING id`,
 		return 0, fmt.Errorf("upstream: gravar %s: %w", f.Nome, err)
 	}
 	if err := r.aplicarCredenciais(ctx, tx, id, f); err != nil {
+		return 0, err
+	}
+	if err := r.aplicarOAuth(ctx, tx, id, f); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -155,10 +159,10 @@ func (r *RepositorioSQLite) Atualizar(ctx context.Context, id int64, f Form) err
 	res, err := tx.ExecContext(ctx, `
 UPDATE upstream
    SET nome = ?, url = ?, comando = ?, args = ?, env = ?,
-       timeout_ms = ?, habilitado = ?, ultimo_erro = ''
+       timeout_ms = ?, habilitado = ?, modo_credencial = ?, ultimo_erro = ''
  WHERE id = ?`,
 		f.Nome, f.URL, f.Comando, args, ambi,
-		f.TimeoutMS, booleanoSQL(f.Habilitado), id)
+		f.TimeoutMS, booleanoSQL(f.Habilitado), f.ModoEfetivo(), id)
 	if err != nil {
 		if nomeEmUso(ctx, r.leitura, f.Nome, id) {
 			return ErrNomeEmUso
@@ -169,6 +173,9 @@ UPDATE upstream
 		return ErrNaoEncontrado
 	}
 	if err := r.aplicarCredenciais(ctx, tx, id, f); err != nil {
+		return err
+	}
+	if err := r.aplicarOAuth(ctx, tx, id, f); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
