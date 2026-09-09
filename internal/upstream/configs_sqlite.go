@@ -9,7 +9,7 @@ import (
 )
 
 const sqlHabilitados = `
-SELECT id, nome, tipo, url, comando, args, env, timeout_ms
+SELECT id, nome, tipo, url, comando, args, env, timeout_ms, modo_credencial
   FROM upstream
  WHERE habilitado = 1
  ORDER BY nome`
@@ -33,7 +33,8 @@ func Habilitados(ctx context.Context, leitura *sql.DB) ([]Config, error) {
 			args, ambi string
 			timeoutMS  int64
 		)
-		if err := rows.Scan(&c.ID, &c.Nome, &c.Tipo, &c.URL, &c.Comando, &args, &ambi, &timeoutMS); err != nil {
+		if err := rows.Scan(&c.ID, &c.Nome, &c.Tipo, &c.URL, &c.Comando, &args, &ambi,
+			&timeoutMS, &c.Modo); err != nil {
 			return nil, fmt.Errorf("upstream: ler linha: %w", err)
 		}
 		if c.Args, err = decodificarArgs(args); err != nil {

@@ -91,7 +91,7 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 	}) {
 		if len(linhas) == 0 {
 			@webui.Vazio("Nenhum upstream ainda.",
-				"Cadastre o primeiro servidor MCP que o patchbay vai agregar: um servidor Streamable HTTP, ou um processo local que fala MCP pelo stdin e stdout.") {
+				"Cadastre o primeiro servidor MCP que o patchbay vai agregar: um servidor Streamable HTTP, um servidor SSE legado, ou um processo local que fala MCP pelo stdin e stdout.") {
 				@botaoNovo()
 			}
 		} else {
@@ -147,14 +147,15 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 	}
 }
 
-// botaoNovo oferece os dois tipos como ações separadas.
+// botaoNovo oferece os três tipos como ações separadas.
 //
 // O tipo é escolhido aqui e não dentro do formulário porque ele não muda depois:
-// HTTP e STDIO pedem campos diferentes, e um formulário com os dois conjuntos ao
-// mesmo tempo obrigaria o admin a adivinhar quais valem.
+// HTTP, SSE e STDIO pedem campos diferentes, e um formulário com os três
+// conjuntos ao mesmo tempo obrigaria o admin a adivinhar quais valem.
 templ botaoNovo() {
 	<div class="flex items-center gap-2">
 		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoSTDIO) } class="pb-botao pb-botao-secundario">Novo processo STDIO</a>
+		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoSSE) } class="pb-botao pb-botao-secundario">Novo upstream SSE</a>
 		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoHTTP) } class="pb-botao pb-botao-primario">Novo upstream HTTP</a>
 	</div>
 }
@@ -184,6 +185,11 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 		<div class="flex flex-col gap-6">
 			@webui.Cartao("Estado") {
 				<dl class="grid gap-x-6 gap-y-4 px-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
+					if !d.STDIO() {
+						@dado("Modo de credencial") {
+							@webui.Selo(webui.TomNeutro, rotuloDoModo(d.ModoEfetivo()))
+						}
+					}
 					@dado("Situação") {
 						@webui.Selo(tomDoEstado(d.Estado, d.Habilitado, d.Supervisionado),
 							rotuloDoEstado(d.Estado, d.Habilitado, d.Supervisionado))
@@ -341,6 +347,9 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 					</div>
 				}
 			}
+			if d.UsaOAuth() {
+				@cartaoOAuth(d)
+			}
 			@webui.Cartao("Credenciais apresentadas ao upstream") {
 				<div class="flex flex-col gap-4 px-4 py-4">
 					<p class="max-w-[65ch] text-sm text-conteudo-suave">
@@ -408,8 +417,104 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 	}
 }
 
+// cartaoOAuth mostra o consentimento sem mostrar nada do token.
+//
+// Nenhum campo aqui é segredo nem exige decifrar: client_id não é credencial, e
+// o que interessa do token é se existe e quando vence. É o que faz esta tela
+// continuar abrindo depois de uma troca de chave mestra — justamente quando ela
+// é mais necessária.
+templ cartaoOAuth(d Detalhe) {
+	@webui.Cartao("Consentimento OAuth") {
+		<dl class="grid gap-x-6 gap-y-4 px-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
+			@dado("Consentimento") {
+				if d.OAuth.Consentido {
+					@webui.Selo(webui.TomSucesso, "concedido")
+				} else {
+					@webui.Selo(webui.TomAlerta, "pendente")
+				}
+			}
+			@dado("Registro de cliente") {
+				{ d.RotuloDoRegistro() }
+			}
+			@dado("Token expira em") {
+				{ instante(d.OAuth.ExpiraEm) }
+			}
+			@dado("Último refresh") {
+				{ instante(d.OAuth.RefreshEm) }
+			}
+			@dado("client_id informado") {
+				if d.OAuth.ClientID == "" {
+					<span class="text-conteudo-tenue">nenhum — CIMD ou registro dinâmico</span>
+				} else {
+					<code class="font-mono text-xs break-all">{ d.OAuth.ClientID }</code>
+				}
+			}
+			@dado("client_id em uso") {
+				if d.OAuth.ClientIDEfetivo == "" {
+					<span class="text-conteudo-tenue">—</span>
+				} else {
+					<code class="font-mono text-xs break-all">{ d.OAuth.ClientIDEfetivo }</code>
+				}
+			}
+			@dado("client_secret") {
+				if d.OAuth.SegredoDefinido {
+					@webui.Selo(webui.TomSucesso, "definido")
+				} else {
+					@webui.Selo(webui.TomNeutro, "cliente público")
+				}
+			}
+			@dado("issuer conferido") {
+				if d.OAuth.Issuer == "" {
+					<span class="text-conteudo-tenue">não confere</span>
+				} else {
+					<code class="font-mono text-xs break-all">{ d.OAuth.Issuer }</code>
+				}
+			}
+		</dl>
+		<div class="border-t border-borda px-4 py-4">
+			<p class="max-w-[75ch] text-sm text-conteudo-suave">
+				if d.Estado == EstadoSemConsentimento {
+					Enquanto o consentimento falta, a supervisão não fica tentando: reconectar só
+					para tomar 401 não resolve nada, e o que falta é o clique. Use
+					<em>Autorizar</em> acima — a reconexão acontece na hora, sem esperar o backoff.
+				} else if d.OAuth.Consentido {
+					O token é renovado na supervisão, com antecedência, e nunca no caminho da
+					requisição de um cliente. Access e refresh token ficam cifrados em repouso e
+					não voltam para esta tela nem para o log.
+				} else {
+					Salve o upstream, clique em <em>Autorizar</em> e conclua o consentimento no
+					provedor. O código volta para
+					<code class="font-mono">{ webui.RotaCallbackOAuthUpstream }</code>, e a troca por
+					token acontece na supervisão.
+				}
+			</p>
+		</div>
+	}
+}
+
+func botaoDeAutorizar(d Detalhe) string {
+	if d.OAuth.Consentido {
+		return "pb-botao pb-botao-secundario"
+	}
+	return "pb-botao pb-botao-primario"
+}
+
 templ acoesDoDetalhe(d Detalhe) {
 	<div class="flex items-center gap-2">
+		if d.PodeAutorizar() {
+			<form
+				method="post"
+				action={ templ.SafeURL(rotaDo(d.ID) + "/autorizar") }
+			>
+				<button type="submit" class={ botaoDeAutorizar(d) }>
+					if d.OAuth.Consentido {
+						Reautorizar
+					} else {
+						Autorizar
+					}
+				</button>
+			</form>
+		}
 		if d.Habilitado {
 			<form
 				method="post"
@@ -508,11 +613,11 @@ templ TelaForm(f Form) {
 							Rotulo:       "URL do endpoint MCP",
 							Tipo:         "url",
 							Valor:        f.URL,
-							Ajuda:        "O endereço Streamable HTTP do servidor, normalmente terminando em /mcp.",
+							Ajuda:        ajudaDaURL(f),
 							Erro:         f.Erros["url"],
 							Obrigatorio:  true,
 							Monoespacado: true,
-							Placeholder:  "https://exemplo.com/mcp",
+							Placeholder:  marcadorDaURL(f),
 						})
 					}
 					@webui.Campo(webui.DadosCampo{
@@ -583,8 +688,142 @@ templ TelaForm(f Form) {
 	}
 }
 
-// credenciaisHTTP é o bloco de bearer e headers estáticos.
+// credenciaisHTTP é o bloco de credencial de um upstream HTTP ou SSE.
+//
+// Os dois modos não aparecem juntos, e é decisão e não limitação: bearer estático
+// e OAuth montam o mesmo header Authorization, e uma tela que oferece os dois ao
+// mesmo tempo convida a preencher os dois — o servidor então escolhe um sem dizer
+// qual, e o sintoma é 401 intermitente que ninguém liga a este formulário.
+// Trocar o modo e salvar recarrega a tela com os campos do outro, sem JavaScript.
 templ credenciaisHTTP(f Form) {
+	<div class="flex flex-col gap-6">
+		if f.OAuthDisponivel {
+			@seletorDeModo(f)
+		}
+		if f.UsaOAuth() {
+			@credenciaisOAuth(f)
+		} else {
+			@credenciaisEstaticas(f)
+		}
+	</div>
+}
+
+// seletorDeModo escolhe entre credencial estática e OAuth.
+templ seletorDeModo(f Form) {
+	<fieldset class="flex flex-col gap-2">
+		<legend class="text-sm font-medium text-conteudo">Modo de credencial</legend>
+		if f.Erros["modo"] != "" {
+			<p class="text-sm text-perigo">{ f.Erros["modo"] }</p>
+		}
+		<label class="flex items-start gap-3">
+			<input
+				type="radio"
+				name="modo"
+				value={ ModoEstatica }
+				class="mt-0.5 h-4 w-4 accent-[var(--pb-acento)]"
+				checked?={ !f.UsaOAuth() }
+			/>
+			<span>
+				<span class="text-sm font-medium text-conteudo">Credencial estática</span>
+				<span class="block text-sm text-conteudo-tenue">
+					Bearer e headers colados por você. Não expira sozinho e não precisa de consentimento.
+				</span>
+			</span>
+		</label>
+		<label class="flex items-start gap-3">
+			<input
+				type="radio"
+				name="modo"
+				value={ ModoOAuth }
+				class="mt-0.5 h-4 w-4 accent-[var(--pb-acento)]"
+				checked?={ f.UsaOAuth() }
+			/>
+			<span>
+				<span class="text-sm font-medium text-conteudo">OAuth (authorization code com PKCE)</span>
+				<span class="block text-sm text-conteudo-tenue">
+					O patchbay descobre o authorization server do upstream, você autoriza no navegador,
+					e o token renovado fica cifrado em repouso. Salve primeiro; depois use
+					<em>Autorizar</em> na tela do upstream.
+				</span>
+			</span>
+		</label>
+		<p class="text-sm text-conteudo-tenue">
+			Trocar o modo e salvar recarrega o formulário com os campos do outro modo.
+		</p>
+	</fieldset>
+}
+
+// credenciaisOAuth é o bloco de cliente OAuth.
+//
+// client_id e client_secret aparecem como campo normal e não como recuperação de
+// erro: o Google não anuncia registration_endpoint nem Client ID Metadata
+// Document, então sem colar as duas coisas à mão ele simplesmente não funciona.
+templ credenciaisOAuth(f Form) {
+	<div class="flex flex-col gap-6">
+		@webui.Campo(webui.DadosCampo{
+			Nome:         "oauth_client_id",
+			Rotulo:       "client_id (cliente pré-registrado)",
+			Valor:        f.OAuthClientID,
+			Ajuda:        "Deixe em branco para o patchbay tentar, nesta ordem, o Client ID Metadata Document dele e o registro dinâmico. Provedor que não suporta nenhum dos dois — o Google, por exemplo — exige colar aqui o client_id do cadastro.",
+			Erro:         f.Erros["oauth_client_id"],
+			Monoespacado: true,
+		})
+		<div class="flex flex-col gap-1.5">
+			<div class="flex items-center gap-2">
+				<label for="oauth_segredo" class="text-sm font-medium text-conteudo">client_secret</label>
+				if f.OAuthSegredoDefinido {
+					@webui.Selo(webui.TomSucesso, "definido")
+				} else {
+					@webui.Selo(webui.TomNeutro, "não definido")
+				}
+			</div>
+			<input
+				class="pb-campo font-mono"
+				id="oauth_segredo"
+				name="oauth_segredo"
+				type="password"
+				autocomplete="new-password"
+				placeholder={ marcadorDeSegredo(f.OAuthSegredoDefinido) }
+				if f.Erros["oauth_segredo"] != "" {
+					aria-invalid="true"
+				}
+				aria-describedby="oauth-segredo-ajuda"
+			/>
+			if f.Erros["oauth_segredo"] != "" {
+				<p id="oauth-segredo-ajuda" class="text-sm text-perigo">{ f.Erros["oauth_segredo"] }</p>
+			} else {
+				<p id="oauth-segredo-ajuda" class="text-sm text-conteudo-tenue">
+					Cifrado em repouso, como toda credencial desta tela. Vazio significa cliente público,
+					que é o certo quando o provedor não emite segredo.
+				</p>
+			}
+			if f.OAuthSegredoDefinido {
+				<label class="mt-1 flex items-center gap-2">
+					<input type="checkbox" name="oauth_segredo_limpar" value="1" class="h-4 w-4 accent-[var(--pb-acento)]"/>
+					<span class="text-sm text-conteudo-suave">Limpar o client_secret gravado</span>
+				</label>
+			}
+		</div>
+		@webui.Campo(webui.DadosCampo{
+			Nome:         "oauth_issuer",
+			Rotulo:       "issuer do authorization server (opcional)",
+			Tipo:         "url",
+			Valor:        f.OAuthIssuer,
+			Ajuda:        "Preenchido, o patchbay recusa usar este client_id com um authorization server diferente — é a proteção contra confundir dois provedores. Só vale junto com client_id pré-registrado.",
+			Erro:         f.Erros["oauth_issuer"],
+			Monoespacado: true,
+			Placeholder:  "https://accounts.google.com",
+		})
+		<p class="max-w-[65ch] text-sm text-conteudo-tenue">
+			Registre no provedor exatamente este <code class="font-mono break-all">{ f.OAuthRedirectURI }</code>
+			como <code class="font-mono">redirect_uri</code>. Ele é contrato — mudar a URL pública depois
+			invalida o consentimento.
+		</p>
+	</div>
+}
+
+// credenciaisEstaticas é o bloco de bearer e headers estáticos.
+templ credenciaisEstaticas(f Form) {
 	<div class="flex flex-col gap-6">
 		<div class="flex flex-col gap-1.5">
 			<div class="flex items-center gap-2">
@@ -744,19 +983,47 @@ func tituloDoForm(f Form) string {
 	if f.ID == 0 {
 		acao = "Novo"
 	}
-	if f.STDIO() {
+	switch f.TipoEfetivo() {
+	case TipoSTDIO:
 		return acao + " upstream STDIO"
+	case TipoSSE:
+		return acao + " upstream SSE"
+	default:
+		return acao + " upstream HTTP"
 	}
-	return acao + " upstream HTTP"
 }
 
 func subtituloDoForm(f Form) string {
-	if f.STDIO() {
+	switch f.TipoEfetivo() {
+	case TipoSTDIO:
 		return "Um processo local que fala MCP pelo stdin e stdout. O patchbay mantém um processo por upstream, " +
 			"compartilhado por todas as sessões, e mata a árvore inteira ao encerrar. " +
 			"Variáveis sensíveis são cifradas em repouso e nunca voltam para esta tela."
+	case TipoSSE:
+		return "O HTTP+SSE da revisão 2024-11-05 do MCP: um GET pendurado para os eventos do servidor e " +
+			"um POST por mensagem do cliente. Mesmas credenciais do Streamable HTTP, cifradas em repouso " +
+			"e nunca de volta para esta tela."
+	default:
+		return "Upstream MCP Streamable HTTP. Credenciais são cifradas em repouso e nunca voltam para esta tela."
 	}
-	return "Upstream MCP Streamable HTTP. Bearer e headers estáticos são cifrados em repouso e nunca voltam para esta tela."
+}
+
+// ajudaDaURL e marcadorDaURL descrevem o endereço do tipo escolhido. O texto é
+// diferente porque o endereço é diferente: no SSE legado a URL é a do stream de
+// eventos, e é o servidor que anuncia depois onde os POSTs vão.
+func ajudaDaURL(f Form) string {
+	if f.TipoEfetivo() == TipoSSE {
+		return "O endereço do stream de eventos, normalmente terminando em /sse. " +
+			"O endereço dos POSTs vem no primeiro evento da sessão, não daqui."
+	}
+	return "O endereço Streamable HTTP do servidor, normalmente terminando em /mcp."
+}
+
+func marcadorDaURL(f Form) string {
+	if f.TipoEfetivo() == TipoSSE {
+		return "https://exemplo.com/sse"
+	}
+	return "https://exemplo.com/mcp"
 }
 
 func tituloDaConexao(f Form) string {
@@ -764,6 +1031,14 @@ func tituloDaConexao(f Form) string {
 		return "Processo"
 	}
 	return "Conexão"
+}
+
+// rotuloDoModo nomeia o modo de credencial na tela.
+func rotuloDoModo(modo string) string {
+	if modo == ModoOAuth {
+		return "OAuth"
+	}
+	return "credencial estática"
 }
 
 func acaoDoForm(f Form) string {

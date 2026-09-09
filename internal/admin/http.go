@@ -71,7 +71,7 @@ func (h *HTTP) Proteger(next http.Handler) http.Handler {
 		switch {
 		case errors.Is(err, ErrSessao):
 			h.expirarCookie(w)
-			webui.Redirecionar(w, r, webui.RotaLogin+"?destino="+url.QueryEscape(r.URL.RequestURI()))
+			webui.Redirecionar(w, r, webui.RotaLogin+"?destino="+url.QueryEscape(h.destinoDeVolta(r)))
 			return
 		case err != nil:
 			webui.ErroInterno(w, r, h.log, err)
@@ -85,6 +85,24 @@ func (h *HTTP) Proteger(next http.Handler) http.Handler {
 		ctx = webui.ComUsuario(ctx, sessao.Admin.Usuario)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// destinoDeVolta é o caminho que a tela de login guarda para voltar depois do
+// login.
+//
+// A query viaja junto no caso geral — é o que devolve o admin à página exata
+// que ele pediu, paginação inclusa. O callback OAuth de upstream é a exceção:
+// a query dele é code e state de um authorization server, e gravá-la em
+// ?destino= poria um code de autorização — de uso único e às vezes de vida
+// curta — dentro do formulário de login, visível na URL e reenviado ao
+// provedor depois do login, quando ele já não vale nada ou já foi consumido.
+// Só o caminho garante que Entregar recuse esse callback tardio como state
+// desconhecido, em vez de reagir a um code requentado.
+func (h *HTTP) destinoDeVolta(r *http.Request) string {
+	if r.URL.Path == webui.RotaCallbackOAuthUpstream {
+		return r.URL.Path
+	}
+	return r.URL.RequestURI()
 }
 
 func (h *HTTP) tokenDaRequisicao(r *http.Request) string {

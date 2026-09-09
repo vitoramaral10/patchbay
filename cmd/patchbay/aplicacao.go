@@ -44,6 +44,7 @@ type Aplicacao struct {
 	oauth *authsrv.Servico
 
 	gerente   *upstream.Gerente
+	oauthUp   *upstream.BrokerOAuth
 	endpoints *endpoint.Servidores
 
 	// hub e registrador são a observabilidade: o fan-out do log ao vivo e a
@@ -175,9 +176,24 @@ func montar(
 		_ = st.Close()
 		return nil, err
 	}
+	// O broker de OAuth de upstream nasce antes do gerente porque é ele que a
+	// supervisão consulta para montar o Authorization. Uma instância por
+	// processo: é ela que garante uma TokenSource por upstream, e duas instâncias
+	// reintroduziriam a corrida de refresh que o mutex de dentro dela evita.
+	a.oauthUp = upstream.NovoBrokerOAuth(
+		a.repoUpstream, cfg.PublicURL, log.With("componente", "oauth_upstream"))
+	if a.oauthUp.URLMetadataCliente() == "" {
+		// Visível, e não silencioso: sem HTTPS a ordem de registro de cliente cai
+		// direto em pré-registrado ou DCR, e quem for diagnosticar "por que não
+		// usou CIMD" precisa achar a resposta no log do boot.
+		log.Info("client id metadata document desligado",
+			"motivo", "a URL pública não é https", "url_publica", cfg.PublicURL)
+	}
+
 	a.gerente = upstream.NovoGerente(
 		log.With("componente", "upstream"), cfgs,
 		upstream.AoMudar(a.sincronizar),
+		upstream.ComOAuth(a.oauthUp),
 		// As credenciais estáticas são lidas do banco a cada conexão, e não
 		// guardadas na Config: assim trocar o bearer pela tela vale na
 		// reconexão seguinte, sem cache a invalidar e sem segredo passeando
@@ -203,7 +219,7 @@ func montar(
 
 	a.admHTTP = admin.NovoHTTP(a.adm, cfg.PublicURL, log.With("componente", "admin_http"))
 	a.adminUp = upstream.NovoAdmin(
-		a.repoUpstream, a.gerente,
+		a.repoUpstream, a.gerente, a.oauthUp,
 		a.endpoints.Sincronizar, nomeExpostoDe,
 		log.With("componente", "admin_upstream"),
 	)
@@ -384,6 +400,10 @@ func (a *Aplicacao) Handler() http.Handler {
 	// Metadata, token e revogação são o protocolo: não passam por sessão de
 	// admin, porque quem autentica ali é o cliente OAuth.
 	a.oauthHTTP.Rotas(mux)
+	// O Client ID Metadata Document do patchbay como cliente OAuth de upstream:
+	// quem o lê é o authorization server do provedor, de fora, e exigir sessão de
+	// admin aqui só o impediria de ler.
+	a.adminUp.RotasPublicas(mux)
 	mux.HandleFunc("GET /saude", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok\n"))

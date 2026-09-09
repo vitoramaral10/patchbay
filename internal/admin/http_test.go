@@ -267,6 +267,36 @@ func TestProteger_SemSessaoVaiParaLoginComDestino(t *testing.T) {
 	}
 }
 
+// TestProteger_CallbackOAuthNaoVazaCodeNoDestino cobre a correção da revisão:
+// o code (e o state) do callback OAuth de upstream não podem ir parar em
+// ?destino= da tela de login — um code de autorização é de uso único e às
+// vezes de vida curta, e reenviá-lo ao provedor depois do login o encontraria
+// já consumido ou vencido.
+func TestProteger_CallbackOAuthNaoVazaCodeNoDestino(t *testing.T) {
+	t.Parallel()
+
+	s := montarSistema(t)
+	criarAdmin(t, clienteSemSeguir(t), s)
+
+	// Cliente novo: tem admin cadastrado, não tem cookie — é o navegador
+	// voltando do provedor sem sessão de admin nele.
+	callback := "/admin/upstreams/oauth/callback?code=codigo-de-uso-unico&state=abc123"
+	res := pegar(t, clienteSemSeguir(t), s.servidor.URL+callback)
+	if res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, quer %d", res.StatusCode, http.StatusSeeOther)
+	}
+	destino := res.Header.Get("Location")
+	if !strings.HasPrefix(destino, webui.RotaLogin+"?destino=") {
+		t.Fatalf("Location = %q, quer %s com destino", destino, webui.RotaLogin)
+	}
+	if strings.Contains(destino, "codigo-de-uso-unico") || strings.Contains(destino, "state") {
+		t.Errorf("Location = %q, contém o code ou o state do callback", destino)
+	}
+	if !strings.Contains(destino, url.QueryEscape("/admin/upstreams/oauth/callback")) {
+		t.Errorf("Location = %q, quer o caminho do callback preservado (sem a query)", destino)
+	}
+}
+
 func TestProteger_SessaoExpiradaNaoAutentica(t *testing.T) {
 	t.Parallel()
 

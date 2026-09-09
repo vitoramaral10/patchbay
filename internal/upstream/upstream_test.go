@@ -21,9 +21,10 @@ func TestConfig_Validar(t *testing.T) {
 
 	casos := map[string]struct {
 		ajuste  func(*upstream.Config)
+		valida  bool
 		querErr error
 	}{
-		"upstream http completo": {ajuste: func(*upstream.Config) {}},
+		"upstream http completo": {ajuste: func(*upstream.Config) {}, valida: true},
 		"sem nome": {
 			ajuste: func(c *upstream.Config) { c.Nome = "" },
 			// Nome vazio não tem sentinela própria: é erro de configuração e a
@@ -47,9 +48,18 @@ func TestConfig_Validar(t *testing.T) {
 				c.Tipo, c.Comando = upstream.TipoSTDIO, "  \t "
 			},
 		},
-		"tipo sse ainda não suportado": {
-			ajuste:  func(c *upstream.Config) { c.Tipo = upstream.TipoSSE },
-			querErr: upstream.ErrTipoNaoSuportado,
+		"upstream sse completo": {
+			ajuste: func(c *upstream.Config) {
+				c.Tipo, c.URL = upstream.TipoSSE, "https://exemplo.invalido/sse"
+			},
+			valida: true,
+		},
+		"tipo sse sem url": {
+			ajuste: func(c *upstream.Config) { c.Tipo, c.URL = upstream.TipoSSE, "" },
+		},
+		"modo oauth em http é válido": {
+			ajuste: func(c *upstream.Config) { c.Modo = upstream.ModoOAuth },
+			valida: true,
 		},
 		"tipo desconhecido": {
 			ajuste:  func(c *upstream.Config) { c.Tipo = "carta-pombo" },
@@ -65,7 +75,7 @@ func TestConfig_Validar(t *testing.T) {
 			tc.ajuste(&cfg)
 			err := cfg.Validar()
 
-			if nome == "upstream http completo" {
+			if tc.valida {
 				if err != nil {
 					t.Fatalf("erro = %v, quer nil", err)
 				}

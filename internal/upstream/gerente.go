@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/vitoramaral10/patchbay/internal/platform/versao"
@@ -41,6 +42,9 @@ type Gerente struct {
 	tetoAbandonos int
 	aoMudar       func(context.Context)
 	credenciais   LerCredenciais
+	oauth         *BrokerOAuth
+	margemRenovar time.Duration
+	tiqueRenovar  time.Duration
 
 	comandos  chan comando
 	encerrado chan struct{}
@@ -116,9 +120,26 @@ func ComTetoDeAbandonos(n int) Opcao {
 	return func(g *Gerente) { g.tetoAbandonos = n }
 }
 
-// ComClienteHTTP troca o cliente HTTP usado nos upstreams HTTP.
+// ComClienteHTTP troca o cliente HTTP usado nos upstreams HTTP e SSE.
 func ComClienteHTTP(c *http.Client) Opcao {
 	return func(g *Gerente) { g.cliente = c }
+}
+
+// ComRenovacaoDeToken troca a margem e a frequência da renovação proativa do
+// token OAuth de upstream.
+//
+// margem é com quanta antecedência o token é renovado; tique é de quanto em
+// quanto tempo a supervisão verifica. O teste encurta os dois para não esperar
+// pelo relógio.
+func ComRenovacaoDeToken(margem, tique time.Duration) Opcao {
+	return func(g *Gerente) {
+		if margem > 0 {
+			g.margemRenovar = margem
+		}
+		if tique > 0 {
+			g.tiqueRenovar = tique
+		}
+	}
 }
 
 // AoMudar registra o que fazer quando o catálogo de algum upstream muda. É por
@@ -137,6 +158,8 @@ func NovoGerente(log *slog.Logger, cfgs []Config, opcoes ...Opcao) *Gerente {
 		backoff:       BackoffPadrao(),
 		relogio:       relogioReal{},
 		tetoAbandonos: TetoAbandonosPadrao,
+		margemRenovar: MargemDeRenovacaoPadrao,
+		tiqueRenovar:  IntervaloDeRenovacaoPadrao,
 		comandos:      make(chan comando),
 		encerrado:     make(chan struct{}),
 		servidores:    make(map[int64]*servidor, len(cfgs)),
@@ -253,6 +276,11 @@ func (g *Gerente) executar(ctx context.Context, supervisoes map[int64]*supervisa
 			return err
 		}
 		pararSupervisao(supervisoes, cfg.ID)
+		// O OAuth do upstream é descartado junto: handler e fonte de token foram
+		// construídos com o client_id e o segredo que estavam gravados, e o que
+		// acabou de ser salvo pode ser outro. Reaproveitá-los faria trocar o
+		// client_id pela tela não ter efeito nenhum até o próximo boot.
+		g.esquecerOAuth(cfg.ID)
 		g.definir(cfg)
 		supervisoes[cfg.ID] = g.iniciarSupervisao(ctx, cfg.ID)
 		g.log.Info("upstream sob supervisão", "upstream", cfg.Nome, "upstream_id", cfg.ID)
@@ -265,12 +293,19 @@ func (g *Gerente) executar(ctx context.Context, supervisoes map[int64]*supervisa
 	}
 
 	pararSupervisao(supervisoes, c.removerID)
+	g.esquecerOAuth(c.removerID)
 	nome := g.esquecer(c.removerID)
 	if nome != "" {
 		g.log.Info("upstream fora da supervisão", "upstream", nome, "upstream_id", c.removerID)
 	}
 	g.notificarMudanca(ctx)
 	return nil
+}
+
+func (g *Gerente) esquecerOAuth(id int64) {
+	if g.oauth != nil {
+		g.oauth.Esquecer(id)
+	}
 }
 
 func (g *Gerente) iniciarSupervisao(base context.Context, id int64) *supervisao {
@@ -331,13 +366,58 @@ func (g *Gerente) supervisionar(ctx context.Context, id int64) {
 		}
 
 		espera := g.backoff.Espera(falhas)
+		if g.esperaConsentimento(id) {
+			// Em sem_consentimento não há próxima tentativa agendada, e a tela
+			// tem que dizer isso: o upstream não volta por tempo, volta porque o
+			// admin clicou em "Autorizar".
+			espera = -1
+		}
 		g.agendarProxima(id, espera)
+
+		cfg, _ := g.config(id)
 		select {
 		case <-ctx.Done():
 			return
-		case <-g.relogio.Depois(espera):
+		case <-g.esperaDeReconexao(id, max(espera, 0)):
+		case <-g.pedidosDeConsentimento(cfg):
+			// Consentimento novo agenda conectando na hora, sem esperar o
+			// backoff pendente: sem isso o admin clica em autorizar e nada
+			// acontece por alguns minutos, o que parece bug.
+			falhas = 0
 		}
 	}
+}
+
+// esperaDeReconexao é o canal que libera a próxima tentativa.
+//
+// Nulo em sem_consentimento, e um canal nulo num select bloqueia para sempre —
+// que é o comportamento certo. Insistir com backoff aqui seria um laço de 401
+// contra o provedor que não resolve nada: o que falta é uma pessoa autorizando,
+// não uma tentativa. Quem tira a supervisão da espera é o pedido de
+// consentimento, ou o cancelamento do contexto.
+func (g *Gerente) esperaDeReconexao(id int64, espera time.Duration) <-chan time.Time {
+	if g.esperaConsentimento(id) {
+		return nil
+	}
+	return g.relogio.Depois(espera)
+}
+
+// esperaConsentimento informa se o upstream está parado esperando um clique em
+// "Autorizar".
+func (g *Gerente) esperaConsentimento(id int64) bool {
+	if g.oauth == nil {
+		return false
+	}
+	return g.oauth.PrecisaConsentimento(id) && !g.oauth.ConsentimentoPedido(id)
+}
+
+// pedidosDeConsentimento é o canal em que a supervisão espera o clique do admin.
+// Nulo para upstream que não usa OAuth.
+func (g *Gerente) pedidosDeConsentimento(cfg Config) <-chan struct{} {
+	if g.oauth == nil {
+		return nil
+	}
+	return g.oauth.Pedidos(cfg)
 }
 
 // conectarEDescobrir abre a sessão, lista as ferramentas e só volta quando a
@@ -351,6 +431,13 @@ func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) (chegouPront
 	cfg, ok := g.config(id)
 	if !ok {
 		return false, fmt.Errorf("%w: id %d", ErrDesconhecido, id)
+	}
+	// O portão do OAuth vem antes de qualquer requisição, e é ele que elimina o
+	// laço: um upstream sem consentimento nem tenta conectar. Sem o portão, cada
+	// volta do backoff seria um 401 no provedor e — no caminho do registro
+	// dinâmico — um cliente novo registrado lá, para nunca ser usado.
+	if err := g.prepararOAuth(ctx, cfg); err != nil {
+		return false, err
 	}
 	g.marcarConectando(id)
 
@@ -381,15 +468,63 @@ func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) (chegouPront
 	// Wait volta e o laço de supervisão tenta de novo com uma sessão nova.
 	fim := make(chan error, 1)
 	go func() { fim <- sessao.Wait() }()
-	select {
-	case <-ctx.Done():
-		return true, ctx.Err()
-	case err := <-fim:
-		if err != nil {
-			return true, fmt.Errorf("upstream %s: sessão encerrada: %w", cfg.Nome, err)
+
+	// Renovação proativa do token OAuth. Ela mora aqui, na supervisão, e não no
+	// caminho da requisição do cliente: o transporte pede o token a cada
+	// requisição de saída, e um token vencido nessa hora faria o tools/call do
+	// cliente pagar a ida ao token endpoint. Nulo para upstream sem OAuth.
+	renovar := g.relogioDeRenovacao(cfg)
+	for {
+		select {
+		case <-ctx.Done():
+			return true, ctx.Err()
+		case err := <-fim:
+			if err != nil {
+				return true, fmt.Errorf("upstream %s: sessão encerrada: %w", cfg.Nome, err)
+			}
+			return true, fmt.Errorf("upstream %s: sessão encerrada pelo servidor", cfg.Nome)
+		case <-renovar:
+			//nolint:contextcheck // a renovação não pode herdar contexto de
+			// requisição: o x/oauth2 guarda o contexto que recebe e o reusa em
+			// todo refresh seguinte, e a gravação do token novo tem prazo
+			// próprio para não ficar pela metade quando um cliente desiste.
+			if err := g.renovarToken(cfg); err != nil {
+				// Refresh recusado é a transição pronto → sem_consentimento da
+				// seção 05: o consentimento acabou, e manter a sessão de pé só
+				// adiaria o 401 para dentro da chamada de um cliente.
+				return true, err
+			}
+			renovar = g.relogioDeRenovacao(cfg)
 		}
-		return true, fmt.Errorf("upstream %s: sessão encerrada pelo servidor", cfg.Nome)
 	}
+}
+
+// relogioDeRenovacao é o tique da renovação proativa. Nulo quando o upstream não
+// usa OAuth, e um canal nulo num select bloqueia para sempre.
+func (g *Gerente) relogioDeRenovacao(cfg Config) <-chan time.Time {
+	if g.oauth == nil || !cfg.UsaOAuth() {
+		return nil
+	}
+	return g.relogio.Depois(g.tiqueRenovar)
+}
+
+// renovarToken renova o token do upstream quando ele está perto de vencer.
+//
+// Falha transitória não derruba a sessão: o access token em vigor continua
+// valendo até vencer, e a próxima volta tenta de novo. Só a recusa definitiva —
+// o invalid_grant que significa consentimento revogado ou expirado — sobe, e é
+// ela que leva o upstream a sem_consentimento.
+func (g *Gerente) renovarToken(cfg Config) error {
+	err := g.oauth.Renovar(cfg.ID, g.margemRenovar)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrSemConsentimento) {
+		return err
+	}
+	g.log.Warn("falha ao renovar token de upstream",
+		"upstream", cfg.Nome, "upstream_id", cfg.ID, "erro", mensagemDeFalha(err))
+	return nil
 }
 
 // conectar abre a sessão MCP com o watchdog armado.
@@ -413,7 +548,7 @@ func (g *Gerente) conectar(ctx context.Context, cfg Config) (*mcp.ClientSession,
 		Logger: g.log.With("componente", "cliente_upstream", "upstream", cfg.Nome),
 	})
 
-	ctxConexao, cancelar := context.WithTimeout(ctx, cfg.Timeout)
+	ctxConexao, cancelar := context.WithTimeout(ctx, g.prazoDeConexao(cfg))
 	defer cancelar()
 
 	type resultado struct {
@@ -450,11 +585,19 @@ func (g *Gerente) conectar(ctx context.Context, cfg Config) (*mcp.ClientSession,
 		// um processo mudo para sempre.
 		consecutivos, totais := g.contarAbandono(cfg.ID)
 		g.log.Warn("connect de upstream abandonado por timeout",
-			"upstream", cfg.Nome, "timeout", cfg.Timeout, "tipo", cfg.Tipo,
+			"upstream", cfg.Nome, "timeout", g.prazoDeConexao(cfg), "tipo", cfg.Tipo,
 			"abandonos_consecutivos", consecutivos, "abandonos_totais", totais,
 			"teto_abandonos", g.tetoAbandonos)
 		if processo != nil {
 			processo.EncerrarAgora()
+		}
+		// O SSE legado pode ter aberto o GET pendurado antes de cliente.Connect
+		// travar na etapa seguinte (initialize) e nunca devolver a sessão — nesse
+		// caso r.sessao abaixo nunca chega, e sem isto o stream ficaria aberto até
+		// o processo reiniciar. HTTP e STDIO não implementam Abandonar e a
+		// asserção simplesmente não bate, sem efeito para eles.
+		if abandonavel, ok := transporte.(interface{ Abandonar() }); ok {
+			abandonavel.Abandonar()
 		}
 		go func() {
 			r := <-pronto
@@ -481,12 +624,86 @@ func (g *Gerente) transporteDe(ctx context.Context, cfg Config) (mcp.Transport, 
 		if err != nil {
 			return nil, nil, err
 		}
-		return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: clienteHTTP}, nil, nil
+		t := &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: clienteHTTP}
+		if cfg.UsaOAuth() {
+			// O Streamable HTTP do SDK já sabe pedir o token à fonte a cada
+			// requisição e chamar Authorize num 401: é ele que conhece a
+			// diferença entre 401, 403 com insufficient_scope e 403 comum, e
+			// duplicar isso aqui seria reescrever pior.
+			if t.OAuthHandler, err = g.autorizacaoDe(ctx, cfg); err != nil {
+				return nil, nil, err
+			}
+		}
+		return t, nil, nil
+	case TipoSSE:
+		// O SSE legado usa as mesmas credenciais do HTTP: do ponto de vista de
+		// quem autentica, as duas coisas são requisição HTTP com Authorization.
+		clienteHTTP, err := g.clienteDe(ctx, cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		if cfg.UsaOAuth() {
+			handler, err := g.autorizacaoDe(ctx, cfg)
+			if err != nil {
+				return nil, nil, err
+			}
+			// mcp.SSEClientTransport não tem campo OAuthHandler, então o token e
+			// o fluxo de autorização entram por RoundTripper (sse.go).
+			clienteHTTP = comOAuthSSE(clienteHTTP, handler, cfg.Nome)
+		}
+		return &transporteSSE{
+			base: &mcp.SSEClientTransport{Endpoint: cfg.URL, HTTPClient: clienteHTTP},
+		}, nil, nil
 	case TipoSTDIO:
 		return g.abrirProcesso(ctx, cfg)
 	default:
 		return nil, nil, fmt.Errorf("%w: %s", ErrTipoNaoSuportado, cfg.Tipo)
 	}
+}
+
+// prepararOAuth garante que existe autorização utilizável antes de a supervisão
+// gastar uma tentativa.
+//
+// Devolve ErrSemConsentimento quando o upstream depende de um clique do admin.
+// Nada é enviado ao provedor nesse caso: reconectar só para tomar 401 não produz
+// o consentimento que falta.
+func (g *Gerente) prepararOAuth(ctx context.Context, cfg Config) error {
+	if g.oauth == nil || !cfg.UsaOAuth() {
+		return nil
+	}
+	ctxLeitura, cancelar := context.WithTimeout(ctx, cfg.Timeout)
+	defer cancelar()
+	return g.oauth.Preparar(ctxLeitura, cfg)
+}
+
+// autorizacaoDe devolve o handler de OAuth do upstream.
+//
+// Roda antes de abrir a sessão, na goroutine de supervisão: ele lê o cliente e a
+// concessão do banco e pode registrar o cliente dinamicamente. Nada disso pode
+// acontecer no caminho da requisição do cliente.
+func (g *Gerente) autorizacaoDe(ctx context.Context, cfg Config) (auth.OAuthHandler, error) {
+	if g.oauth == nil {
+		// Falhar dizendo isso é melhor que conectar sem Authorization e receber
+		// um 401 que a tela descreveria como problema do provedor.
+		return nil, fmt.Errorf("upstream %s: modo oauth sem broker de OAuth configurado", cfg.Nome)
+	}
+	ctxLeitura, cancelar := context.WithTimeout(ctx, cfg.Timeout)
+	defer cancelar()
+	return g.oauth.Autorizacao(ctxLeitura, cfg)
+}
+
+// prazoDeConexao é o prazo do watchdog desta tentativa.
+//
+// Normalmente é o timeout do upstream. Quando há consentimento OAuth pedido pela
+// UI, é o tempo de consentimento: a tentativa inclui esperar uma pessoa escolher
+// uma conta e clicar em "permitir" no provedor, e cortá-la no timeout de operação
+// transformaria todo consentimento num connect abandonado — cinco deles
+// desabilitariam o upstream sozinho, com a mensagem errada na tela.
+func (g *Gerente) prazoDeConexao(cfg Config) time.Duration {
+	if g.oauth == nil || !cfg.UsaOAuth() || !g.oauth.ConsentimentoPedido(cfg.ID) {
+		return cfg.Timeout
+	}
+	return g.oauth.tempoConsentimento + cfg.Timeout
 }
 
 // descobrir lê o tools/list e publica o snapshot.
@@ -693,12 +910,25 @@ func (g *Gerente) marcarConectando(id int64) {
 	}
 }
 
+// marcarDegradado põe o upstream no estado de falha da tentativa que acabou.
+//
+// Falta de consentimento OAuth não é degradado: degradado significa "não consigo
+// falar com ele", e aqui o patchbay fala perfeitamente — o provedor é que não
+// autoriza. A distinção existe porque o efeito é outro: degradado volta pelo
+// backoff, sem_consentimento volta por um clique do admin, e chamar os dois de
+// degradado foi por que o gateway anterior fez a ferramenta parar de funcionar
+// sem a causa aparecer em lugar nenhum.
 func (g *Gerente) marcarDegradado(ctx context.Context, id int64, causa error, falhas int) {
+	estado := EstadoDegradado
+	if g.semConsentimento(id, causa) {
+		estado = EstadoSemConsentimento
+	}
+
 	g.mu.Lock()
 	s, ok := g.servidores[id]
 	if ok {
-		s.estado = EstadoDegradado
-		s.ultimoErro = causa.Error()
+		s.estado = estado
+		s.ultimoErro = mensagemDeFalha(causa)
 		s.falhas = falhas
 		s.sessao = nil
 		// As ferramentas saem do catálogo: ferramenta que não funciona custa
@@ -714,14 +944,40 @@ func (g *Gerente) marcarDegradado(ctx context.Context, id int64, causa error, fa
 	if !ok {
 		return
 	}
-	g.log.Warn("upstream degradado", "upstream", nome, "erro", causa, "falhas", falhas)
+	mensagem := mensagemDeFalha(causa)
+	if estado == EstadoSemConsentimento {
+		g.log.Warn("upstream sem consentimento OAuth",
+			"upstream", nome, "erro", mensagem, "falhas", falhas)
+	} else {
+		g.log.Warn("upstream degradado", "upstream", nome, "erro", mensagem, "falhas", falhas)
+	}
 	g.notificarMudanca(ctx)
+}
+
+// semConsentimento decide se a falha desta tentativa é falta de autorização.
+//
+// Duas fontes, e as duas de propósito. O erro sentinela é a resposta direta, mas
+// ele atravessa o embrulho do jsonrpc2 e do Connect do SDK, e um único %v no
+// caminho o apagaria sem nenhum sintoma além de a tela dizer "degradado". O
+// broker, que é quem sabe que o fetcher recusou por falta de consentimento, é a
+// resposta que não depende de biblioteca de terceiro preservar %w.
+func (g *Gerente) semConsentimento(id int64, causa error) bool {
+	if errors.Is(causa, ErrSemConsentimento) {
+		return true
+	}
+	return g.oauth != nil && g.oauth.PrecisaConsentimento(id)
 }
 
 // agendarProxima grava quando o backoff libera a tentativa seguinte. É o número
 // que a tela mostra ao lado do motivo (seção 11).
 func (g *Gerente) agendarProxima(id int64, espera time.Duration) {
-	proximaEm := g.relogio.Agora().Add(espera)
+	// Espera negativa é "nenhuma agendada": é o caso de sem_consentimento, em
+	// que o upstream não volta por tempo. Um horário na tela ali seria mentira —
+	// a tentativa que ele promete nunca acontece sozinha.
+	proximaEm := time.Time{}
+	if espera >= 0 {
+		proximaEm = g.relogio.Agora().Add(espera)
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if s, ok := g.servidores[id]; ok {
