@@ -31,6 +31,10 @@ type Servidores struct {
 	janela  time.Duration
 	relogio Relogio
 
+	// obs é o gancho de captura da trilha. Nil é o padrão, e Observar nunca
+	// bloqueia (ver observador.go).
+	obs Observador
+
 	mu      sync.RWMutex
 	porSlug map[string]*vivo
 }
@@ -266,7 +270,7 @@ func (s *Servidores) rematerializar(ctx context.Context, v *vivo) error {
 	detalhes := make(map[string]FerramentaExposta, len(ferramentas))
 	porUpstream := make(map[int64]int)
 	for _, f := range ferramentas {
-		if s.registrar(srv, f) {
+		if s.registrar(reg, srv, f) {
 			nome := f.NomeExposto()
 			novos = append(novos, nome)
 			origens[nome] = f.UpstreamNome
@@ -305,7 +309,7 @@ func (s *Servidores) rematerializar(ctx context.Context, v *vivo) error {
 // Cinturão além do suspensório: o normalizador já cobre os caminhos de panic
 // conhecidos do AddTool (mcp/server.go:281-313), mas se um caminho novo
 // aparecer num bump do SDK o custo é uma ferramenta, não o processo.
-func (s *Servidores) registrar(srv *mcp.Server, f catalogo.Ferramenta) (ok bool) {
+func (s *Servidores) registrar(reg Registro, srv *mcp.Server, f catalogo.Ferramenta) (ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			ok = false
@@ -313,7 +317,7 @@ func (s *Servidores) registrar(srv *mcp.Server, f catalogo.Ferramenta) (ok bool)
 				"ferramenta", f.NomeExposto(), "upstream", f.UpstreamNome, "panic", r)
 		}
 	}()
-	srv.AddTool(f.Tool, s.encaminhar(f))
+	srv.AddTool(f.Tool, s.encaminhar(reg, f))
 	return true
 }
 
@@ -322,14 +326,25 @@ func (s *Servidores) registrar(srv *mcp.Server, f catalogo.Ferramenta) (ok bool)
 // O handler fecha sobre o upstream e o nome original, então a resolução do nome
 // não é uma busca: prefixo e renome custam zero por chamada e colisão de nome é
 // impossível por construção.
-func (s *Servidores) encaminhar(f catalogo.Ferramenta) mcp.ToolHandler {
+func (s *Servidores) encaminhar(reg Registro, f catalogo.Ferramenta) mcp.ToolHandler {
 	upstreamID, nomeOriginal, upstreamNome := f.UpstreamID, f.NomeOriginal, f.UpstreamNome
+	identidade := capturada{
+		upstreamID:   upstreamID,
+		upstreamNome: upstreamNome,
+		nomeExposto:  f.NomeExposto(),
+		nomeOriginal: nomeOriginal,
+	}
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var args json.RawMessage
 		if req != nil && req.Params != nil {
 			args = req.Params.Arguments
 		}
+		inicio := time.Now()
 		res, err := s.exec.Chamar(ctx, upstreamID, nomeOriginal, args)
+		// A trilha é gravada depois de responder ao upstream e antes de devolver
+		// ao cliente, e o que acontece aqui é um envio não bloqueante numa fila
+		// (seção 08.8). É o único ponto de captura do caminho da requisição.
+		s.observar(reg, identidade, req, inicio, len(args), res, err)
 		if err != nil {
 			// Erro de ferramenta, não erro de protocolo: o cliente precisa
 			// saber que esta chamada falhou sem concluir que o endpoint todo
