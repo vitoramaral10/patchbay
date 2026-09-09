@@ -5,16 +5,21 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: fatias **1-8, 10-14 e 16** do épico entregues — catálogo e endpoint,
+> Estado: fatias **1-14 e 16** do épico entregues — catálogo e endpoint,
 > resiliência de upstream, composição fina do endpoint, upstream STDIO com
 > supervisor de processo, segredos cifrados em repouso, **OAuth de upstream
 > com consentimento pela tela, refresh serializado, CIMD e registro
-> dinâmico**, o authorization server completo (CIMD, DCR e redirect URI de
-> loopback incluídos), o **transporte SSE legado**, a observabilidade (trilha
-> por chamada, tela filtrável, log ao vivo por SSE e redação de segredo), o
-> export/import da configuração em YAML e o empacotamento (binário
-> multiplataforma por `goreleaser`, imagem Docker distroless). Só a sonda
-> funcional (fatia 9) segue pendente.
+> dinâmico**, a **sonda de saúde funcional** (um `tools/call` de verdade por
+> servidor, opt-in), o authorization server completo (CIMD, DCR e redirect URI
+> de loopback incluídos), o **transporte SSE legado**, a observabilidade
+> (trilha por chamada, tela filtrável, log ao vivo por SSE e redação de
+> segredo), o export/import da configuração em YAML e o empacotamento (binário
+> multiplataforma por `goreleaser`, imagem Docker distroless).
+>
+> Fora da v1: a **fatia 15** (provedor loopback-only, tipo Canva) foi adiada por
+> decisão do dono em 2026-09-08 — redirect só-loopback exigiria um binário
+> auxiliar na máquina do admin ou colar o `code` à mão na UI, e nenhuma fonte da
+> pesquisa cobre esse cenário.
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
@@ -58,6 +63,9 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
   por upstream para o processo inteiro, refresh serializado e proativo na
   supervisão, e o estado `sem_consentimento` para o que depende de um clique —
   ver [OAuth de upstream](#oauth-de-upstream).
+  A **sonda de saúde funcional**, opt-in por servidor, executa um `tools/call` de
+  verdade e leva o upstream a `sonda_falhou` quando a chamada para de funcionar —
+  ver [Sonda de saúde funcional](#sonda-de-saúde-funcional).
 - `internal/endpoint` — um `*mcp.Server` e um `StreamableHTTPHandler` vivos por
   endpoint, servidos em `/mcp/{slug}` com sessão retida. **Catálogo parcial
   servido sem hesitar:** endpoint com três upstreams e um degradado serve as
@@ -110,7 +118,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
 | `/admin/oauth` | Clientes do authorization server: cadastro à mão, e as linhas que aparecem sozinhas por **CIMD** ou **DCR** — a coluna Origem diz qual é qual. Detalhe com a allowlist de redirect, o escopo, as sessões vivas e a revogação de cliente ou de sessão |
 | `/admin/configuracao` | Baixa o YAML da configuração e importa um colado, mostrando o plano item a item antes de aplicar |
-| `/admin/trilha` | Trilha por chamada de ferramenta, filtrável por endpoint, upstream, ferramenta, resultado e período, com os contadores de chamadas por minuto, erros, timeouts e **descartes** |
+| `/admin/trilha` | Trilha por chamada de ferramenta, filtrável por endpoint, upstream, ferramenta, resultado, origem (cliente ou sonda) e período, com os contadores de chamadas por minuto, erros, timeouts e **descartes** |
 | `/admin/logs/ao-vivo` | Log do processo e chamadas de ferramenta em tempo real, por SSE, com token e header de autorização redigidos |
 | `/admin/upstreams/oauth/callback` | Onde o provedor devolve o navegador depois do consentimento OAuth de upstream. Atrás da sessão de admin, como o resto de `/admin` |
 
@@ -566,6 +574,14 @@ upstreams:
     url: https://mcp.notion.com/mcp
     timeout_ms: 15000
     habilitado: true
+    sonda:
+      habilitada: true
+      ferramenta: notion-search
+      args: '{"query":"ping"}'
+      espera: resultado
+      intervalo_ms: 900000
+      timeout_ms: 10000
+      tolerancia: 2
     segredos:
       - tipo: bearer
         valor: ${PATCHBAY_SEGREDO_NOTION_BEARER}
@@ -893,6 +909,77 @@ que fica no banco é o hash mais o prefixo visível.
   por um `http.RoundTripper` por upstream. Query string vaza em log de proxy,
   em histórico e em `Referer` — e é o vazamento que a cifra em repouso não teria
   como desfazer.
+
+## Sonda de saúde funcional
+
+Um servidor MCP pode conversar perfeitamente, responder `tools/list` com quinze
+ferramentas e **não funcionar**: o token expirou por dentro, a cota da API
+acabou, o backend caiu atrás dele. Do lado do gateway isso é indistinguível de
+saúde — a conexão está de pé, a lista chegou —, e o cliente só descobre quando
+já gastou contexto chamando a ferramenta.
+
+A sonda do patchbay executa um **`tools/call` de verdade**, de tempos em tempos,
+com a ferramenta e os argumentos que você escolheu. Nenhum gateway do
+levantamento faz isso.
+
+**Ela vem desligada, e é opt-in por servidor.** Escolher a ferramenta é a parte
+que não dá para automatizar: o patchbay não tem como saber que `send_message`
+manda mensagem para alguém, e adivinhar seria a forma de descobrir isso do pior
+jeito. Uma busca com um termo bobo é inócua; nada garante isso para uma
+ferramenta arbitrária.
+
+Configuração, na tela do upstream:
+
+| Campo | O que faz |
+|---|---|
+| **Sondar este upstream** | O opt-in. Desligado por padrão. |
+| **Ferramenta a chamar** | O nome como o upstream o expõe, sem prefixo de endpoint. |
+| **Argumentos (JSON)** | O objeto de argumentos do `tools/call`. Em branco chama sem argumentos. |
+| **Trecho esperado** | Opcional. Cobre o servidor que responde 200 com um erro amigável no corpo, sem marcar `isError`. |
+| **Intervalo** | A sonda consome cota da API do provedor: quem escolhe é quem paga a cota. Padrão de 15 min. |
+| **Timeout da sondagem** | Cancela **só a chamada**, nunca a sessão do upstream. |
+| **Falhas seguidas para derrubar** | Padrão 2. Uma falha isolada é o soluço que o backoff já cobre. |
+
+**O que acontece quando ela falha.** Erro de transporte, prazo estourado,
+`isError` ou trecho esperado ausente contam como falha. Ao chegar na tolerância
+configurada, o upstream vai a `sonda_falhou` e as ferramentas dele **saem do
+catálogo de todos os endpoints** — com lápide, como qualquer outra remoção: o
+cliente que ainda não relistou recebe um erro de ferramenta explicando que ela
+saiu, em vez de `unknown tool`. A sessão continua de pé, e é por ela que a
+sondagem seguinte descobre que o servidor voltou, sem gastar uma reconexão. A
+primeira sondagem que passa devolve tudo e o upstream volta a `pronto`.
+
+**O que ela não é.** Sondagem que falha não é connect abandonado nem falha de
+conexão: ela não mexe no backoff, não conta para o teto de abandonos e não
+desabilita nada por autoproteção. E ela nunca roda no caminho da requisição do
+cliente — a chamada sai da goroutine de supervisão daquele upstream, sobre a
+sessão que já está aberta. O botão **Sondar agora** na tela não muda isso: ele
+entrega o pedido à supervisão e espera o desfecho, para continuar existindo um
+único escritor do estado da sonda.
+
+**Nada do resultado vai ao banco.** As colunas `sonda_*` guardam só a
+configuração; quando a sondagem rodou, se passou, o erro, a requisição e a
+resposta exatas vivem em memória, como `degradado` e `sem_consentimento`. Todo
+boot recomeça em `novo`.
+
+**A tela mostra a requisição e a resposta exatas.** Sem as duas, não dá para
+separar "minha sonda está mal configurada" de "o servidor está quebrado" — e a
+saída mais fácil passa a ser desligar a sonda em vez de consertar o servidor.
+Pelo mesmo motivo, **`sonda desligada` é um estado próprio e nunca verde**: um
+verde que significa "não sei" é exatamente a mentira que a sonda existe para
+acabar.
+
+**O resíduo, nomeado:** uma sonda mal configurada apaga as ferramentas de um
+servidor saudável. A defesa é ela ser opt-in, o estado desligado ser explícito e
+o erro carregar a evidência. O outro lado do mesmo resíduo é que a maioria dos
+upstreams vai ficar sem sonda, porque configurar dá trabalho — o valor do
+diferencial é proporcional à disciplina de configurar, e a tela do upstream diz
+isso em vez de fingir que está tudo bem.
+
+Cada sondagem deixa uma linha na trilha, marcada com **origem `sonda`**. Os
+contadores do painel contam só chamada de cliente: a sonda é o custo da
+observação, não tráfego, e somá-la inflaria a taxa por minuto de um gateway
+parado e o percentual de erro de chamadas que nunca existiram.
 
 ## Observabilidade
 
