@@ -27,7 +27,6 @@
 
 # Deploy de exemplo: lido pelo operador, não pelo build da imagem.
 /docker-compose.yml
-/Caddyfile
 /secrets.env*
 /.goreleaser.yaml
 /Taskfile.yml
