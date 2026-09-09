@@ -29,6 +29,9 @@ const (
 	RotaToken = "/oauth/token"
 	// RotaRevogar é o revocation endpoint (RFC 7009).
 	RotaRevogar = "/oauth/revoke"
+	// RotaRegistrar é o registration endpoint do RFC 7591 (DCR). Aberto por
+	// desenho — é o que "dynamic" quer dizer —, com teto por origem e por hora.
+	RotaRegistrar = "/oauth/register"
 )
 
 // MetadataServidor é o documento de metadata do authorization server
@@ -41,10 +44,12 @@ const (
 // dentro de oauthex.AuthServerMeta, que é o que garante que os nomes de campo
 // continuam sendo os que o cliente lê.
 //
-// Os campos de CIMD e DCR (client_id_metadata_document_supported e
-// registration_endpoint) já existem, zerados: são a fatia 11, e o claude.ai só
-// escolhe CIMD se enxergar os dois — faltando um, ele cai para DCR e registra
-// um cliente novo a cada conexão fresca.
+// client_id_metadata_document_supported e registration_endpoint são a fatia 11.
+// O claude.ai só escolhe CIMD se enxergar o primeiro como true *e* "none" em
+// token_endpoint_auth_methods_supported; faltando um dos dois, ele cai para DCR
+// e registra um cliente novo a cada conexão fresca. Os dois caminhos ficam
+// anunciados de propósito — CIMD porque é o que a spec 2026-07-28 quer, DCR
+// porque há cliente que só tem ele.
 type MetadataServidor struct {
 	Issuer                                     string   `json:"issuer"`
 	AuthorizationEndpoint                      string   `json:"authorization_endpoint"`
@@ -78,7 +83,12 @@ func (s *Servico) Metadata(escopos []string) MetadataServidor {
 		AuthorizationEndpoint: s.urlPublica + RotaAutorizar,
 		TokenEndpoint:         s.urlPublica + RotaToken,
 		RevocationEndpoint:    s.urlPublica + RotaRevogar,
+		RegistrationEndpoint:  s.urlPublica + RotaRegistrar,
 		ScopesSupported:       escopos,
+		// O par que decide entre CIMD e DCR no claude.ai: este campo true e
+		// "none" em token_endpoint_auth_methods_supported, que
+		// metodosAutenticacaoCliente já traz.
+		ClientIDMetadataDocumentSupported: s.cimd != nil,
 		// Só code: o OAuth 2.1 remove implicit, e client_credentials não serve
 		// ao Claude, que exige consentimento de um usuário.
 		ResponseTypesSupported:                 []string{"code"},

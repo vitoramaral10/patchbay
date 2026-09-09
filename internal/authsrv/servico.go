@@ -21,6 +21,27 @@ type Repositorio interface {
 	// ClientePorClientID devolve o cliente ativo. ErrClienteNaoEncontrado
 	// quando não existe ou foi revogado.
 	ClientePorClientID(ctx context.Context, clientID string) (Cliente, error)
+	// ClienteMesmoRevogado devolve o cliente pelo client_id inclusive quando
+	// revogado ou com o cache de CIMD vencido. É o que a resolução de CIMD
+	// precisa para distinguir "nunca vi este documento" de "o admin revogou
+	// este cliente" — e a segunda não pode virar uma busca nova.
+	ClienteMesmoRevogado(ctx context.Context, clientID string) (Cliente, error)
+
+	// RegistrarClienteDinamico grava um cliente vindo de DCR, contando o teto
+	// de registros (por origem e total, desde o início da janela) na mesma
+	// transação da escrita — o que fecha a corrida entre contar e gravar que
+	// duas requisições concorrentes explorariam. ErrRegistroExcedido quando o
+	// teto já foi atingido.
+	RegistrarClienteDinamico(
+		ctx context.Context, d ClienteDinamico, origem string, desde time.Time, tetoOrigem, tetoTotal int,
+	) (Cliente, error)
+	// SalvarCacheCIMD grava ou atualiza o cache de um documento de CIMD,
+	// substituindo a allowlist de redirect pela do documento recém-lido.
+	SalvarCacheCIMD(ctx context.Context, d ClienteDinamico) (Cliente, error)
+	// ContarCacheCIMD conta as linhas de cache de CIMD criadas (não
+	// atualizadas) desde um instante. É o teto de documentos novos buscados
+	// por hora.
+	ContarCacheCIMD(ctx context.Context, desde time.Time) (int, error)
 
 	// GravarCodigo grava um código de autorização recém-emitido.
 	GravarCodigo(ctx context.Context, c Codigo) error
@@ -49,6 +70,9 @@ type Repositorio interface {
 	RegistrarUsoToken(ctx context.Context, id int64, quando time.Time) error
 	// LimparExpirados apaga código e token vencidos há mais de uma janela.
 	LimparExpirados(ctx context.Context, antesDe time.Time) error
+	// LimparCacheCIMD apaga o cache de documento vencido que não deixou token
+	// nem código — cache morto, que um consentimento novo rebusca.
+	LimparCacheCIMD(ctx context.Context, antesDe time.Time) error
 }
 
 // Servico é a regra do authorization server.
@@ -60,9 +84,15 @@ type Servico struct {
 	log        *slog.Logger
 	agora      func() time.Time
 
+	// cimd nil desliga CIMD inteiro: a metadata deixa de anunciar
+	// client_id_metadata_document_supported, o que faz o claude.ai cair para
+	// DCR, e nenhuma requisição de saída acontece.
+	cimd DocumentosCIMD
+
 	validadeCodigo  time.Duration
 	validadeAcesso  time.Duration
 	validadeRefresh time.Duration
+	validadeCIMD    time.Duration
 
 	usos chan usoToken
 }
@@ -93,6 +123,20 @@ func ComValidades(codigo, acesso, refresh time.Duration) Opcao {
 	}
 }
 
+// ComCIMD liga o Client ID Metadata Document.
+//
+// Entra por opção e não por construção interna porque o buscador é o único
+// componente do AS que faz requisição de saída: quem monta o grafo é que decide
+// que ela existe, e o teste é que decide de onde o documento vem.
+func ComCIMD(buscador DocumentosCIMD) Opcao {
+	return func(s *Servico) { s.cimd = buscador }
+}
+
+// ComValidadeCIMD troca o TTL do cache de documento de CIMD.
+func ComValidadeCIMD(d time.Duration) Opcao {
+	return func(s *Servico) { s.validadeCIMD = d }
+}
+
 // NovoServico monta o authorization server.
 //
 // escopo é injetado porque o nome do escopo de um endpoint é contrato
@@ -113,6 +157,7 @@ func NovoServico(
 		validadeCodigo:  ValidadeCodigo,
 		validadeAcesso:  ValidadeAcesso,
 		validadeRefresh: ValidadeRefresh,
+		validadeCIMD:    ValidadeCIMD,
 		usos:            make(chan usoToken, capacidadeUsos),
 	}
 	for _, o := range opcoes {
@@ -211,7 +256,9 @@ func (s *Servico) Validar(ctx context.Context, p PedidoAutorizacao) (Autorizacao
 			Status: http.StatusBadRequest, SemRedirect: true,
 		}
 	}
-	cliente, err := s.repo.ClientePorClientID(ctx, p.ClientID)
+	// Resolve os dois espaços de identificador: o client_id que este AS emitiu,
+	// e a URL https de um documento de CIMD, que é buscada com guarda de SSRF.
+	cliente, err := s.clientePorIdentificador(ctx, p.ClientID)
 	switch {
 	case errors.Is(err, ErrClienteNaoEncontrado):
 		return Autorizacao{}, &ErroOAuth{
@@ -219,7 +266,9 @@ func (s *Servico) Validar(ctx context.Context, p PedidoAutorizacao) (Autorizacao
 			Status: http.StatusUnauthorized, SemRedirect: true,
 		}
 	case err != nil:
-		return Autorizacao{}, erroInterno(err)
+		// A falha de CIMD já vem como *ErroOAuth com SemRedirect; qualquer outra
+		// vira 500 com o detalhe só no log.
+		return Autorizacao{}, comoErroOAuth(err)
 	}
 
 	if p.RedirectURI == "" {
@@ -615,10 +664,19 @@ func (s *Servico) GravarUsos(ctx context.Context) {
 	}
 }
 
-// Limpar apaga códigos e tokens vencidos. Vencido já não autoriza nada — a
-// varredura só evita que as tabelas cresçam para sempre.
+// Limpar apaga códigos e tokens vencidos e o cache de CIMD morto. Vencido já não
+// autoriza nada — a varredura só evita que as tabelas cresçam para sempre.
+//
+// Os dois cortes são diferentes de propósito: token e código ficam uma janela de
+// refresh além do vencimento, porque um refresh vencido continua sendo a prova
+// de que aquela família existiu; o cache de documento vai embora uma janela de
+// TTL depois de vencer, porque ele não é prova de nada — é uma cópia.
 func (s *Servico) Limpar(ctx context.Context) error {
-	return s.repo.LimparExpirados(ctx, s.agora().Add(-s.validadeRefresh))
+	agora := s.agora()
+	if err := s.repo.LimparExpirados(ctx, agora.Add(-s.validadeRefresh)); err != nil {
+		return err
+	}
+	return s.repo.LimparCacheCIMD(ctx, agora.Add(-s.validadeCIMD))
 }
 
 // --- autenticação de cliente no token e no revocation endpoint ---

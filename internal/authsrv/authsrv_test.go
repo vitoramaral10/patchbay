@@ -108,24 +108,49 @@ func TestServico_slugDoRecurso(t *testing.T) {
 	}
 }
 
+// TestClientePermiteRedirect cobre as duas regras de comparação que convivem no
+// mesmo endpoint: exata para tudo, e ignorando a porta para http em loopback
+// (RFC 8252 §7.3), que é o que o Claude Code exige por escutar numa porta
+// efêmera.
 func TestClientePermiteRedirect(t *testing.T) {
 	t.Parallel()
 
-	// A comparação é exata: comparação frouxa de redirect_uri é a falha clássica
-	// que entrega o código a quem registrou um caminho parecido.
-	sut := Cliente{RedirectURIs: []string{RedirectClaudeAI, "http://127.0.0.1:1455/callback"}}
+	// Tipo DCR: é a folga de porta do loopback (RFC 8252 §7.3) que este teste
+	// cobre, e ela só vale para quem se registrou sozinho — ver
+	// TestClientePermiteRedirect_TipoDecideLoopback.
+	sut := Cliente{Tipo: TipoDCR, RedirectURIs: []string{
+		RedirectClaudeAI,
+		"http://127.0.0.1:1455/callback",
+		"http://localhost:1455/callback",
+	}}
 
 	casos := map[string]struct {
 		uri     string
 		querSim bool
 	}{
-		"exatamente a cadastrada":         {uri: RedirectClaudeAI, querSim: true},
-		"barra final a mais":              {uri: RedirectClaudeAI + "/"},
-		"query pendurada":                 {uri: RedirectClaudeAI + "?x=1"},
-		"prefixo da cadastrada":           {uri: "https://claude.ai/api/mcp"},
-		"host parecido":                   {uri: "https://claude.ai.mau/api/mcp/auth_callback"},
-		"loopback com outra porta":        {uri: "http://127.0.0.1:1456/callback"},
-		"loopback com a porta cadastrada": {uri: "http://127.0.0.1:1455/callback", querSim: true},
+		// Exata: comparação frouxa de redirect_uri é a falha clássica que
+		// entrega o código a quem registrou um caminho parecido.
+		"exatamente a cadastrada": {uri: RedirectClaudeAI, querSim: true},
+		"barra final a mais":      {uri: RedirectClaudeAI + "/"},
+		"query pendurada":         {uri: RedirectClaudeAI + "?x=1"},
+		"prefixo da cadastrada":   {uri: "https://claude.ai/api/mcp"},
+		"host parecido":           {uri: "https://claude.ai.mau/api/mcp/auth_callback"},
+
+		// Loopback: a porta sai da comparação, o resto não.
+		"loopback com a porta cadastrada":  {uri: "http://127.0.0.1:1455/callback", querSim: true},
+		"loopback com outra porta":         {uri: "http://127.0.0.1:54321/callback", querSim: true},
+		"loopback sem porta":               {uri: "http://127.0.0.1/callback", querSim: true},
+		"localhost com outra porta":        {uri: "http://localhost:54321/callback", querSim: true},
+		"loopback com outro caminho":       {uri: "http://127.0.0.1:1455/outro"},
+		"loopback com query":               {uri: "http://127.0.0.1:1455/callback?x=1"},
+		"loopback em https não é loopback": {uri: "https://127.0.0.1:1455/callback"},
+		// 127.0.0.1 e localhost são nomes diferentes: quem precisa dos dois
+		// cadastra os dois, como o Claude Code faz no próprio documento de CIMD.
+		"loopback em ::1 não casa com 127.0.0.1": {uri: "http://[::1]:1455/callback"},
+		// A folga da porta é só de loopback: host externo com porta trocada
+		// continua recusado, e é isso que impede a regra de virar um furo.
+		"host externo com outra porta": {uri: "http://exemplo.test:1455/callback"},
+		"userinfo embutido":            {uri: "http://mau@127.0.0.1:1455/callback"},
 	}
 
 	for nome, tc := range casos {
@@ -134,6 +159,37 @@ func TestClientePermiteRedirect(t *testing.T) {
 
 			if got := sut.PermiteRedirect(tc.uri); got != tc.querSim {
 				t.Errorf("PermiteRedirect(%q) = %v, quer %v", tc.uri, got, tc.querSim)
+			}
+		})
+	}
+}
+
+// TestClientePermiteRedirect_TipoDecideLoopback prova a decisão da fatia 11: a
+// folga de porta do loopback vale só para quem se registrou sozinho (DCR e
+// CIMD). O cliente cadastrado à mão pela UI (TipoPrereg) continua na
+// comparação exata, porque foi o admin quem escolheu aquela porta — nada nele
+// diz que é um cliente nativo com listener efêmero.
+func TestClientePermiteRedirect_TipoDecideLoopback(t *testing.T) {
+	t.Parallel()
+
+	const registrada = "http://127.0.0.1:8080/cb"
+	const outraPorta = "http://127.0.0.1:9090/cb"
+
+	casos := map[string]struct {
+		tipo    string
+		querSim bool
+	}{
+		"prereg recusa outra porta": {tipo: TipoPrereg},
+		"dcr aceita outra porta":    {tipo: TipoDCR, querSim: true},
+		"cimd aceita outra porta":   {tipo: TipoCIMD, querSim: true},
+	}
+	for nome, tc := range casos {
+		t.Run(nome, func(t *testing.T) {
+			t.Parallel()
+
+			sut := Cliente{Tipo: tc.tipo, RedirectURIs: []string{registrada}}
+			if got := sut.PermiteRedirect(outraPorta); got != tc.querSim {
+				t.Errorf("PermiteRedirect com tipo %q = %v, quer %v", tc.tipo, got, tc.querSim)
 			}
 		})
 	}

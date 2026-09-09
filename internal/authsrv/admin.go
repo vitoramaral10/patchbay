@@ -54,7 +54,8 @@ func (f *FormCliente) Validar() bool {
 		f.RedirectURIs = append(f.RedirectURIs, uri)
 	}
 	if len(f.RedirectURIs) == 0 && f.Erros["redirect"] == "" {
-		f.Erros["redirect"] = "Informe ao menos uma redirect_uri. A comparação é exata, caractere a caractere."
+		f.Erros["redirect"] = "Informe ao menos uma redirect_uri. A comparação é exata, caractere a caractere " +
+			"— só um cliente registrado por DCR ou por CIMD tem a porta do loopback livre."
 	}
 	if len(f.EndpointIDs) == 0 {
 		f.Erros["endpoint"] = "Escolha ao menos um endpoint. Cliente sem escopo não consegue pedir token nenhum."
@@ -95,7 +96,10 @@ func motivoRedirectInvalido(uri string) string {
 }
 
 func ehLoopback(host string) bool {
-	return host == "127.0.0.1" || host == "::1" || host == "localhost"
+	// EqualFold porque hostname é case-insensitive (localhost, LocalHost e
+	// LOCALHOST são o mesmo host); os dois literais de IP não têm letra que
+	// mude de caixa, então a comparação exata neles já basta.
+	return host == "127.0.0.1" || host == "::1" || strings.EqualFold(host, "localhost")
 }
 
 // EndpointOpcao é um endpoint oferecido no escopo de um cliente.

@@ -34,46 +34,144 @@ func (n nulo) instante() time.Time {
 	return time.Unix(n.Int64, 0).UTC()
 }
 
-const sqlClientePorClientID = `
-SELECT id, client_id, nome, tipo, confidencial, segredo_hash, segredo_prefixo,
-       criado_em, revogado_em
-  FROM oauth_client
- WHERE client_id = ?`
+// colunasCliente é a lista única de colunas de oauth_client lida onde o hash do
+// segredo importa — a leitura por id ou por client_id, que alimentam a
+// autenticação e a tela de detalhe. Uma lista só porque escanear a mesma tabela
+// com duas listas diferentes é como uma coluna nova entra em metade dos
+// caminhos.
+const colunasCliente = `id, client_id, nome, tipo, confidencial, segredo_hash,
+       segredo_prefixo, criado_em, expira_em, revogado_em, origem, escopo_aberto`
+
+// lerCliente escaneia uma linha de oauth_client na ordem de colunasCliente.
+func lerCliente(escanear func(...any) error) (Cliente, error) {
+	var (
+		c            Cliente
+		confidencial int
+		abertoInt    int
+		criadoEm     int64
+		expiraEm     nulo
+		revogadoEm   nulo
+	)
+	if err := escanear(&c.ID, &c.ClientID, &c.Nome, &c.Tipo, &confidencial,
+		&c.segredoHash, &c.SegredoPrefixo, &criadoEm, &expiraEm, &revogadoEm,
+		&c.Origem, &abertoInt); err != nil {
+		return Cliente{}, err
+	}
+	c.Confidencial = confidencial == 1
+	c.EscopoAberto = abertoInt == 1
+	c.CriadoEm = time.Unix(criadoEm, 0).UTC()
+	c.ExpiraEm = expiraEm.instante()
+	c.RevogadoEm = revogadoEm.instante()
+	return c, nil
+}
+
+// colunasClienteLista é colunasCliente sem segredo_hash: a tela de listagem
+// mostra todo cliente cadastrado, e trazer o hash do segredo de cada linha para
+// a memória do processo é superfície que aquela tela não usa — só a de detalhe
+// e a autenticação precisam dele.
+const colunasClienteLista = `id, client_id, nome, tipo, confidencial,
+       segredo_prefixo, criado_em, expira_em, revogado_em, origem, escopo_aberto`
+
+// lerClienteLista escaneia uma linha na ordem de colunasClienteLista. c.segredoHash
+// fica vazio: quem lê por aqui nunca autentica ninguém.
+func lerClienteLista(escanear func(...any) error) (Cliente, error) {
+	var (
+		c            Cliente
+		confidencial int
+		abertoInt    int
+		criadoEm     int64
+		expiraEm     nulo
+		revogadoEm   nulo
+	)
+	if err := escanear(&c.ID, &c.ClientID, &c.Nome, &c.Tipo, &confidencial,
+		&c.SegredoPrefixo, &criadoEm, &expiraEm, &revogadoEm,
+		&c.Origem, &abertoInt); err != nil {
+		return Cliente{}, err
+	}
+	c.Confidencial = confidencial == 1
+	c.EscopoAberto = abertoInt == 1
+	c.CriadoEm = time.Unix(criadoEm, 0).UTC()
+	c.ExpiraEm = expiraEm.instante()
+	c.RevogadoEm = revogadoEm.instante()
+	return c, nil
+}
+
+var sqlClientePorClientID = `SELECT ` + colunasCliente + ` FROM oauth_client WHERE client_id = ?`
 
 // ClientePorClientID devolve o cliente ativo com o escopo e a allowlist
 // carregados.
 func (r *RepositorioSQLite) ClientePorClientID(ctx context.Context, clientID string) (Cliente, error) {
-	var (
-		c            Cliente
-		confidencial int
-		criadoEm     int64
-		revogadoEm   nulo
-	)
-	err := r.leitura.QueryRowContext(ctx, sqlClientePorClientID, clientID).Scan(
-		&c.ID, &c.ClientID, &c.Nome, &c.Tipo, &confidencial,
-		&c.segredoHash, &c.SegredoPrefixo, &criadoEm, &revogadoEm)
+	c, err := r.ClienteMesmoRevogado(ctx, clientID)
+	if err != nil {
+		return Cliente{}, err
+	}
+	if c.Revogado() {
+		// Cliente revogado é indistinguível de inexistente para quem chama: as
+		// duas respostas são o mesmo invalid_client.
+		return Cliente{}, ErrClienteNaoEncontrado
+	}
+	return c, nil
+}
+
+// ClienteMesmoRevogado devolve o cliente pelo client_id inclusive revogado ou
+// com o cache de CIMD vencido.
+//
+// Existe pela resolução de CIMD: ela precisa distinguir "nunca vi este
+// documento" de "o admin revogou este cliente", e a segunda não pode virar uma
+// busca de saída nova. O expira_em vem no Cliente para que a decisão de
+// rebuscar seja do serviço, e não do SQL.
+func (r *RepositorioSQLite) ClienteMesmoRevogado(ctx context.Context, clientID string) (Cliente, error) {
+	c, err := lerCliente(r.leitura.QueryRowContext(ctx, sqlClientePorClientID, clientID).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Cliente{}, ErrClienteNaoEncontrado
 	}
 	if err != nil {
 		return Cliente{}, fmt.Errorf("authsrv: selecionar cliente %q: %w", clientID, err)
 	}
-	c.Confidencial = confidencial == 1
-	c.CriadoEm = time.Unix(criadoEm, 0).UTC()
-	c.RevogadoEm = revogadoEm.instante()
-	if c.Revogado() {
-		// Cliente revogado é indistinguível de inexistente para quem chama: as
-		// duas respostas são o mesmo invalid_client.
-		return Cliente{}, ErrClienteNaoEncontrado
-	}
-
-	if c.RedirectURIs, err = r.redirects(ctx, c.ID); err != nil {
-		return Cliente{}, err
-	}
-	if c.Endpoints, err = r.endpointsDoCliente(ctx, c.ID); err != nil {
+	if err := r.completar(ctx, &c); err != nil {
 		return Cliente{}, err
 	}
 	return c, nil
+}
+
+// completar carrega a allowlist e o escopo de um cliente já escaneado.
+func (r *RepositorioSQLite) completar(ctx context.Context, c *Cliente) error {
+	var err error
+	if c.RedirectURIs, err = r.redirects(ctx, c.ID); err != nil {
+		return err
+	}
+	// Escopo aberto (todo registro dinâmico) resolve na leitura, e não em linhas
+	// gravadas no registro: gravar deixaria o cliente cego para todo endpoint
+	// criado depois dele.
+	if c.EscopoAberto {
+		c.Endpoints, err = r.todosEndpoints(ctx)
+		return err
+	}
+	c.Endpoints, err = r.endpointsDoCliente(ctx, c.ID)
+	return err
+}
+
+const sqlTodosEndpoints = `SELECT id, slug, nome FROM endpoint ORDER BY slug`
+
+func (r *RepositorioSQLite) todosEndpoints(ctx context.Context) ([]EndpointRef, error) {
+	rows, err := r.leitura.QueryContext(ctx, sqlTodosEndpoints)
+	if err != nil {
+		return nil, fmt.Errorf("authsrv: selecionar endpoints do escopo aberto: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []EndpointRef
+	for rows.Next() {
+		var e EndpointRef
+		if err := rows.Scan(&e.ID, &e.Slug, &e.Nome); err != nil {
+			return nil, fmt.Errorf("authsrv: ler endpoint do escopo aberto: %w", err)
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("authsrv: iterar endpoints do escopo aberto: %w", err)
+	}
+	return out, nil
 }
 
 func (r *RepositorioSQLite) redirects(ctx context.Context, id int64) ([]string, error) {
