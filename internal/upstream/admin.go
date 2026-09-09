@@ -297,7 +297,7 @@ func (f *Form) Validar() bool {
 	f.Tipo = f.TipoEfetivo()
 
 	if f.Nome == "" {
-		f.Erros["nome"] = "Dê um nome ao upstream."
+		f.Erros["nome"] = "Dê um nome ao MCP."
 	}
 	if f.Tipo == TipoSTDIO {
 		f.validarProcesso()
@@ -396,8 +396,8 @@ func avisoFerramentaForaDoCatalogo(ferramenta string, descobertas []*mcp.Tool) s
 			return ""
 		}
 	}
-	return `A ferramenta "` + ferramenta + `" não aparece no último tools/list deste upstream. ` +
-		"Confira o nome — é o nome no upstream, sem prefixo de endpoint."
+	return `A ferramenta "` + ferramenta + `" não aparece no último tools/list deste MCP. ` +
+		"Confira o nome — é o nome no MCP, sem prefixo de endpoint."
 }
 
 // dentroDaFaixa devolve v quando ele cabe em [minimo, maximo], e padrao quando
@@ -421,7 +421,7 @@ func (f *Form) validarOAuth() {
 
 	if !f.UsaOAuth() {
 		if f.Modo == ModoOAuth && f.STDIO() {
-			f.Erros["modo"] = "Upstream STDIO não usa OAuth: a credencial dele vai por variável de ambiente."
+			f.Erros["modo"] = "MCP STDIO não usa OAuth: a credencial dele vai por variável de ambiente."
 		}
 		return
 	}

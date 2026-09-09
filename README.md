@@ -106,21 +106,28 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
 ## Administração pela tela
 
-Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
+Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário.
+
+> **Vocabulário.** A interface chama de **MCP** o servidor externo que o patchbay
+> consome, porque é o nome que quem configura um cliente de IA já usa. Este
+> documento e o código seguem falando **upstream**: é o papel do servidor aqui
+> dentro, e é o que distingue essa ponta do endpoint — que também é um servidor
+> MCP, só que o exposto.
+
 
 | Tela | O que faz |
 |---|---|
 | `/admin/setup` | Cria o administrador único. Existe **só** no primeiro acesso |
 | `/admin/login` · `/admin/sair` | Entrada e saída |
-| `/admin/` | Painel: upstreams por estado, endpoints, ferramentas, chaves |
-| `/admin/upstreams` | CRUD de upstream HTTP e SSE (bearer e headers estáticos, ou OAuth) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora, e botão **Autorizar** no modo OAuth |
-| `/admin/endpoints` | CRUD de endpoint com composição fina — quais upstreams entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada upstream dentro dele |
+| `/admin/` | Painel: MCPs por estado, endpoints, ferramentas, chaves |
+| `/admin/mcps` | CRUD de MCP HTTP e SSE (bearer e headers estáticos, ou OAuth) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora, e botão **Autorizar** no modo OAuth |
+| `/admin/endpoints` | CRUD de endpoint com composição fina — quais MCPs entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada MCP dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
 | `/admin/oauth` | Clientes do authorization server: cadastro à mão, e as linhas que aparecem sozinhas por **CIMD** ou **DCR** — a coluna Origem diz qual é qual. Detalhe com a allowlist de redirect, o escopo, as sessões vivas e a revogação de cliente ou de sessão |
 | `/admin/configuracao` | Baixa o YAML da configuração e importa um colado, mostrando o plano item a item antes de aplicar |
-| `/admin/trilha` | Trilha por chamada de ferramenta, filtrável por endpoint, upstream, ferramenta, resultado, origem (cliente ou sonda) e período, com os contadores de chamadas por minuto, erros, timeouts e **descartes** |
+| `/admin/trilha` | Trilha por chamada de ferramenta, filtrável por endpoint, MCP, ferramenta, resultado, origem (cliente ou sonda) e período, com os contadores de chamadas por minuto, erros, timeouts e **descartes** |
 | `/admin/logs/ao-vivo` | Log do processo e chamadas de ferramenta em tempo real, por SSE, com token e header de autorização redigidos |
-| `/admin/upstreams/oauth/callback` | Onde o provedor devolve o navegador depois do consentimento OAuth de upstream. Atrás da sessão de admin, como o resto de `/admin` |
+| `/admin/upstreams/oauth/callback` | Onde o provedor devolve o navegador depois do consentimento OAuth de upstream. Atrás da sessão de admin, como o resto de `/admin`. **Mantém o segmento antigo de propósito:** é `redirect_uri` registrado no provedor, e movê-lo junto com a tela invalidaria todo consentimento já dado |
 
 Uma rota fora de `/admin` pertence ao OAuth de upstream:
 `/oauth/patchbay-cliente.json` é o Client ID Metadata Document do patchbay como
@@ -228,7 +235,7 @@ para escrever — o que sobra é o ciclo de vida do processo.
 
 ### Cadastrar
 
-Em `/admin/upstreams`, botão **Novo processo STDIO**. O formulário pede:
+Em `/admin/mcps`, botão **Novo processo STDIO**. O formulário pede:
 
 | Campo | O quê |
 |---|---|

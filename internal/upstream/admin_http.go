@@ -198,7 +198,7 @@ func (a *Admin) criar(w http.ResponseWriter, r *http.Request) {
 	id, err := a.repo.Criar(r.Context(), form)
 	switch {
 	case errors.Is(err, ErrNomeEmUso):
-		form.Erros = map[string]string{"nome": "Já existe um upstream com este nome."}
+		form.Erros = map[string]string{"nome": "Já existe um MCP com este nome."}
 		a.reexibir(w, r, http.StatusConflict, form)
 		return
 	case err != nil:
@@ -419,7 +419,7 @@ func (a *Admin) atualizar(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	case errors.Is(err, ErrNomeEmUso):
-		form.Erros = map[string]string{"nome": "Já existe um upstream com este nome."}
+		form.Erros = map[string]string{"nome": "Já existe um MCP com este nome."}
 		a.reexibir(w, r, http.StatusConflict, form)
 		return
 	case err != nil:
@@ -641,16 +641,16 @@ func lerHeaders(campos url.Values) []CampoHeader {
 }
 
 var avisos = map[string]webui.Alerta{
-	"criado":       {Tom: webui.TomSucesso, Titulo: "Upstream criado.", Texto: "A conexão já está sendo tentada; o estado abaixo se atualiza a cada recarga."},
-	"salvo":        {Tom: webui.TomSucesso, Titulo: "Upstream salvo.", Texto: "A sessão antiga foi fechada e uma nova está sendo aberta com a configuração nova."},
-	"removido":     {Tom: webui.TomInfo, Titulo: "Upstream removido.", Texto: "A sessão e a goroutine de supervisão foram encerradas, e os endpoints já refletem a remoção."},
+	"criado":       {Tom: webui.TomSucesso, Titulo: "MCP criado.", Texto: "A conexão já está sendo tentada; o estado abaixo se atualiza a cada recarga."},
+	"salvo":        {Tom: webui.TomSucesso, Titulo: "MCP salvo.", Texto: "A sessão antiga foi fechada e uma nova está sendo aberta com a configuração nova."},
+	"removido":     {Tom: webui.TomInfo, Titulo: "MCP removido.", Texto: "A sessão e a goroutine de supervisão foram encerradas, e os endpoints já refletem a remoção."},
 	"reconectando": {Tom: webui.TomInfo, Titulo: "Reconexão pedida.", Texto: "A sessão antiga foi descartada, o backoff voltou ao começo e o contador de abandonos zerou."},
-	"desabilitado": {Tom: webui.TomAlerta, Titulo: "O upstream está desabilitado.", Texto: "Habilite-o na edição para que a supervisão volte a tentar."},
+	"desabilitado": {Tom: webui.TomAlerta, Titulo: "O MCP está desabilitado.", Texto: "Habilite-o na edição para que a supervisão volte a tentar."},
 
 	"sonda_ok": {
 		Tom:    webui.TomSucesso,
 		Titulo: "A sondagem passou.",
-		Texto: "A ferramenta configurada respondeu sem erro. Se o upstream estava em " +
+		Texto: "A ferramenta configurada respondeu sem erro. Se o MCP estava em " +
 			"sonda_falhou, as ferramentas dele já voltaram ao catálogo dos endpoints.",
 	},
 	"sonda_falhou": {
@@ -661,7 +661,7 @@ var avisos = map[string]webui.Alerta{
 	},
 	"sonda_desligada": {
 		Tom:    webui.TomAlerta,
-		Titulo: "A sonda deste upstream está desligada.",
+		Titulo: "A sonda deste MCP está desligada.",
 		Texto: "Ela é opt-in: escolha a ferramenta e ligue-a na edição. O patchbay não " +
 			"adivinha qual chamada é inócua — quem sabe isso é você.",
 	},
@@ -699,16 +699,16 @@ var avisos = map[string]webui.Alerta{
 	"consentimento_falhou": {
 		Tom:    webui.TomPerigo,
 		Titulo: "A autorização não pôde começar.",
-		Texto:  "O motivo está no log do patchbay, com o nome do upstream e sem nenhum segredo.",
+		Texto:  "O motivo está no log do patchbay, com o nome do MCP e sem nenhum segredo.",
 	},
 	"oauth_indisponivel": {
 		Tom:    webui.TomAlerta,
-		Titulo: "Este upstream não usa OAuth.",
+		Titulo: "Este MCP não usa OAuth.",
 		Texto:  "Troque o modo de credencial na edição para autorizá-lo.",
 	},
 	"oauth_desabilitado": {
 		Tom:    webui.TomAlerta,
-		Titulo: "O upstream está desabilitado.",
+		Titulo: "O MCP está desabilitado.",
 		Texto:  "Sem supervisão não há quem monte a URL de autorização. Habilite-o antes.",
 	},
 }

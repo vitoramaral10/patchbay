@@ -92,14 +92,14 @@ func telaPainel(d dadosPainel, alerta *webui.Alerta) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"pb-botao pb-botao-primario\">Cadastrar o primeiro upstream</a>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"pb-botao pb-botao-primario\">Cadastrar o primeiro MCP</a>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
 				templ_7745c5c3_Err = webui.Vazio("O patchbay está vazio.",
-					"O caminho é: cadastrar um upstream, criar um endpoint que o inclua e emitir uma chave de API. Depois disso um cliente MCP conecta.").Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
+					"O caminho é: cadastrar um MCP, criar um endpoint que o inclua e emitir uma chave de API. Depois disso um cliente MCP conecta.").Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -108,7 +108,7 @@ func telaPainel(d dadosPainel, alerta *webui.Alerta) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = indicador("Upstreams", strconv.Itoa(d.Upstreams), rodapeUpstreams(d), webui.RotaUpstreams).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = indicador("MCPs", strconv.Itoa(d.Upstreams), rodapeUpstreams(d), webui.RotaUpstreams).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
