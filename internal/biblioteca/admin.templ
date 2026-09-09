@@ -1,33 +1,83 @@
 package biblioteca
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
 )
 
-// rotaDeAdicionar é o link do botão: o patchbay busca a página do servidor na
-// origem e redireciona para o formulário preenchido.
-func rotaDeAdicionar(slug string) string {
-	return webui.RotaBiblioteca + "/" + slug + "/adicionar"
-}
-
-// resumoDoRecorte descreve em uma linha o que está sendo mostrado.
+// rotaDeAdicionar é o link do botão: o patchbay lê o servidor no catálogo local
+// e redireciona para o formulário preenchido.
 //
-// Vive dentro do fragmento trocado pela busca, e não no cabeçalho da página:
-// contagem que não acompanha o filtro é contagem errada na tela.
-func resumoDoRecorte(mostrados, total int, termo string) string {
-	if termo == "" {
-		return strconv.Itoa(total) + " servidores publicados agora pela origem"
-	}
-	return strconv.Itoa(mostrados) + " de " + strconv.Itoa(total) + " servidores"
+// O nome vai cru no caminho porque ele já foi validado contra a forma que a
+// origem publica — letras, dígitos, ponto, hífen, sublinhado e uma barra. A
+// barra é justamente o que precisa sobreviver: ela separa o namespace do nome.
+func rotaDeAdicionar(nome string) string {
+	return webui.RotaBiblioteca + "/adicionar/" + nome
 }
 
-// TelaBiblioteca é o catálogo de servidores MCP, lido da origem a cada abertura.
+// resumoDaPagina descreve em uma linha o que está sendo mostrado.
+func resumoDaPagina(p Pagina) string {
+	total := strconv.Itoa(p.Total)
+	recorte := " no catálogo"
+	if p.Filtro.SoCurados {
+		recorte = " curados"
+	}
+	if p.Filtro.Termo != "" {
+		return total + " servidores" + recorte + " para " + strconv.Quote(p.Filtro.Termo)
+	}
+	return total + " servidores" + recorte
+}
+
+// idadeDoCatalogo diz de quando é o que está na tela.
+//
+// Em palavra e não em carimbo de data porque a pergunta do admin não é "que
+// horas eram", é "isto está velho?". A resposta em horas responde essa.
+func idadeDoCatalogo(e Sincronizacao) string {
+	if e.Nunca() {
+		return "ainda não foi baixado"
+	}
+	d := e.Idade()
+	switch {
+	case d < time.Minute:
+		return "atualizado agora"
+	case d < time.Hour:
+		return fmt.Sprintf("atualizado há %d min", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("atualizado há %d h", int(d.Hours()))
+	default:
+		return fmt.Sprintf("atualizado há %d dias", int(d.Hours()/24))
+	}
+}
+
+// linhaDaConexao é o que o cartão mostra sobre como o servidor é alcançado.
+func linhaDaConexao(i Item) string {
+	if i.Remoto() {
+		return i.URL
+	}
+	return strings.TrimSpace(i.Comando + " " + strings.Join(i.Args, " "))
+}
+
+// rotuloDoTransporte é o transporte em palavra de gente.
+func rotuloDoTransporte(i Item) string {
+	switch i.Transporte {
+	case TransporteSSE:
+		return "SSE"
+	case TransporteSTDIO:
+		return "Processo local"
+	default:
+		return "HTTP"
+	}
+}
+
+// TelaBiblioteca é o catálogo de servidores MCP, lido da cópia local.
 templ TelaBiblioteca(p Pagina) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "Biblioteca",
-		Subtitulo: "Servidores MCP remotos publicados pelo mcpservers.org, lidos na hora. Adicionar busca o endpoint e a forma de autenticação e abre o formulário de upstream preenchido — você confere e salva.",
+		Subtitulo: "Servidores MCP publicados no registry oficial do Model Context Protocol. Adicionar abre o formulário de MCP preenchido com endpoint e transporte — você confere e salva.",
 		Secao:     webui.SecaoBiblioteca,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Alerta:    p.Alerta,
@@ -41,7 +91,7 @@ templ TelaBiblioteca(p Pagina) {
 					hx-get={ webui.RotaBiblioteca }
 					hx-target="#resultados-biblioteca"
 					hx-swap="outerHTML"
-					hx-trigger="input changed delay:250ms from:find input, submit"
+					hx-trigger="input changed delay:200ms from:find input[type=search], change from:find input[type=checkbox], submit"
 					hx-push-url="true"
 				>
 					<label for="q" class="text-sm font-medium text-conteudo">Buscar no catálogo</label>
@@ -51,71 +101,170 @@ templ TelaBiblioteca(p Pagina) {
 							id="q"
 							name="q"
 							type="search"
-							value={ p.Termo }
-							placeholder="notion, jira, banco de dados, pagamentos..."
+							value={ p.Filtro.Termo }
+							placeholder="notion, jira, kubernetes, payments..."
 							autocomplete="off"
 							aria-describedby="q-ajuda"
 						/>
 						<button type="submit" class="pb-botao pb-botao-secundario">Buscar</button>
 					</div>
+					<label class="flex items-start gap-2 text-sm text-conteudo">
+						<input
+							type="checkbox"
+							name="curados"
+							value="1"
+							checked?={ p.Filtro.SoCurados }
+							class="mt-0.5"
+						/>
+						<span>
+							Só oficiais
+							<span class="block text-conteudo-tenue">
+								Os servidores remotos que o mcpservers.org escolhe a dedo — algumas centenas, contra as dezenas de milhares que o registry aceita de quem provar o namespace. São também os únicos que declaram a forma de autenticação, e por isso os únicos que abrem o formulário já com OAuth marcado.
+							</span>
+						</span>
+					</label>
 					<p id="q-ajuda" class="text-sm text-conteudo-tenue">
-						Procura no nome e no resumo do que a origem publica. Vários termos exigem todos, em qualquer ordem.
+						A busca procura no nome e na descrição da cópia local — por isso é instantânea. O catálogo é publicado em inglês; termo em português costuma não achar nada.
 					</p>
 				</form>
 			}
-			@Resultados(p.Itens, p.Termo, p.Total, p.Falha)
+			@estadoDoCatalogo(p)
+			@Resultados(p)
 			@rodapeDaOrigem()
 		</div>
 	}
 }
 
+// estadoDoCatalogo diz de quando é a lista e oferece refazê-la.
+//
+// Fica acima da lista, e não escondido no rodapé, porque catálogo guardado tem
+// idade e ela muda a leitura do que está na tela: não achar um servidor pode
+// ser ele não existir ou a cópia ser de ontem, e o admin só sabe qual dos dois
+// se a idade estiver à vista.
+templ estadoDoCatalogo(p Pagina) {
+	<div class="flex flex-wrap items-center justify-between gap-3">
+		<p class="text-sm text-conteudo-suave">
+			Catálogo local: { idadeDoCatalogo(p.Estado) }
+			if p.Estado.Servidores > 0 {
+				<span class="text-conteudo-tenue">— { strconv.Itoa(p.Estado.Servidores) } servidores na última varredura</span>
+			}
+			if p.Estado.Erro != "" {
+				<span class="text-conteudo-tenue">— a última tentativa não terminou</span>
+			}
+		</p>
+		<form method="post" action={ templ.SafeURL(webui.RotaBiblioteca + "/atualizar") }>
+			<button type="submit" class="pb-botao pb-botao-secundario" disabled?={ p.EmCurso }>
+				if p.EmCurso {
+					Atualizando...
+				} else {
+					Atualizar agora
+				}
+			</button>
+		</form>
+	</div>
+}
+
 // Resultados é a lista. É o alvo do htmx, e por isso é um componente separado:
 // a busca troca só este pedaço.
-templ Resultados(itens []Item, termo string, total int, falha Falha) {
+templ Resultados(p Pagina) {
 	<div id="resultados-biblioteca" class="flex flex-col gap-4">
-		switch falha {
-			case FalhaIndisponivel:
-				@aviso("Não foi possível falar com o mcpservers.org.",
-					"A biblioteca não guarda cópia do catálogo: ela lê a origem a cada uso, então precisa de saída para a internet. Nada mais do patchbay depende disto — o gateway continua servindo e roteando normalmente.")
-			case FalhaFormato:
-				@aviso("A origem respondeu num formato que o patchbay não sabe ler.",
-					"A página chegou, mas a marcação mudou de lugar — tentar de novo não resolve. O log do processo tem o detalhe.")
-			default:
-				if len(itens) == 0 {
-					@aviso("Nenhum servidor com esse termo.",
-						"A origem publica só servidores MCP remotos. Se o que você quer não está aqui — ou é um processo local —, cadastre o upstream à mão.")
-				} else {
-					<p class="text-sm text-conteudo-suave">{ resumoDoRecorte(len(itens), total, termo) }</p>
-					<ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-						for _, i := range itens {
-							<li class="pb-cartao flex flex-col gap-3 px-4 py-4">
-								<div class="flex flex-col gap-1">
-									<h3 class="text-base font-semibold text-conteudo">{ i.Nome }</h3>
-									if i.Resumo != "" {
-										<p class="text-sm text-conteudo-suave">{ i.Resumo }</p>
-									}
-								</div>
-								<div class="mt-auto flex flex-wrap items-center gap-3 pt-1">
-									<a href={ templ.SafeURL(rotaDeAdicionar(i.Slug)) } class="pb-botao pb-botao-primario">
-										Adicionar
-										<span class="sr-only">{ i.Nome }</span>
-									</a>
-									<a
-										href={ templ.SafeURL(BaseMCPServers + "/remote-mcp-servers/" + i.Slug) }
-										target="_blank"
-										rel="noreferrer noopener"
-										class="pb-link text-sm"
-									>
-										Ver na origem
-										<span class="sr-only">a página de { i.Nome } no mcpservers.org (abre em nova aba)</span>
-									</a>
-								</div>
-							</li>
-						}
-					</ul>
+		if len(p.Itens) == 0 {
+			if p.CatalogoVazio() {
+				@aviso("O catálogo ainda está sendo baixado.",
+					"Esta é a primeira varredura do registry: são cerca de trezentas páginas, e leva uns quinze minutos. Recarregue daqui a pouco — ou cadastre o MCP à mão, que funciona desde já.")
+			} else {
+				@aviso("Nenhum servidor com esse termo.",
+					"A busca é sobre o nome e a descrição, e o catálogo é escrito em inglês. Se o que você quer não está aqui, cadastre o MCP à mão.")
+			}
+		} else {
+			<p class="text-sm text-conteudo-suave">{ resumoDaPagina(p) }</p>
+			<ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+				for _, i := range p.Itens {
+					@cartaoDoServidor(i)
 				}
+			</ul>
+			@navegacao(p)
 		}
 	</div>
+}
+
+// cartaoDoServidor é uma entrada da lista.
+templ cartaoDoServidor(i Item) {
+	<li class="pb-cartao flex flex-col gap-3 px-4 py-4">
+		<div class="flex flex-col gap-1">
+			<div class="flex flex-wrap items-baseline gap-2">
+				<h3 class="text-base font-semibold text-conteudo">{ i.Titulo }</h3>
+				if i.Curado {
+					@webui.Selo(webui.TomSucesso, "curado")
+				} else if i.DominioVerificado() {
+					@webui.Selo(webui.TomInfo, "domínio verificado")
+				}
+				<span class="text-xs text-conteudo-tenue">{ rotuloDoTransporte(i) }</span>
+				if i.Versao != "" {
+					<span class="text-xs text-conteudo-tenue">v{ i.Versao }</span>
+				}
+			</div>
+			<p class="text-xs text-conteudo-tenue">{ i.Nome }</p>
+			if i.Descricao != "" {
+				<p class="text-sm text-conteudo-suave">{ i.Descricao }</p>
+			}
+			<p class="break-all text-xs text-conteudo-tenue">{ linhaDaConexao(i) }</p>
+			if i.PedeCredencial {
+				<p class="text-xs text-conteudo-suave">A origem declara que este servidor exige credencial.</p>
+			}
+		</div>
+		<div class="mt-auto flex flex-wrap items-center gap-3 pt-1">
+			<a href={ templ.SafeURL(rotaDeAdicionar(i.Nome)) } class="pb-botao pb-botao-primario">
+				Adicionar
+				<span class="sr-only">{ i.Titulo }</span>
+			</a>
+			if i.Site != "" {
+				<a
+					href={ templ.SafeURL(i.Site) }
+					target="_blank"
+					rel="noreferrer noopener"
+					class="pb-link text-sm"
+				>
+					Ver a origem
+					<span class="sr-only">a página de { i.Titulo } (abre em nova aba)</span>
+				</a>
+			}
+		</div>
+	</li>
+}
+
+// navegacao anda pelas páginas do catálogo local.
+//
+// Aqui há ida e volta, diferente do que a leitura ao vivo permitia: o catálogo
+// é nosso, então dá para contar quantos são e pular para trás.
+templ navegacao(p Pagina) {
+	if p.Paginas() > 1 {
+		<div class="flex flex-wrap items-center gap-3">
+			if p.TemAnterior() {
+				<a
+					href={ templ.SafeURL(p.Anterior()) }
+					class="pb-botao pb-botao-secundario"
+					hx-get={ p.Anterior() }
+					hx-target="#resultados-biblioteca"
+					hx-swap="outerHTML"
+					hx-push-url="true"
+				>Anterior</a>
+			}
+			<span class="text-sm text-conteudo-tenue">
+				Página { strconv.Itoa(p.Numero) } de { strconv.Itoa(p.Paginas()) }
+			</span>
+			if p.TemProxima() {
+				<a
+					href={ templ.SafeURL(p.Proxima()) }
+					class="pb-botao pb-botao-secundario"
+					hx-get={ p.Proxima() }
+					hx-target="#resultados-biblioteca"
+					hx-swap="outerHTML"
+					hx-push-url="true"
+				>Próxima</a>
+			}
+		</div>
+	}
 }
 
 // aviso é o cartão de estado vazio da tela, com a saída sempre à mão.
@@ -134,12 +283,13 @@ templ aviso(titulo, texto string) {
 // rodapeDaOrigem diz de onde veio o que está na tela, e o que ele não é.
 //
 // Fica na tela, e não só no comentário do pacote, porque o admin precisa saber
-// que está lendo um site de terceiro: a URL não foi verificada pelo patchbay.
+// que está lendo um catálogo de terceiro: nem a URL nem o comando foram
+// verificados pelo patchbay.
 templ rodapeDaOrigem() {
 	<p class="text-sm text-conteudo-tenue">
-		Lido agora de
-		<a href={ templ.SafeURL(BaseMCPServers + "/remote-mcp-servers") } target="_blank" rel="noreferrer noopener" class="pb-link">mcpservers.org</a>.
-		Nada é guardado aqui: a lista some quando você sai da tela e é buscada de novo na próxima.
-		As URLs são de terceiros e não foram verificadas pelo patchbay — confira antes de salvar.
+		Cópia local do
+		<a href="https://registry.modelcontextprotocol.io" target="_blank" rel="noreferrer noopener" class="pb-link">registry.modelcontextprotocol.io</a>,
+		o registry oficial do Model Context Protocol, refeita a cada 12 horas.
+		As URLs e os comandos são de terceiros e não foram verificados pelo patchbay — confira antes de salvar.
 	</p>
 }

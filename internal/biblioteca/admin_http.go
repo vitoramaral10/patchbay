@@ -3,102 +3,156 @@ package biblioteca
 import (
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
 )
 
+// PorTela é quantos servidores a tela mostra por página.
+//
+// Trinta e seis porque a grade é de uma, duas ou três colunas: o número fecha
+// linha em qualquer uma delas. Não tem relação com o tamanho da página da
+// origem — aquilo é a varredura, isto é leitura de banco local.
+const PorTela = 36
+
 // Admin é a borda HTTP da biblioteca.
 //
-// Não escreve nada: não há POST aqui, não há tabela, não há arquivo. Quem cria
-// upstream é o formulário de upstream — a biblioteca só monta o link que chega
-// lá preenchido, e é isso que também mantém de pé a regra de arquitetura de uma
-// feature não importar outra.
+// Lê do catálogo local e nada mais. A única escrita que ela oferece é pedir uma
+// varredura fora de hora, e mesmo essa não escreve aqui: ela acorda o
+// sincronizador. Quem cria upstream é o formulário de upstream — a biblioteca
+// só monta o link que chega lá preenchido, e é isso que também mantém de pé a
+// regra de arquitetura de uma feature não importar outra.
 type Admin struct {
-	origem *Origem
-	log    *slog.Logger
+	repo *RepositorioSQLite
+	sinc *Sincronizador
+	log  *slog.Logger
 }
 
-// NovoAdmin monta a borda sobre um cliente da origem.
-func NovoAdmin(origem *Origem, log *slog.Logger) *Admin {
-	return &Admin{origem: origem, log: log}
+// NovoAdmin monta a borda sobre o catálogo local e o sincronizador.
+func NovoAdmin(repo *RepositorioSQLite, sinc *Sincronizador, log *slog.Logger) *Admin {
+	return &Admin{repo: repo, sinc: sinc, log: log}
 }
 
 // Rotas registra as telas. Exigem sessão de admin, como o resto do painel.
+//
+// O nome do servidor vai no fim do caminho, e com reticências, porque nome de
+// registry tem barra no meio (com.notion/mcp): num segmento simples o mux
+// cortaria no meio do nome. É também por isso que "adicionar" vem antes do
+// nome, e não depois — curinga com reticências só existe no último segmento.
 func (a *Admin) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+webui.RotaBiblioteca, a.listar)
-	mux.HandleFunc("GET "+webui.RotaBiblioteca+"/{slug}/adicionar", a.adicionar)
+	mux.HandleFunc("GET "+webui.RotaBiblioteca+"/adicionar/{nome...}", a.adicionar)
+	mux.HandleFunc("POST "+webui.RotaBiblioteca+"/atualizar", a.atualizar)
 }
 
-// listar mostra o que a origem publica agora, filtrado pelo ?q=.
+// listar mostra uma página do catálogo local, filtrada pelo ?q=.
 //
-// O termo vive na URL e não em sessão: uma busca é linkável e sobrevive ao
-// recarregar, que é a mesma razão pela qual a trilha filtra por GET. O htmx só
-// acelera o que já funciona sem ele — com JavaScript desligado, o formulário
-// continua sendo um GET comum que recarrega a página inteira.
+// O termo e a página vivem na URL e não em sessão: uma busca é linkável e
+// sobrevive ao recarregar, que é a mesma razão pela qual a trilha filtra por
+// GET. O htmx só acelera o que já funciona sem ele — com JavaScript desligado,
+// o formulário continua sendo um GET comum que recarrega a página inteira.
 func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
-	termo := strings.TrimSpace(r.URL.Query().Get("q"))
+	q := r.URL.Query()
+	filtro := Filtro{
+		Termo: strings.TrimSpace(q.Get("q")),
+		// A caixa marcada vira ?curados=1; desmarcada não manda nada, que é
+		// como um checkbox de formulário HTML se comporta. Ler a presença, e
+		// não o valor, é o que faz o link do htmx e o GET sem JavaScript
+		// concordarem.
+		SoCurados: q.Get("curados") != "",
+	}
+	pagina := paginaDaQuery(q.Get("p"))
 	htmx := r.Header.Get("HX-Request") == "true"
 
-	todos, err := a.origem.Listar(r.Context())
+	dados := Pagina{
+		Filtro:  filtro,
+		Numero:  pagina,
+		EmCurso: a.sinc.EmCurso(),
+	}
+	if estado, err := a.repo.Sincronizacao(r.Context()); err != nil {
+		a.log.Warn("não foi possível ler o estado da biblioteca", "erro", err)
+	} else {
+		dados.Estado = estado
+	}
+
+	itens, total, err := a.repo.Buscar(r.Context(), filtro, PorTela, (pagina-1)*PorTela)
 	if err != nil {
-		// Origem fora não é erro do patchbay: 200 com a explicação na tela, e não
-		// um 502 que o admin lê como "o gateway quebrou". O log fica com o
-		// motivo exato.
-		a.log.Warn("não foi possível ler o catálogo da origem",
-			"origem", a.origem.base, "erro", err)
-		falha := falhaDe(err)
-		if htmx {
-			webui.Renderizar(w, r, http.StatusOK, a.log, Resultados(nil, termo, 0, falha))
+		// Catálogo ilegível é defeito do patchbay, não de terceiro: aqui o 500
+		// é honesto.
+		webui.ErroInterno(w, r, a.log, err)
+		return
+	}
+	// Página além do fim: sem isto, ?p=99 numa busca com resultados mostraria
+	// "nenhum servidor com esse termo", que é a mensagem errada — há
+	// resultados, o que não existe é aquela página. Acontece com link velho e
+	// com quem digita na URL, e cair na última página é o que o admin espera.
+	if len(itens) == 0 && total > 0 {
+		pagina = (total + PorTela - 1) / PorTela
+		dados.Numero = pagina
+		itens, total, err = a.repo.Buscar(r.Context(), filtro, PorTela, (pagina-1)*PorTela)
+		if err != nil {
+			webui.ErroInterno(w, r, a.log, err)
 			return
 		}
-		webui.Renderizar(w, r, http.StatusOK, a.log, TelaBiblioteca(Pagina{
-			Termo:  termo,
-			Falha:  falha,
-			Alerta: webui.Avisos(r, avisos),
-		}))
-		return
 	}
+	dados.Itens, dados.Total = itens, total
 
-	achados := Buscar(todos, termo)
-	// Requisição do htmx recebe só a lista. A página inteira dentro do alvo
-	// aninharia um <html> dentro do <body> a cada tecla digitada.
 	if htmx {
-		webui.Renderizar(w, r, http.StatusOK, a.log, Resultados(achados, termo, len(todos), ""))
+		webui.Renderizar(w, r, http.StatusOK, a.log, Resultados(dados))
 		return
 	}
-	webui.Renderizar(w, r, http.StatusOK, a.log, TelaBiblioteca(Pagina{
-		Itens:  achados,
-		Termo:  termo,
-		Total:  len(todos),
-		Alerta: webui.Avisos(r, avisos),
-	}))
+	dados.Alerta = webui.Avisos(r, avisos)
+	webui.Renderizar(w, r, http.StatusOK, a.log, TelaBiblioteca(dados))
 }
 
-// adicionar busca a página do servidor escolhido e manda o admin para o
-// formulário de upstream preenchido.
+// adicionar leva o servidor escolhido para o formulário de upstream preenchido.
 //
-// A ida à origem acontece aqui, e não ao montar a lista, porque é uma por
-// clique em vez de uma por servidor listado: a página de listagem não traz URL
-// nem transporte, e buscá-los para os 293 só para desenhar a tela seriam 293
-// requisições ao site a cada abertura.
-//
-// GET e não POST: nada muda no patchbay: busca-se uma página e redireciona-se.
-// O que muda estado é o formulário do outro lado, que o admin ainda vai revisar
-// e salvar.
+// GET e não POST: nada muda no patchbay — lê-se o catálogo local e
+// redireciona-se. O que muda estado é o formulário do outro lado, que o admin
+// ainda vai revisar e salvar.
 func (a *Admin) adicionar(w http.ResponseWriter, r *http.Request) {
-	slug := r.PathValue("slug")
+	nome := r.PathValue("nome")
 
-	detalhe, err := a.origem.Detalhe(r.Context(), slug)
+	item, err := a.repo.Um(r.Context(), nome)
 	if err != nil {
-		a.log.Warn("não foi possível ler o servidor na origem",
-			"slug", slug, "origem", a.origem.base, "erro", err)
-		webui.Redirecionar(w, r, webui.RotaBiblioteca+"?aviso="+avisoDe(err))
+		if !errors.Is(err, ErrNaoEncontrado) {
+			webui.ErroInterno(w, r, a.log, err)
+			return
+		}
+		webui.Redirecionar(w, r, webui.RotaBiblioteca+"?aviso=sumiu")
 		return
 	}
-	webui.Redirecionar(w, r, rotaDeCadastro(detalhe))
+	webui.Redirecionar(w, r, rotaDeCadastro(item))
+}
+
+// atualizar pede uma varredura fora de hora.
+//
+// POST porque dispara trabalho: um GET que varre o registry seria varredura a
+// cada prefetch de navegador. A resposta é imediata e a varredura continua no
+// fundo — ela leva minutos, e prender a requisição só faria o navegador
+// desistir no meio.
+func (a *Admin) atualizar(w http.ResponseWriter, r *http.Request) {
+	aviso := "atualizando"
+	if !a.sinc.Disparar() {
+		aviso = "ja-atualizando"
+	}
+	webui.Redirecionar(w, r, webui.RotaBiblioteca+"?aviso="+aviso)
+}
+
+// paginaDaQuery lê o número da página, tolerando o que não é número.
+//
+// Página fora de faixa não é erro para o admin: ele chegou aqui por um link ou
+// pela URL, e cair no começo é o comportamento previsível.
+func paginaDaQuery(v string) int {
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
 }
 
 // rotaDeCadastro é o formulário de upstream novo, já preenchido com o servidor
@@ -111,82 +165,112 @@ func (a *Admin) adicionar(w http.ResponseWriter, r *http.Request) {
 // este caminho e confere que o formulário volta preenchido.
 //
 // Nenhum campo de credencial entra aqui: query vaza para histórico do
-// navegador, log de proxy e Referer.
-func rotaDeCadastro(d Detalhe) string {
+// navegador, log de proxy e Referer. O modo de credencial entra só quando a
+// curadoria declarou a autenticação — sem essa declaração, mandar um palpite
+// seria pior do que deixar o formulário no padrão dele.
+func rotaDeCadastro(i Item) string {
 	q := url.Values{
-		"tipo": {d.Transporte},
-		"nome": {d.Nome},
-		"url":  {d.URL},
-		"modo": {d.ModoDeCredencial()},
+		"tipo": {i.Transporte},
+		"nome": {i.Titulo},
+	}
+	// O modo só entra quando alguém declarou a autenticação, e só a curadoria
+	// declara. Servidor que vem só do registry não leva palpite: o formulário
+	// fica no padrão dele e o admin escolhe.
+	if modo := i.ModoDeCredencial(); modo != "" {
+		q.Set("modo", modo)
+	}
+	if i.Remoto() {
+		q.Set("url", i.URL)
+	} else {
+		q.Set("comando", i.Comando)
+		for _, a := range i.Args {
+			q.Add("arg", a)
+		}
 	}
 	return webui.RotaUpstreams + "/novo?" + q.Encode()
 }
 
-// Falha é o que a tela diz quando a origem não respondeu como devia. Vazio é
-// tudo certo.
-type Falha string
-
-// As duas falhas que a tela distingue, porque a ação do admin é diferente em
-// cada uma.
-const (
-	// FalhaIndisponivel é rede fora, tempo esgotado ou desafio de bot: tentar de
-	// novo pode resolver.
-	FalhaIndisponivel Falha = "indisponivel"
-	// FalhaFormato é a página ter chegado e não ser mais o que o patchbay sabe
-	// ler: tentar de novo não resolve, o site mudou.
-	FalhaFormato Falha = "formato"
-)
-
-func falhaDe(err error) Falha {
-	if errors.Is(err, ErrFormatoDaOrigem) {
-		return FalhaFormato
-	}
-	return FalhaIndisponivel
-}
-
-func avisoDe(err error) string {
-	switch {
-	case errors.Is(err, ErrNaoEncontrado):
-		return "sumiu"
-	case errors.Is(err, ErrFormatoDaOrigem):
-		return "formato"
-	default:
-		return "indisponivel"
-	}
-}
-
-// avisos são as mensagens que o adicionar devolve pela URL quando não deu.
+// avisos são as mensagens que as ações devolvem pela URL.
 var avisos = map[string]webui.Alerta{
 	"sumiu": {
 		Tom:    webui.TomAlerta,
 		Titulo: "Esse servidor não está mais no catálogo.",
-		Texto: "A origem respondeu que a página não existe — ele deve ter saído da lista " +
-			"desde que esta tela carregou. Busque de novo, ou cadastre o upstream à mão.",
+		Texto: "Ele saiu da lista entre esta tela carregar e você clicar — quase sempre " +
+			"porque uma sincronização entrou no meio. Busque de novo, ou cadastre o MCP à mão.",
 	},
-	"indisponivel": {
-		Tom:    webui.TomPerigo,
-		Titulo: "Não foi possível falar com o mcpservers.org.",
-		Texto: "A biblioteca lê o catálogo direto da origem a cada uso, então ela precisa " +
-			"de saída para a internet. O cadastro de upstream à mão continua funcionando.",
+	"atualizando": {
+		Tom:    webui.TomInfo,
+		Titulo: "A atualização do catálogo começou.",
+		Texto: "Ela roda no fundo e leva uns quinze minutos: são cerca de trezentas idas " +
+			"ao registry. A lista abaixo continua sendo a anterior até ela terminar.",
 	},
-	"formato": {
-		Tom:    webui.TomPerigo,
-		Titulo: "A origem respondeu num formato que o patchbay não sabe ler.",
-		Texto: "A página chegou, mas a marcação mudou — tentar de novo não resolve. " +
-			"O log do processo tem o detalhe. Cadastre o upstream à mão por enquanto.",
+	"ja-atualizando": {
+		Tom:    webui.TomInfo,
+		Titulo: "Já tem uma atualização rodando.",
+		Texto: "Duas seguidas dariam o mesmo resultado, então esta foi ignorada. " +
+			"Recarregue daqui a alguns minutos.",
 	},
 }
 
 // Pagina é o que a tela precisa saber.
 type Pagina struct {
-	// Itens é o recorte já filtrado.
+	// Itens é a página do catálogo local.
 	Itens []Item
-	// Termo é o que está na caixa de busca.
-	Termo string
-	// Total é quantos a origem publica agora, para a tela dizer "12 de 293".
+	// Filtro é o recorte pedido: o termo digitado e o corte por origem.
+	Filtro Filtro
+	// Total é quantos servidores casam com o termo, no catálogo inteiro.
 	Total int
-	// Falha é o motivo de não haver lista. Vazio quando a origem respondeu.
-	Falha Falha
+	// Numero é a página que está sendo mostrada, contando de 1.
+	Numero int
+	// Estado é a idade do catálogo e o que houve na última varredura.
+	Estado Sincronizacao
+	// EmCurso é uma varredura estar rodando agora.
+	EmCurso bool
 	// Alerta é o resultado da ação anterior.
 	Alerta *webui.Alerta
 }
+
+// Paginas é quantas páginas o filtro atual tem.
+func (p Pagina) Paginas() int {
+	if p.Total == 0 {
+		return 0
+	}
+	return int(math.Ceil(float64(p.Total) / float64(PorTela)))
+}
+
+// TemProxima e TemAnterior decidem se os links de navegação aparecem. Link que
+// não leva a lugar nenhum é ruído.
+func (p Pagina) TemProxima() bool { return p.Numero < p.Paginas() }
+func (p Pagina) TemAnterior() bool {
+	return p.Numero > 1 && p.Paginas() > 0
+}
+
+// Proxima e Anterior são os links, preservando a busca.
+func (p Pagina) Proxima() string { return p.rota(p.Numero + 1) }
+func (p Pagina) Anterior() string {
+	return p.rota(p.Numero - 1)
+}
+
+func (p Pagina) rota(numero int) string {
+	q := url.Values{}
+	if p.Filtro.Termo != "" {
+		q.Set("q", p.Filtro.Termo)
+	}
+	if p.Filtro.SoCurados {
+		q.Set("curados", "1")
+	}
+	if numero > 1 {
+		q.Set("p", strconv.Itoa(numero))
+	}
+	if len(q) == 0 {
+		return webui.RotaBiblioteca
+	}
+	return webui.RotaBiblioteca + "?" + q.Encode()
+}
+
+// CatalogoVazio distingue "a busca não achou" de "o catálogo ainda não existe".
+//
+// São situações diferentes e a saída do admin é outra em cada uma: uma pede
+// outro termo, a outra pede esperar a primeira varredura terminar. A mesma
+// mensagem para as duas faria a instalação nova parecer defeito.
+func (p Pagina) CatalogoVazio() bool { return p.Estado.Nunca() }

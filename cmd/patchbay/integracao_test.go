@@ -134,7 +134,11 @@ func subirPatchbay(t *testing.T, urlUpstream string, timeoutMS int64) patchbayDe
 		t.Fatalf("fechar banco do seed: erro = %v, quer nil", err)
 	}
 
-	app, err := montar(ctx, cfg, cofreDeTeste(t), log)
+	// A origem da biblioteca aponta para um registry local e mudo: sem isto,
+	// Iniciar dispararia uma varredura do registry de verdade só por subir o
+	// patchbay. Ver registryMudo, em ui_test.go.
+	app, err := montar(ctx, cfg, cofreDeTeste(t), log,
+		ComOrigemDaBiblioteca(registryMudo(t)), ComCuradoriaDaBiblioteca(curadoriaMudaDeTeste(t)))
 	if err != nil {
 		t.Fatalf("montar: erro = %v, quer nil", err)
 	}
