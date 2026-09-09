@@ -18,3 +18,8 @@
 
 # worktrees de agentes
 .claude/worktrees/
+
+# Cache de páginas do `task biblioteca`. É só o HTML bruto da origem, para a
+# atualização do catálogo poder continuar de onde parou; o artefato versionado
+# é o internal/biblioteca/catalogo.json.
+/.cache-biblioteca/
