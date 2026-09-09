@@ -421,6 +421,66 @@ func TestServico_MesclaComBancoAvancado(t *testing.T) {
 	}
 }
 
+// TestServico_ConflitoSoNaSonda prova que a sonda entra em
+// divergenciasDeUpstream: um conflito causado só por ela precisa listar o
+// campo "sonda", e não sair de mãos vazias por o dono não ter onde ler o
+// motivo do conflito.
+func TestServico_ConflitoSoNaSonda(t *testing.T) {
+	t.Parallel()
+
+	b := bancoPovoado()
+	sut := servicoDe(t, b, nil)
+	ctx := context.Background()
+
+	dados, err := sut.Exportar(ctx)
+	if err != nil {
+		t.Fatalf("Exportar() erro = %v, quer nil", err)
+	}
+	doc := documentoDe(t, dados)
+
+	// Os dois lados ligam a sonda de "notion" depois do export, com
+	// ferramentas diferentes: nenhum outro campo muda.
+	for i := range doc.Upstreams {
+		if doc.Upstreams[i].Nome == "notion" {
+			doc.Upstreams[i].Sonda = &configuracao.SondaDoUpstream{
+				Habilitada: true, Ferramenta: "buscar",
+				IntervaloMS: 900_000, TimeoutMS: 15_000, Tolerancia: 2,
+			}
+		}
+	}
+	for i := range b.upstreams {
+		if b.upstreams[i].Item.Nome == "notion" {
+			b.upstreams[i].Item.Sonda = &configuracao.SondaDoUpstream{
+				Habilitada: true, Ferramenta: "pesquisar_paginas",
+				IntervaloMS: 900_000, TimeoutMS: 15_000, Tolerancia: 2,
+			}
+		}
+	}
+
+	plano, err := sut.Planejar(ctx, yamlDe(t, doc), configuracao.Opcoes{})
+	if err != nil {
+		t.Fatalf("Planejar() erro = %v, quer nil", err)
+	}
+
+	item := itemDoPlano(t, plano, configuracao.ItemUpstream, "notion")
+	if item.Operacao != configuracao.OperacaoConflito {
+		t.Fatalf("operação de notion = %s, quer %s", item.Operacao, configuracao.OperacaoConflito)
+	}
+
+	achou := false
+	for _, d := range item.Divergencias {
+		if d.Campo == "sonda" {
+			achou = true
+			if !strings.Contains(d.NoYAML, "buscar") || !strings.Contains(d.NoBanco, "pesquisar_paginas") {
+				t.Errorf("divergência de sonda = %+v, quer as duas ferramentas", d)
+			}
+		}
+	}
+	if !achou {
+		t.Errorf("divergências de notion = %+v, quer o campo \"sonda\" entre elas", item.Divergencias)
+	}
+}
+
 func TestServico_RemoverAusentesSoComFlag(t *testing.T) {
 	t.Parallel()
 

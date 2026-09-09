@@ -204,6 +204,10 @@ func redigirEvento(ev Evento) Evento {
 	if !ev.Resultado.Valido() {
 		ev.Resultado = ResultadoErro
 	}
+	// Origem vazia é cliente: o log ao vivo publica este evento antes de ele
+	// chegar ao banco, e sem isto a marca da tela dependeria de quem preencheu
+	// a struct.
+	ev.Origem = ev.Origem.OuCliente()
 	return ev
 }
 

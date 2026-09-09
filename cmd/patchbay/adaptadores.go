@@ -126,6 +126,66 @@ func (t trilhaDoEndpoint) Observar(c endpoint.Chamada) {
 	})
 }
 
+// trilhaDaSonda liga a sonda funcional do upstream à mesma fila da trilha.
+//
+// A sonda é um tools/call de verdade, então ela merece uma linha de verdade — e
+// a origem é o que a separa da chamada de cliente sem inventar um vocabulário
+// novo de resultado. Sem endpoint nem credencial: a sondagem não passa por
+// endpoint nenhum e não usa credencial de cliente, e preencher os campos com um
+// valor de mentira só faria o filtro da tela apontar para algo que não existe.
+type trilhaDaSonda struct {
+	registrador *trilha.Registrador
+}
+
+// ObservarSonda implementa upstream.ObservadorDeSonda. Não bloqueia: o mesmo
+// envio não bloqueante da captura do endpoint, e por um motivo mais forte ainda
+// — quem chama é a goroutine que mantém a sessão do upstream de pé.
+func (t trilhaDaSonda) ObservarSonda(s upstream.Sondagem) {
+	t.registrador.Observar(trilha.Evento{
+		Inicio:       s.Inicio,
+		Duracao:      s.Duracao,
+		UpstreamID:   s.UpstreamID,
+		UpstreamNome: s.UpstreamNome,
+		Ferramenta:   s.Ferramenta,
+		Original:     s.Ferramenta,
+		Resultado:    resultadoDaSondagem(s),
+		Origem:       trilha.OrigemSonda,
+		Erro:         s.Erro,
+		BytesEntrada: s.BytesEntrada,
+		BytesSaida:   s.BytesSaida,
+	})
+}
+
+// redatorDeSonda adapta trilha.Redigir à assinatura que upstream.ComRedator
+// pede.
+//
+// internal/upstream não pode importar internal/trilha (regra de features: uma
+// não conhece a outra), então a ligação mora aqui, no único lugar que conhece
+// as duas. Sem ela, Pedido e Resposta chegariam crus a SituacaoSonda — e a
+// resposta de um upstream pode repetir de volta o header de autorização que
+// ele recusou.
+func redatorDeSonda(valor string) string {
+	fora, _ := trilha.Redigir(valor)
+	return fora
+}
+
+// resultadoDaSondagem traduz o desfecho da sonda no vocabulário da trilha.
+//
+// Timeout continua sendo timeout, e é justamente por isso que a origem virou
+// coluna própria em vez de um "sonda_erro" dentro de resultado: uma sondagem que
+// estourou o prazo tem que aparecer no filtro de timeout junto com as chamadas
+// de cliente que estouraram, porque a causa costuma ser a mesma.
+func resultadoDaSondagem(s upstream.Sondagem) trilha.Resultado {
+	switch {
+	case s.OK:
+		return trilha.ResultadoOK
+	case s.Timeout:
+		return trilha.ResultadoTimeout
+	default:
+		return trilha.ResultadoErro
+	}
+}
+
 // resultadoDaTrilha traduz o vocabulário de desfecho de uma feature no da outra.
 //
 // Os textos são iguais hoje, e a tradução existe justamente para que continuem

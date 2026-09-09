@@ -73,6 +73,16 @@ func tomDoResultado(r Resultado) webui.Tom {
 	}
 }
 
+// tomDaOrigem dá a cor da marca de origem. A sonda é neutra e nunca verde: ela
+// não é tráfego, é o custo da observação, e pintá-la como sucesso a misturaria
+// visualmente com a chamada de cliente que deu certo.
+func tomDaOrigem(o Origem) webui.Tom {
+	if o == OrigemSonda {
+		return webui.TomInfo
+	}
+	return webui.TomNeutro
+}
+
 // tomDoNivel dá a cor do selo de nível de log.
 func tomDoNivel(nivel string) webui.Tom {
 	switch nivel {
@@ -98,7 +108,7 @@ func ouTraco(s string) string {
 templ TelaTrilha(p Pagina) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "Trilha de chamadas",
-		Subtitulo: "Uma linha por tools/call, gravada depois de responder. Ela guarda tamanho de entrada e de saída — nunca o conteúdo do argumento nem do resultado.",
+		Subtitulo: "Uma linha por tools/call, gravada depois de responder. Ela guarda tamanho de entrada e de saída — nunca o conteúdo do argumento nem do resultado. A sondagem funcional aparece marcada como sonda; os contadores acima contam só chamada de cliente.",
 		Secao:     webui.SecaoTrilha,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Acao:      linkAoVivo(),
@@ -128,6 +138,7 @@ templ TelaTrilha(p Pagina) {
 									<th scope="col" class="px-3 py-2.5 font-semibold">Upstream</th>
 									<th scope="col" class="px-3 py-2.5 font-semibold">Ferramenta</th>
 									<th scope="col" class="px-3 py-2.5 font-semibold">Resultado</th>
+									<th scope="col" class="px-3 py-2.5 font-semibold">Origem</th>
 									<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Duração</th>
 									<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Entrada</th>
 									<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Saída</th>
@@ -155,6 +166,9 @@ templ TelaTrilha(p Pagina) {
 											if e.Erro != "" {
 												<div class="mt-1 max-w-[42ch] break-words text-xs text-conteudo-suave">{ e.Erro }</div>
 											}
+										</td>
+										<td class="px-3 py-2.5">
+											@webui.Selo(tomDaOrigem(e.Origem), e.Origem.Rotulo())
 										</td>
 										<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ duracao(e.Duracao) }</td>
 										<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ tamanho(e.BytesEntrada) }</td>
@@ -268,6 +282,7 @@ templ filtros(f Filtro, o Opcoes) {
 					<p id="ferramenta-ajuda" class="text-sm text-conteudo-tenue">Casa por pedaço, no nome exposto ou no original.</p>
 				</div>
 				@seletorResultado(f.Resultado)
+				@seletorOrigem(f.Origem)
 				@seletorPeriodo(f.Periodo)
 			</div>
 			<div class="flex items-center gap-3">
@@ -312,6 +327,18 @@ templ seletorResultado(escolhido Resultado) {
 			<option value="" selected?={ escolhido == "" }>todos</option>
 			for _, r := range []Resultado{ResultadoOK, ResultadoErro, ResultadoTimeout} {
 				<option value={ string(r) } selected?={ r == escolhido }>{ r.Rotulo() }</option>
+			}
+		</select>
+	</div>
+}
+
+templ seletorOrigem(escolhido Origem) {
+	<div class="flex flex-col gap-1.5">
+		<label for="origem" class="text-sm font-medium text-conteudo">Origem</label>
+		<select id="origem" name="origem" class="pb-campo">
+			<option value="" selected?={ escolhido == "" }>todas</option>
+			for _, o := range []Origem{OrigemCliente, OrigemSonda} {
+				<option value={ string(o) } selected?={ o == escolhido }>{ o.Rotulo() }</option>
 			}
 		</select>
 	</div>
@@ -435,6 +462,11 @@ templ LinhaDeChamada(e Evento) {
 	<li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2">
 		<span class="font-mono text-xs text-conteudo-tenue">{ hora(e.Inicio) }</span>
 		@webui.Selo(tomDoResultado(e.Resultado), e.Resultado.Rotulo())
+		if e.Origem == OrigemSonda {
+			// Só a sonda é marcada aqui: no log ao vivo o normal é chamada de
+			// cliente, e um selo em toda linha viraria ruído que ninguém lê.
+			@webui.Selo(tomDaOrigem(e.Origem), e.Origem.Rotulo())
+		}
 		<code class="font-mono text-conteudo">{ ouTraco(e.Ferramenta) }</code>
 		<span class="text-xs text-conteudo-suave">
 			{ ouTraco(e.EndpointSlug) } → { ouTraco(e.UpstreamNome) }

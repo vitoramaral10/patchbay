@@ -431,6 +431,7 @@ func itemDeUpstream(reg upstream.Registro, definidas []upstream.CredencialDefini
 		Env:        maps.Clone(reg.Env),
 		TimeoutMS:  reg.TimeoutMS,
 		Habilitado: reg.Habilitado,
+		Sonda:      sondaDoRegistro(reg.Sonda),
 	}
 	for _, d := range definidas {
 		item.Segredos = append(item.Segredos, configuracao.Segredo{Tipo: d.Tipo, Nome: d.Nome})
@@ -438,12 +439,32 @@ func itemDeUpstream(reg upstream.Registro, definidas []upstream.CredencialDefini
 	return item
 }
 
+// sondaDoRegistro traduz a sonda gravada no bloco do arquivo.
+//
+// Nulo quando não há sonda nenhuma configurada: assim o YAML de um upstream sem
+// sonda continua igual ao de antes desta fatia, e o resumo dele — que é a trava
+// otimista do import — não muda por causa de um bloco vazio.
+func sondaDoRegistro(s upstream.Sonda) *configuracao.SondaDoUpstream {
+	if !s.Habilitada && s.Ferramenta == "" {
+		return nil
+	}
+	return &configuracao.SondaDoUpstream{
+		Habilitada:  s.Habilitada,
+		Ferramenta:  s.Ferramenta,
+		Args:        string(s.Args),
+		Espera:      s.Espera,
+		IntervaloMS: s.Intervalo.Milliseconds(),
+		TimeoutMS:   s.Timeout.Milliseconds(),
+		Tolerancia:  s.Tolerancia,
+	}
+}
+
 // formDeUpstream monta o formulário da feature a partir do item do arquivo.
 //
 // Os campos de credencial ficam vazios de propósito: vazio significa "mantém o que
 // está gravado", e o segredo do import entra pela porta própria, slot a slot.
 func formDeUpstream(u configuracao.Upstream) upstream.Form {
-	return upstream.Form{
+	form := upstream.Form{
 		Nome:       u.Nome,
 		Tipo:       u.Tipo,
 		URL:        u.URL,
@@ -453,6 +474,20 @@ func formDeUpstream(u configuracao.Upstream) upstream.Form {
 		ArgsTexto:  strings.Join(u.Args, "\n"),
 		EnvTexto:   textoDeEnv(u.Env),
 	}
+	// Bloco de sonda ausente é sonda desligada, e a validação do formulário
+	// completa os números com o padrão. É a mesma semântica de `habilitado`, e o
+	// plano do import mostra a diferença antes de aplicar — nada some em
+	// silêncio.
+	if u.Sonda != nil {
+		form.SondaHabilitada = u.Sonda.Habilitada
+		form.SondaFerramenta = u.Sonda.Ferramenta
+		form.SondaArgs = u.Sonda.Args
+		form.SondaEspera = u.Sonda.Espera
+		form.SondaIntervaloMS = u.Sonda.IntervaloMS
+		form.SondaTimeoutMS = u.Sonda.TimeoutMS
+		form.SondaTolerancia = u.Sonda.Tolerancia
+	}
+	return form
 }
 
 // textoDeEnv escreve o mapa como a caixa NOME=valor por linha que o formulário lê,

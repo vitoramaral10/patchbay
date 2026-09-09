@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vitoramaral10/patchbay/internal/platform/cripto"
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
@@ -54,6 +55,7 @@ func (a *Admin) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}", a.atualizar)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/remover", a.remover)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/reconectar", a.reconectar)
+	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/sondar", a.sondar)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/autorizar", a.autorizar)
 	// O callback é caminho literal de quatro segmentos, então não compete com o
 	// /{id} de três acima: o ServeMux resolve os dois sem ambiguidade.
@@ -76,7 +78,10 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 	for _, reg := range regs {
 		l := Linha{Registro: reg, Endpoints: contagens[reg.ID]}
 		if s, ok := a.gerente.Situacao(reg.ID); ok {
-			l.Estado, l.Ferramentas, l.TentativaEm = s.Estado, s.Ferramentas, s.TentativaEm
+			// NoCatalogo e não Ferramentas: a coluna diz o que os endpoints
+			// servem, e em sonda_falhou isso é zero mesmo com o tools/list
+			// guardado em memória.
+			l.Estado, l.Ferramentas, l.TentativaEm = s.Estado, s.NoCatalogo, s.TentativaEm
 			l.ProximaEm, l.Abandonos, l.Motivo = s.ProximaEm, s.Abandonos, s.Motivo
 			l.AbandonosTotais = s.AbandonosTotais
 			l.Supervisionado = true
@@ -98,7 +103,16 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 // um formulário que mostra os dois conjuntos ao mesmo tempo obriga o admin a
 // adivinhar quais valem.
 func (a *Admin) formNovo(w http.ResponseWriter, r *http.Request) {
-	form := Form{Tipo: TipoHTTP, TimeoutMS: TimeoutPadraoMS, Habilitado: true}
+	// A sonda vem com os números preenchidos e desligada. Os dois juntos: campo
+	// numérico em branco obrigaria o admin a inventar um valor para ligar a
+	// sonda, e sonda marcada por padrão apagaria ferramenta de servidor
+	// saudável no primeiro cadastro mal preenchido.
+	form := Form{
+		Tipo: TipoHTTP, TimeoutMS: TimeoutPadraoMS, Habilitado: true,
+		SondaIntervaloMS: SondaIntervaloPadraoMS,
+		SondaTimeoutMS:   SondaTimeoutPadraoMS,
+		SondaTolerancia:  SondaToleranciaPadrao,
+	}
 	switch r.URL.Query().Get("tipo") {
 	case TipoSTDIO:
 		form.Tipo = TipoSTDIO
@@ -145,6 +159,11 @@ func (a *Admin) completarForm(ctx context.Context, form *Form) error {
 		return err
 	}
 	form.CompletarOAuth(estado)
+	// Aviso não bloqueante: a ferramenta da sonda pode ter sido renomeada ou
+	// removida do upstream depois de configurada, e só o catálogo em memória
+	// sabe disso — o banco não guarda o tools/list.
+	form.AvisoSondaFerramenta = avisoFerramentaForaDoCatalogo(
+		form.SondaFerramenta, a.gerente.FerramentasDescobertas(form.ID))
 	return nil
 }
 
@@ -234,11 +253,15 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 		d.Estado, d.TentativaEm, d.Supervisionado = s.Estado, s.TentativaEm, true
 		d.ProximaEm, d.Falhas, d.Abandonos, d.Motivo = s.ProximaEm, s.Falhas, s.Abandonos, s.Motivo
 		d.AbandonosTotais = s.AbandonosTotais
+		d.SondaAtual, d.NoCatalogo = s.Sonda, s.NoCatalogo
 		if s.UltimoErro != "" {
 			d.UltimoErro = s.UltimoErro
 		}
 	}
-	for _, t := range a.gerente.Ferramentas(reg.ID) {
+	// FerramentasDescobertas e não Ferramentas: em sonda_falhou o catálogo está
+	// vazio de propósito, e é justamente aí que o admin precisa ver quais
+	// ferramentas saíram dos endpoints por causa da sonda.
+	for _, t := range a.gerente.FerramentasDescobertas(reg.ID) {
 		if t == nil {
 			continue
 		}
@@ -276,6 +299,62 @@ func (a *Admin) reconectar(w http.ResponseWriter, r *http.Request) {
 	webui.Redirecionar(w, r, rotaDo(reg.ID)+"?aviso=reconectando")
 }
 
+// margemDaSondagemManual é quanto o clique espera além do prazo de até duas
+// sondagens.
+//
+// O pedido atravessa um canal até a goroutine de supervisão, e ela pode estar
+// no meio de outra coisa quando ele chega: uma sondagem periódica já em curso,
+// que só devolve o select ao fim do próprio timeout. Por isso o prazo do botão
+// é 2×Timeout — a que já estava rodando mais a que o clique pediu — e não 1×; a
+// margem cobre só a fila do canal e a volta da resposta. Passado isso, a tela
+// desiste e diz para recarregar — nunca fica pendurada, porque uma requisição
+// de admin presa é indistinguível de UI travada.
+const margemDaSondagemManual = 5 * time.Second
+
+// sondar executa uma sondagem agora, a pedido da tela.
+//
+// A chamada não acontece nesta goroutine: Sondar entrega o pedido à supervisão e
+// espera o desfecho. É o que mantém um único escritor do estado da sonda e o que
+// impede que um clique passe a abrir tools/call a partir do handler HTTP.
+func (a *Admin) sondar(w http.ResponseWriter, r *http.Request) {
+	reg, ok := a.upstreamDaRota(w, r)
+	if !ok {
+		return
+	}
+	if !reg.Sonda.Ativa() {
+		webui.Redirecionar(w, r, rotaDo(reg.ID)+"?aviso=sonda_desligada")
+		return
+	}
+
+	prazo := 2*reg.Sonda.Normalizada().Timeout + margemDaSondagemManual
+	ctx, cancelar := context.WithTimeout(r.Context(), prazo)
+	defer cancelar()
+
+	res, err := a.gerente.Sondar(ctx, reg.ID)
+	switch {
+	case errors.Is(err, ErrSondaDesligada):
+		webui.Redirecionar(w, r, rotaDo(reg.ID)+"?aviso=sonda_desligada")
+		return
+	case err != nil:
+		// Erro aqui é "não deu para sondar" — sem sessão, gerente desligando,
+		// prazo estourado. Nada disso é falha da sonda, e contá-lo como tal
+		// derrubaria o catálogo por um clique num momento ruim.
+		a.log.Warn("sondagem pedida pela tela não pôde ser executada",
+			"upstream", reg.Nome, "upstream_id", reg.ID, "erro", err)
+		webui.Redirecionar(w, r, rotaDo(reg.ID)+"?aviso=sonda_indisponivel")
+		return
+	}
+
+	a.log.Info("sondagem pedida pela tela",
+		"upstream", reg.Nome, "upstream_id", reg.ID,
+		"ferramenta", reg.Sonda.Ferramenta, "ok", res.OK)
+	aviso := "sonda_ok"
+	if !res.OK {
+		aviso = "sonda_falhou"
+	}
+	webui.Redirecionar(w, r, rotaDo(reg.ID)+"?aviso="+aviso)
+}
+
 func (a *Admin) formEditar(w http.ResponseWriter, r *http.Request) {
 	reg, ok := a.upstreamDaRota(w, r)
 	if !ok {
@@ -294,6 +373,14 @@ func (a *Admin) formEditar(w http.ResponseWriter, r *http.Request) {
 		TimeoutMS:  reg.TimeoutMS,
 		Habilitado: reg.Habilitado,
 		Modo:       reg.ModoEfetivo(),
+
+		SondaHabilitada:  reg.Sonda.Habilitada,
+		SondaFerramenta:  reg.Sonda.Ferramenta,
+		SondaArgs:        string(reg.Sonda.Args),
+		SondaEspera:      reg.Sonda.Espera,
+		SondaIntervaloMS: reg.Sonda.Intervalo.Milliseconds(),
+		SondaTimeoutMS:   reg.Sonda.Timeout.Milliseconds(),
+		SondaTolerancia:  reg.Sonda.Tolerancia,
 	}
 	if err := a.completarForm(r.Context(), &form); err != nil {
 		webui.ErroInterno(w, r, a.log, err)
@@ -429,6 +516,12 @@ func lerForm(r *http.Request) (Form, error) {
 		// melhor que um 400 sem explicação de qual campo estava errado.
 		timeout = 0
 	}
+	// Nos números da sonda o zero significa outra coisa: campo em branco é
+	// "use o padrão", e validarSonda o preenche. Só o que foi digitado e não é
+	// número vira erro de campo, com a mensagem da faixa.
+	sondaIntervalo := inteiroDoForm(r.PostFormValue("sonda_intervalo_ms"))
+	sondaTimeout := inteiroDoForm(r.PostFormValue("sonda_timeout_ms"))
+	sondaTolerancia := inteiroDoForm(r.PostFormValue("sonda_tolerancia"))
 	return Form{
 		Nome:      r.PostFormValue("nome"),
 		Tipo:      r.PostFormValue("tipo"),
@@ -449,7 +542,29 @@ func lerForm(r *http.Request) (Form, error) {
 		OAuthSegredo:       cripto.Segredo(r.PostFormValue("oauth_segredo")),
 		OAuthSegredoLimpar: r.PostFormValue("oauth_segredo_limpar") != "",
 		OAuthIssuer:        r.PostFormValue("oauth_issuer"),
+
+		SondaHabilitada:  r.PostFormValue("sonda_habilitada") != "",
+		SondaFerramenta:  r.PostFormValue("sonda_ferramenta"),
+		SondaArgs:        r.PostFormValue("sonda_args"),
+		SondaEspera:      r.PostFormValue("sonda_espera"),
+		SondaIntervaloMS: sondaIntervalo,
+		SondaTimeoutMS:   sondaTimeout,
+		SondaTolerancia:  int(sondaTolerancia),
 	}, nil
+}
+
+// inteiroDoForm lê um número do formulário. Campo em branco vira zero, que os
+// campos da sonda leem como "use o padrão"; texto que não é número vira -1, que
+// cai fora de toda faixa e produz a mensagem de erro no campo certo.
+func inteiroDoForm(bruto string) int64 {
+	if strings.TrimSpace(bruto) == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(bruto, 10, 64)
+	if err != nil {
+		return -1
+	}
+	return n
 }
 
 // registroDoForm monta o registro que vai para o gerente depois de o banco já
@@ -470,6 +585,7 @@ func registroDoForm(id int64, f Form) Registro {
 		TimeoutMS:  f.TimeoutMS,
 		Habilitado: f.Habilitado,
 		Modo:       f.ModoEfetivo(),
+		Sonda:      f.SondaDoForm(),
 	}
 }
 
@@ -530,6 +646,32 @@ var avisos = map[string]webui.Alerta{
 	"removido":     {Tom: webui.TomInfo, Titulo: "Upstream removido.", Texto: "A sessão e a goroutine de supervisão foram encerradas, e os endpoints já refletem a remoção."},
 	"reconectando": {Tom: webui.TomInfo, Titulo: "Reconexão pedida.", Texto: "A sessão antiga foi descartada, o backoff voltou ao começo e o contador de abandonos zerou."},
 	"desabilitado": {Tom: webui.TomAlerta, Titulo: "O upstream está desabilitado.", Texto: "Habilite-o na edição para que a supervisão volte a tentar."},
+
+	"sonda_ok": {
+		Tom:    webui.TomSucesso,
+		Titulo: "A sondagem passou.",
+		Texto: "A ferramenta configurada respondeu sem erro. Se o upstream estava em " +
+			"sonda_falhou, as ferramentas dele já voltaram ao catálogo dos endpoints.",
+	},
+	"sonda_falhou": {
+		Tom:    webui.TomPerigo,
+		Titulo: "A sondagem falhou.",
+		Texto: "A requisição e a resposta exatas estão abaixo. Confira primeiro se a sonda " +
+			"está bem configurada — ferramenta errada ou argumento faltando parece servidor quebrado.",
+	},
+	"sonda_desligada": {
+		Tom:    webui.TomAlerta,
+		Titulo: "A sonda deste upstream está desligada.",
+		Texto: "Ela é opt-in: escolha a ferramenta e ligue-a na edição. O patchbay não " +
+			"adivinha qual chamada é inócua — quem sabe isso é você.",
+	},
+	"sonda_indisponivel": {
+		Tom:    webui.TomAlerta,
+		Titulo: "Não deu para sondar agora.",
+		Texto: "A sonda usa a sessão que já está aberta, e ela não respondeu a tempo " +
+			"— sem sessão de pé, ou ocupada demais para atender ao clique. Isto não " +
+			"conta como falha da sonda. Recarregue a página para ver o estado atual.",
+	},
 
 	"autorizado": {
 		Tom:    webui.TomSucesso,

@@ -44,6 +44,9 @@ type Registro struct {
 	// Modo é como o patchbay se apresenta ao upstream: estatica ou oauth. Vazio
 	// é estatica. Nenhum segredo passa por aqui — Registro alimenta a tela.
 	Modo string
+	// Sonda é a configuração da sonda funcional. Só a configuração: o resultado
+	// da última sondagem vive em memória, no gerente, e nunca no banco.
+	Sonda Sonda
 }
 
 // STDIO informa se o upstream é um processo local.
@@ -83,6 +86,7 @@ func (r Registro) Config() Config {
 		Env:     r.Env,
 		Timeout: time.Duration(r.TimeoutMS) * time.Millisecond,
 		Modo:    r.ModoEfetivo(),
+		Sonda:   r.Sonda,
 	}
 }
 
@@ -220,7 +224,42 @@ type Form struct {
 	// provedor. Só é preenchido quando OAuthDisponivel.
 	OAuthRedirectURI string
 
+	// Os campos da sonda funcional. Ficam como texto e milissegundos porque é
+	// isso que o formulário carrega; a tradução para upstream.Sonda é
+	// SondaDoForm, e ela roda depois da validação.
+	//
+	// SondaHabilitada é falso no formulário novo, e é a defesa principal do
+	// resíduo da seção 13: uma sonda mal configurada apaga as ferramentas de um
+	// servidor saudável.
+	SondaHabilitada  bool
+	SondaFerramenta  string
+	SondaArgs        string
+	SondaEspera      string
+	SondaIntervaloMS int64
+	SondaTimeoutMS   int64
+	SondaTolerancia  int
+	// AvisoSondaFerramenta é um alerta não bloqueante: a ferramenta escolhida
+	// não aparece no último tools/list conhecido deste upstream. Vazio quando
+	// não há catálogo ainda (upstream que nunca chegou a pronto) ou quando a
+	// ferramenta está lá — sem catálogo, a sonda pode estar certa e é só o
+	// tools/list que ainda não chegou, e bloquear o salvamento por isso
+	// impediria configurar a sonda antes da primeira conexão.
+	AvisoSondaFerramenta string
+
 	Erros map[string]string
+}
+
+// SondaDoForm traduz os campos do formulário na configuração da sonda.
+func (f Form) SondaDoForm() Sonda {
+	return Sonda{
+		Habilitada: f.SondaHabilitada,
+		Ferramenta: strings.TrimSpace(f.SondaFerramenta),
+		Args:       ArgsDeSonda(f.SondaArgs),
+		Espera:     f.SondaEspera,
+		Intervalo:  time.Duration(f.SondaIntervaloMS) * time.Millisecond,
+		Timeout:    time.Duration(f.SondaTimeoutMS) * time.Millisecond,
+		Tolerancia: f.SondaTolerancia,
+	}
 }
 
 // TipoEfetivo normaliza o tipo do formulário. Vazio é http.
@@ -270,7 +309,104 @@ func (f *Form) Validar() bool {
 	}
 	f.validarCredenciais()
 	f.validarOAuth()
+	f.validarSonda()
 	return len(f.Erros) == 0
+}
+
+// validarSonda recusa a configuração que a supervisão executaria errado, e
+// aplica os padrões nos campos que o admin deixou em branco.
+//
+// Os limites existem pelo mesmo motivo do teto de timeout: intervalo curto
+// demais faz a sonda virar a carga que ela deveria diagnosticar, e tolerância
+// alta demais faz uma sonda que nunca reage — os dois transformam o diferencial
+// no problema.
+//
+// Nada aqui é validado quando a sonda está desligada, exceto o JSON: o
+// formulário guarda a configuração para quando ela for ligada, e recusar salvar
+// um upstream por causa de uma sonda que não roda seria bloquear o admin por um
+// campo que não tem efeito nenhum.
+func (f *Form) validarSonda() {
+	f.SondaFerramenta = strings.TrimSpace(f.SondaFerramenta)
+	f.SondaArgs = strings.TrimSpace(f.SondaArgs)
+	f.SondaEspera = strings.TrimSpace(f.SondaEspera)
+
+	if f.SondaIntervaloMS == 0 {
+		f.SondaIntervaloMS = SondaIntervaloPadraoMS
+	}
+	if f.SondaTimeoutMS == 0 {
+		f.SondaTimeoutMS = SondaTimeoutPadraoMS
+	}
+	if f.SondaTolerancia == 0 {
+		f.SondaTolerancia = SondaToleranciaPadrao
+	}
+
+	if err := ValidarArgsDeSonda(f.SondaArgs); err != nil {
+		f.Erros["sonda_args"] = "Os argumentos precisam ser um objeto JSON, como " +
+			`{"query": "ping"}. Deixe em branco para chamar sem argumentos.`
+	}
+	if !f.SondaHabilitada {
+		// Sonda desligada não trava o salvamento por causa de um número que ela
+		// não vai usar — mas o valor absurdo também não pode ir para o banco e
+		// esperar o dia em que alguém ligar a sonda. Fora de faixa vira o
+		// padrão, em silêncio, porque o campo está inerte.
+		f.SondaIntervaloMS = dentroDaFaixa(f.SondaIntervaloMS,
+			SondaIntervaloMinimoMS, SondaIntervaloMaximoMS, SondaIntervaloPadraoMS)
+		f.SondaTimeoutMS = dentroDaFaixa(f.SondaTimeoutMS,
+			TimeoutMinimoMS, TimeoutMaximoMS, SondaTimeoutPadraoMS)
+		f.SondaTolerancia = int(dentroDaFaixa(int64(f.SondaTolerancia),
+			1, int64(SondaToleranciaMaxima), int64(SondaToleranciaPadrao)))
+		return
+	}
+
+	if f.SondaFerramenta == "" {
+		f.Erros["sonda_ferramenta"] = "Escolha a ferramenta que a sonda vai chamar. " +
+			"Ela precisa ser inócua: quem sabe qual é você, não o patchbay."
+	} else if strings.ContainsAny(f.SondaFerramenta, "\x00\n\r") {
+		f.Erros["sonda_ferramenta"] = "O nome da ferramenta não pode ter quebra de linha nem caractere nulo."
+	}
+	if f.SondaIntervaloMS < SondaIntervaloMinimoMS || f.SondaIntervaloMS > SondaIntervaloMaximoMS {
+		f.Erros["sonda_intervalo_ms"] = "Use um valor entre " +
+			strconv.FormatInt(SondaIntervaloMinimoMS, 10) + " e " +
+			strconv.FormatInt(SondaIntervaloMaximoMS, 10) + " milissegundos."
+	}
+	if f.SondaTimeoutMS < TimeoutMinimoMS || f.SondaTimeoutMS > TimeoutMaximoMS {
+		f.Erros["sonda_timeout_ms"] = "Use um valor entre 250 e 120000 milissegundos."
+	}
+	if f.SondaTolerancia < 1 || f.SondaTolerancia > SondaToleranciaMaxima {
+		f.Erros["sonda_tolerancia"] = "Use um valor entre 1 e " +
+			strconv.Itoa(SondaToleranciaMaxima) + "."
+	}
+}
+
+// avisoFerramentaForaDoCatalogo confere se a ferramenta escolhida para a sonda
+// aparece no último tools/list conhecido, e devolve o texto do aviso quando
+// não aparece.
+//
+// Sem catálogo (descobertas vazio) não há aviso nenhum: um upstream que nunca
+// chegou a pronto não tem tools/list para comparar, e dizer "fora do
+// catálogo" ali seria alarme falso sobre um upstream que a sonda talvez
+// configure certo.
+func avisoFerramentaForaDoCatalogo(ferramenta string, descobertas []*mcp.Tool) string {
+	ferramenta = strings.TrimSpace(ferramenta)
+	if ferramenta == "" || len(descobertas) == 0 {
+		return ""
+	}
+	for _, t := range descobertas {
+		if t.Name == ferramenta {
+			return ""
+		}
+	}
+	return `A ferramenta "` + ferramenta + `" não aparece no último tools/list deste upstream. ` +
+		"Confira o nome — é o nome no upstream, sem prefixo de endpoint."
+}
+
+// dentroDaFaixa devolve v quando ele cabe em [minimo, maximo], e padrao quando
+// não cabe.
+func dentroDaFaixa(v, minimo, maximo, padrao int64) int64 {
+	if v < minimo || v > maximo {
+		return padrao
+	}
+	return v
 }
 
 // validarOAuth recusa a combinação que produziria dois Authorization e o issuer
@@ -671,7 +807,9 @@ func TextoDeEnv(env map[string]string) string {
 // Linha é um upstream na lista da UI.
 type Linha struct {
 	Registro
-	Estado          Estado
+	Estado Estado
+	// Ferramentas é quantas o endpoint serve deste upstream agora — zero em
+	// sonda_falhou, mesmo com o tools/list guardado.
 	Ferramentas     int
 	TentativaEm     time.Time
 	ProximaEm       time.Time
@@ -720,6 +858,27 @@ type Detalhe struct {
 	// OAuth é o que a tela mostra do consentimento, sem nenhum segredo e sem
 	// decifrar nada.
 	OAuth EstadoOAuth
+	// SondaAtual é o retrato da sonda funcional neste boot: quando rodou, se
+	// passou, e a requisição e a resposta exatas da última tentativa.
+	SondaAtual SituacaoSonda
+	// NoCatalogo é quantas ferramentas os endpoints servem deste upstream
+	// agora. Divergir de len(Ferramentas) é o sintoma de sonda_falhou, e é
+	// exatamente isso que a tela precisa mostrar.
+	NoCatalogo int
+}
+
+// SondaLigada informa se a supervisão está sondando este upstream.
+func (d Detalhe) SondaLigada() bool { return d.Sonda.Ativa() }
+
+// PodeSondar informa se o botão "Sondar agora" faz sentido agora.
+//
+// Sonda ligada e sessão de pé: sondar um upstream degradado devolveria "sem
+// sessão", e um botão que só sabe dizer isso é pior que nenhum botão. Em
+// sonda_falhou ele continua valendo — é por ele que o admin confirma o conserto
+// sem esperar o intervalo.
+func (d Detalhe) PodeSondar() bool {
+	return d.SondaLigada() && d.Habilitado && d.Supervisionado &&
+		(d.Estado == EstadoPronto || d.Estado == EstadoSondaFalhou)
 }
 
 // UsaOAuth informa se o upstream se autentica por consentimento OAuth.

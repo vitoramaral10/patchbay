@@ -32,16 +32,21 @@ func NovoRepositorioSQLite(leitura, escrita *sql.DB, cifrador Cifrador) *Reposit
 	return &RepositorioSQLite{leitura: leitura, escrita: escrita, cifrador: cifrador}
 }
 
-const colunas = `id, nome, tipo, url, comando, args, env, timeout_ms, habilitado, ultimo_erro, modo_credencial`
+const colunas = `id, nome, tipo, url, comando, args, env, timeout_ms, habilitado, ultimo_erro, modo_credencial,
+       sonda_habilitada, sonda_ferramenta, sonda_args, sonda_espera,
+       sonda_intervalo_ms, sonda_timeout_ms, sonda_tolerancia`
 
 func lerRegistro(scan func(...any) error) (Registro, error) {
 	var (
 		r          Registro
 		args, ambi string
 		habilitado int
+		sonda      sondaBruta
 	)
 	if err := scan(&r.ID, &r.Nome, &r.Tipo, &r.URL, &r.Comando, &args, &ambi,
-		&r.TimeoutMS, &habilitado, &r.UltimoErro, &r.Modo); err != nil {
+		&r.TimeoutMS, &habilitado, &r.UltimoErro, &r.Modo,
+		&sonda.habilitada, &sonda.ferramenta, &sonda.args, &sonda.espera,
+		&sonda.intervaloMS, &sonda.timeoutMS, &sonda.tolerancia); err != nil {
 		return Registro{}, err
 	}
 	var err error
@@ -52,6 +57,7 @@ func lerRegistro(scan func(...any) error) (Registro, error) {
 		return Registro{}, fmt.Errorf("upstream %s: %w", r.Nome, err)
 	}
 	r.Habilitado = habilitado == 1
+	r.Sonda = sonda.sonda()
 	return r, nil
 }
 
@@ -110,11 +116,16 @@ func (r *RepositorioSQLite) Criar(ctx context.Context, f Form) (int64, error) {
 	var id int64
 	err = tx.QueryRowContext(ctx, `
 INSERT INTO upstream (nome, tipo, url, comando, args, env, timeout_ms, habilitado,
-                      modo_credencial, criado_em)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      modo_credencial, sonda_habilitada, sonda_ferramenta, sonda_args,
+                      sonda_espera, sonda_intervalo_ms, sonda_timeout_ms, sonda_tolerancia,
+                      criado_em)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id`,
 		f.Nome, f.TipoEfetivo(), f.URL, f.Comando, args, ambi,
-		f.TimeoutMS, booleanoSQL(f.Habilitado), f.ModoEfetivo(), time.Now().Unix()).Scan(&id)
+		f.TimeoutMS, booleanoSQL(f.Habilitado), f.ModoEfetivo(),
+		booleanoSQL(f.SondaHabilitada), f.SondaFerramenta, f.SondaArgs,
+		f.SondaEspera, f.SondaIntervaloMS, f.SondaTimeoutMS, f.SondaTolerancia,
+		time.Now().Unix()).Scan(&id)
 	if err != nil {
 		if nomeEmUso(ctx, r.leitura, f.Nome, 0) {
 			return 0, ErrNomeEmUso
@@ -159,10 +170,14 @@ func (r *RepositorioSQLite) Atualizar(ctx context.Context, id int64, f Form) err
 	res, err := tx.ExecContext(ctx, `
 UPDATE upstream
    SET nome = ?, url = ?, comando = ?, args = ?, env = ?,
-       timeout_ms = ?, habilitado = ?, modo_credencial = ?, ultimo_erro = ''
+       timeout_ms = ?, habilitado = ?, modo_credencial = ?, ultimo_erro = '',
+       sonda_habilitada = ?, sonda_ferramenta = ?, sonda_args = ?, sonda_espera = ?,
+       sonda_intervalo_ms = ?, sonda_timeout_ms = ?, sonda_tolerancia = ?
  WHERE id = ?`,
 		f.Nome, f.URL, f.Comando, args, ambi,
-		f.TimeoutMS, booleanoSQL(f.Habilitado), f.ModoEfetivo(), id)
+		f.TimeoutMS, booleanoSQL(f.Habilitado), f.ModoEfetivo(),
+		booleanoSQL(f.SondaHabilitada), f.SondaFerramenta, f.SondaArgs,
+		f.SondaEspera, f.SondaIntervaloMS, f.SondaTimeoutMS, f.SondaTolerancia, id)
 	if err != nil {
 		if nomeEmUso(ctx, r.leitura, f.Nome, id) {
 			return ErrNomeEmUso

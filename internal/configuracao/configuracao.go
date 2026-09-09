@@ -127,10 +127,36 @@ type Upstream struct {
 	TimeoutMS  int64 `yaml:"timeout_ms"`
 	Habilitado bool  `yaml:"habilitado"`
 
+	// Sonda é a sonda de saúde funcional, quando há uma configurada. Nada aqui
+	// é segredo: é a mesma configuração que a tela do upstream mostra.
+	//
+	// Ponteiro com omitempty, e o json:",omitempty" junto: o resumo do item é
+	// um json.Marshal da struct normalizada, e um campo que serializasse como
+	// null faria "o banco avançou" aparecer em todo upstream sem sonda no
+	// primeiro import depois desta fatia. Nulo é "sem sonda", e um upstream sem
+	// sonda resume exatamente como antes.
+	Sonda *SondaDoUpstream `yaml:"sonda,omitempty" json:",omitempty"`
+
 	// Segredos são os slots de credencial, sem valor nenhum. Não entram na
 	// revisão do item de propósito: rotacionar um bearer não é o banco avançar
 	// na configuração, e cada slot vira um item próprio do plano.
 	Segredos []Segredo `yaml:"segredos,omitempty"`
+}
+
+// SondaDoUpstream é a sonda de saúde funcional no arquivo versionável.
+//
+// Args é o JSON literal e não um mapa aninhado, apesar de um mapa dar um YAML
+// mais bonito: o valor precisa chegar ao tools/call byte a byte, e passar por
+// mapa e voltar reordenaria as chaves — o que mudaria o resumo do item a cada
+// export e faria a trava otimista acusar mudança que ninguém fez.
+type SondaDoUpstream struct {
+	Habilitada  bool   `yaml:"habilitada"`
+	Ferramenta  string `yaml:"ferramenta"`
+	Args        string `yaml:"args,omitempty"`
+	Espera      string `yaml:"espera,omitempty"`
+	IntervaloMS int64  `yaml:"intervalo_ms"`
+	TimeoutMS   int64  `yaml:"timeout_ms"`
+	Tolerancia  int    `yaml:"tolerancia"`
 }
 
 // Segredo é a referência a uma credencial estática de um upstream.
@@ -233,7 +259,27 @@ func (u Upstream) normalizado() Upstream {
 	u.Args = semVazio(u.Args)
 	u.Env = mapaSemVazio(u.Env)
 	u.Segredos = segredosCanonicos(u.Segredos)
+	u.Sonda = sondaCanonica(u.Sonda)
 	return u
+}
+
+// sondaCanonica normaliza a sonda e devolve nulo quando ela não diz nada.
+//
+// Um bloco de sonda desligado e sem ferramenta é indistinguível de nenhum bloco,
+// e escrever os dois de formas diferentes faria o mesmo banco produzir dois
+// resumos.
+func sondaCanonica(s *SondaDoUpstream) *SondaDoUpstream {
+	if s == nil {
+		return nil
+	}
+	n := *s
+	n.Ferramenta = strings.TrimSpace(n.Ferramenta)
+	n.Args = strings.TrimSpace(n.Args)
+	n.Espera = strings.TrimSpace(n.Espera)
+	if !n.Habilitada && n.Ferramenta == "" {
+		return nil
+	}
+	return &n
 }
 
 // resumo é o identificador de conteúdo do upstream: o que a trava otimista

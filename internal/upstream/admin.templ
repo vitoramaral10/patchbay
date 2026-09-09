@@ -303,6 +303,10 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 						} else if d.Estado == EstadoDesabilitado {
 							A supervisão se desligou sozinha ao passar do teto de connects abandonados.
 							Use Reconectar quando o servidor voltar a responder.
+						} else if d.Estado == EstadoSondaFalhou {
+							A sonda falhou: o servidor conversa e lista ferramentas, mas a chamada de
+							verdade não funciona. Enquanto isso durar, o último tools/list fica guardado
+							em memória e não é servido a ninguém.
 						} else {
 							A supervisão ainda está conectando.
 						}
@@ -347,6 +351,7 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 					</div>
 				}
 			}
+			@cartaoSonda(d)
 			if d.UsaOAuth() {
 				@cartaoOAuth(d)
 			}
@@ -415,6 +420,134 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 			}
 		</div>
 	}
+}
+
+// rotuloDaSonda é o estado da sonda em texto. "desligada" é estado próprio e
+// nunca verde: um verde que significa "não sei" é exatamente a mentira que a
+// sonda existe para acabar (seção 11).
+func rotuloDaSonda(d Detalhe) string {
+	switch {
+	case !d.SondaLigada():
+		return "desligada"
+	case d.Estado == EstadoSondaFalhou:
+		return "falhando"
+	case d.SondaAtual.OKEm.IsZero():
+		return "sem sondagem ainda"
+	case d.SondaAtual.Falhas > 0:
+		return "falhou a última"
+	default:
+		return "passando"
+	}
+}
+
+func tomDaSonda(d Detalhe) webui.Tom {
+	switch {
+	case !d.SondaLigada():
+		return webui.TomNeutro
+	case d.Estado == EstadoSondaFalhou:
+		return webui.TomPerigo
+	case d.SondaAtual.Falhas > 0:
+		return webui.TomAlerta
+	case d.SondaAtual.OKEm.IsZero():
+		return webui.TomAlerta
+	default:
+		return webui.TomSucesso
+	}
+}
+
+// milissegundos formata uma duração como o número que o formulário guarda.
+func milissegundos(d time.Duration) string {
+	return strconv.FormatInt(d.Milliseconds(), 10) + " ms"
+}
+
+// cartaoSonda é a sonda funcional na tela do upstream.
+//
+// Ele aparece mesmo com a sonda desligada, e de propósito: a maioria dos
+// upstreams vai ficar sem sonda porque configurar dá trabalho, e o valor do
+// diferencial é proporcional à disciplina de configurar (seção 13). Um cartão
+// que só existe quando alguém já configurou não lembraria ninguém disso.
+templ cartaoSonda(d Detalhe) {
+	@webui.Cartao("Sonda de saúde funcional") {
+		<dl class="grid gap-x-6 gap-y-4 px-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
+			@dado("Sonda") {
+				@webui.Selo(tomDaSonda(d), rotuloDaSonda(d))
+			}
+			@dado("Ferramenta sondada") {
+				if d.Sonda.Ferramenta == "" {
+					<span class="text-conteudo-tenue">nenhuma escolhida</span>
+				} else {
+					<code class="font-mono text-xs break-all">{ d.Sonda.Ferramenta }</code>
+				}
+			}
+			@dado("Intervalo") {
+				<span data-numero>{ milissegundos(d.Sonda.Intervalo) }</span>
+			}
+			@dado("Timeout da sondagem") {
+				<span data-numero>{ milissegundos(d.Sonda.Timeout) }</span>
+			}
+			@dado("Última sondagem") {
+				{ instante(d.SondaAtual.Em) }
+			}
+			@dado("Última que passou") {
+				{ instante(d.SondaAtual.OKEm) }
+			}
+			@dado("Falhas seguidas") {
+				<span data-numero>{ strconv.Itoa(d.SondaAtual.Falhas) }</span>
+				<span class="text-conteudo-tenue">de { strconv.Itoa(d.Sonda.Normalizada().Tolerancia) }</span>
+			}
+			@dado("Ferramentas no catálogo") {
+				<span data-numero>{ strconv.Itoa(d.NoCatalogo) }</span>
+				if len(d.Ferramentas) != d.NoCatalogo {
+					<span class="ml-2 text-xs text-conteudo-tenue">({ strconv.Itoa(len(d.Ferramentas)) } descobertas)</span>
+				}
+			}
+		</dl>
+		if !d.SondaLigada() {
+			<div class="border-t border-borda px-4 py-4">
+				<p class="max-w-[75ch] text-sm text-conteudo-suave">
+					A sonda é <strong>opt-in</strong> e vem desligada. Sem ela, "pronto" quer dizer só que
+					o servidor conversa e lista ferramentas — não que chamá-las funcione. Ligue-a na
+					edição escolhendo uma ferramenta <em>inócua</em>: o patchbay não tem como saber que
+					<code class="font-mono">send_message</code> manda mensagem para alguém, e adivinhar
+					seria a forma de descobrir isso do pior jeito.
+				</p>
+			</div>
+		} else {
+			<div class="border-t border-borda px-4 py-4">
+				<dl class="flex flex-col gap-4">
+					@dado("Requisição exata") {
+						<code class="block max-w-[80ch] break-all font-mono text-xs">{ ouTracoSonda(d.SondaAtual.Pedido) }</code>
+					}
+					@dado("Resposta exata") {
+						if d.SondaAtual.Resposta == "" {
+							<span class="text-conteudo-tenue">—</span>
+						} else {
+							<pre class="max-w-[80ch] overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-superficie-alta px-3 py-2 font-mono text-xs text-conteudo-suave">{ d.SondaAtual.Resposta }</pre>
+						}
+					}
+				</dl>
+				if d.SondaAtual.Erro != "" {
+					<p class="mt-4 text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Erro da última sondagem</p>
+					<p class="mt-1 max-w-[80ch] break-words font-mono text-sm text-perigo">{ d.SondaAtual.Erro }</p>
+				}
+				<p class="mt-3 max-w-[75ch] text-sm text-conteudo-suave">
+					A requisição e a resposta ficam aqui porque sem as duas exatas não dá para separar
+					"minha sonda está mal configurada" de "o servidor está quebrado" — e a saída mais
+					fácil passa a ser desligar a sonda em vez de consertar o servidor. As duas vivem
+					só em memória: nada da sonda além da configuração vai ao banco, e todo boot
+					recomeça em <em>novo</em>.
+				</p>
+			</div>
+		}
+	}
+}
+
+// ouTracoSonda evita o campo vazio na evidência da sonda.
+func ouTracoSonda(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
 }
 
 // cartaoOAuth mostra o consentimento sem mostrar nada do token.
@@ -513,6 +646,16 @@ templ acoesDoDetalhe(d Detalhe) {
 						Autorizar
 					}
 				</button>
+			</form>
+		}
+		if d.PodeSondar() {
+			<form
+				method="post"
+				action={ templ.SafeURL(rotaDo(d.ID) + "/sondar") }
+				hx-post={ rotaDo(d.ID) + "/sondar" }
+				hx-disabled-elt="find button"
+			>
+				<button type="submit" class="pb-botao pb-botao-secundario">Sondar agora</button>
 			</form>
 		}
 		if d.Habilitado {
@@ -674,6 +817,7 @@ templ TelaForm(f Form) {
 					}
 				</div>
 			}
+			@cartaoDaSonda(f)
 			<div class="flex items-center gap-3">
 				<button type="submit" class="pb-botao pb-botao-primario">
 					if f.ID == 0 {
@@ -685,6 +829,102 @@ templ TelaForm(f Form) {
 				<a href={ templ.SafeURL(webui.RotaUpstreams) } class="pb-botao pb-botao-secundario">Cancelar</a>
 			</div>
 		</form>
+	}
+}
+
+// cartaoDaSonda é o bloco de configuração da sonda funcional.
+//
+// Ele fica no formulário dos dois tipos de upstream: a sonda é um tools/call, e
+// um tools/call é a mesma coisa por HTTP, por SSE e por STDIO.
+templ cartaoDaSonda(f Form) {
+	@webui.Cartao("Sonda de saúde funcional") {
+		<div class="flex flex-col gap-6 px-4 py-5">
+			<p class="max-w-[65ch] text-sm text-conteudo-suave">
+				A sonda executa um <code class="font-mono">tools/call</code> de verdade, de tempos em
+				tempos, para saber se o servidor <strong>funciona</strong> — e não só se ele responde.
+				Falhar tira as ferramentas deste upstream do catálogo de todos os endpoints, com
+				lápide, e põe o upstream em <code class="font-mono">sonda_falhou</code>.
+			</p>
+			<label class="flex items-start gap-3">
+				<input
+					type="checkbox"
+					name="sonda_habilitada"
+					value="1"
+					class="mt-0.5 h-4 w-4 accent-[var(--pb-acento)]"
+					checked?={ f.SondaHabilitada }
+				/>
+				<span>
+					<span class="text-sm font-medium text-conteudo">Sondar este upstream</span>
+					<span class="block text-sm text-conteudo-tenue">
+						Vem desligada. Uma sonda mal configurada apaga as ferramentas de um servidor
+						saudável, então escolha uma ferramenta <em>inócua</em>: uma busca com um termo
+						bobo é segura, e nada garante isso para uma ferramenta arbitrária.
+					</span>
+				</span>
+			</label>
+			@webui.Campo(webui.DadosCampo{
+				Nome:         "sonda_ferramenta",
+				Rotulo:       "Ferramenta a chamar",
+				Valor:        f.SondaFerramenta,
+				Ajuda:        "O nome como o upstream o expõe, sem o prefixo de nenhum endpoint: a sonda fala com o servidor direto.",
+				Erro:         f.Erros["sonda_ferramenta"],
+				Monoespacado: true,
+				Placeholder:  "nome_da_ferramenta",
+			})
+			if f.Erros["sonda_ferramenta"] == "" && f.AvisoSondaFerramenta != "" {
+				// Não bloqueante, e por isso fora de DadosCampo.Erro: o catálogo em
+				// memória pode estar desatualizado (upstream ainda reconectando),
+				// e travar o salvamento por causa dele impediria corrigir o resto
+				// do formulário.
+				<p class="flex items-start gap-2 text-sm text-conteudo-suave">
+					@webui.Selo(webui.TomAlerta, "fora do catálogo")
+					{ f.AvisoSondaFerramenta }
+				</p>
+			}
+			@webui.CampoTexto(webui.DadosCampo{
+				Nome:        "sonda_args",
+				Rotulo:      "Argumentos (JSON)",
+				Valor:       f.SondaArgs,
+				Ajuda:       "O objeto de argumentos do tools/call, como {\"query\": \"ping\"}. Em branco chama sem argumentos.",
+				Erro:        f.Erros["sonda_args"],
+				Placeholder: "{\"query\": \"ping\"}",
+			})
+			@webui.Campo(webui.DadosCampo{
+				Nome:   "sonda_espera",
+				Rotulo: "Trecho esperado na resposta (opcional)",
+				Valor:  f.SondaEspera,
+				Ajuda:  "Em branco, basta a chamada não dar erro. Preenchido, cobre o servidor que responde 200 com um erro amigável no corpo, sem marcar isError.",
+			})
+			<div class="grid gap-6 sm:grid-cols-3">
+				@webui.Campo(webui.DadosCampo{
+					Nome:         "sonda_intervalo_ms",
+					Rotulo:       "Intervalo (ms)",
+					Tipo:         "number",
+					Valor:        strconv.FormatInt(f.SondaIntervaloMS, 10),
+					Ajuda:        "A sonda consome cota da API do provedor: quem escolhe o intervalo é quem paga a cota.",
+					Erro:         f.Erros["sonda_intervalo_ms"],
+					Monoespacado: true,
+				})
+				@webui.Campo(webui.DadosCampo{
+					Nome:         "sonda_timeout_ms",
+					Rotulo:       "Timeout da sondagem (ms)",
+					Tipo:         "number",
+					Valor:        strconv.FormatInt(f.SondaTimeoutMS, 10),
+					Ajuda:        "Cancela só a chamada da sonda, nunca a sessão do upstream.",
+					Erro:         f.Erros["sonda_timeout_ms"],
+					Monoespacado: true,
+				})
+				@webui.Campo(webui.DadosCampo{
+					Nome:         "sonda_tolerancia",
+					Rotulo:       "Falhas seguidas para derrubar",
+					Tipo:         "number",
+					Valor:        strconv.Itoa(f.SondaTolerancia),
+					Ajuda:        "Quantas sondagens seguidas precisam falhar antes de as ferramentas saírem do catálogo.",
+					Erro:         f.Erros["sonda_tolerancia"],
+					Monoespacado: true,
+				})
+			</div>
+		</div>
 	}
 }
 

@@ -392,6 +392,10 @@ const (
 	// não existe mais" (spec §2.5.3). É o que derruba na hora uma sessão já
 	// pronta, sem passar pelo backoff do reconector.
 	modoSessaoSumiu
+	// modoErro devolve um erro de rede na hora, sem pendurar nada — é o que
+	// faz o reconector do stream SSE autônomo desistir depois de 5 tentativas,
+	// em vez de ficar reconectando com sucesso para sempre.
+	modoErro
 )
 
 // transporteControlavel alterna, sob comando do teste, entre as três respostas
@@ -438,6 +442,8 @@ func (t *transporteControlavel) RoundTrip(req *http.Request) (*http.Response, er
 			Body:       io.NopCloser(strings.NewReader("")),
 			Request:    req,
 		}, nil
+	case modoErro:
+		return nil, errors.New("transporte de teste: upstream inatingível")
 	default:
 		return t.real.RoundTrip(req)
 	}

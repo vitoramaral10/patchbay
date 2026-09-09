@@ -64,8 +64,8 @@ const sqlInserir = `
 INSERT INTO call_log (
     ts, endpoint_id, endpoint_slug, upstream_id, upstream_nome,
     ferramenta, ferramenta_original, resultado, erro, duracao_ms,
-    bytes_entrada, bytes_saida, sessao, credencial, era
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    bytes_entrada, bytes_saida, sessao, credencial, era, origem
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 // Gravar insere o lote inteiro numa transação.
 //
@@ -92,7 +92,7 @@ func (r *RepositorioSQLite) Gravar(ctx context.Context, eventos []Evento) error 
 		_, err := stmt.ExecContext(ctx,
 			e.Inicio.UTC().UnixMilli(), e.EndpointID, e.EndpointSlug, e.UpstreamID, e.UpstreamNome,
 			e.Ferramenta, e.Original, string(e.Resultado), e.Erro, e.DuracaoMS(),
-			e.BytesEntrada, e.BytesSaida, e.Sessao, e.Credencial, e.Era)
+			e.BytesEntrada, e.BytesSaida, e.Sessao, e.Credencial, e.Era, string(e.Origem.OuCliente()))
 		if err != nil {
 			return fmt.Errorf("trilha: gravar chamada de %s: %w", e.Ferramenta, err)
 		}
@@ -131,7 +131,7 @@ DELETE FROM call_log
 const colunas = `
     id, ts, endpoint_id, endpoint_slug, upstream_id, upstream_nome,
     ferramenta, ferramenta_original, resultado, erro, duracao_ms,
-    bytes_entrada, bytes_saida, sessao, credencial, era`
+    bytes_entrada, bytes_saida, sessao, credencial, era, origem`
 
 // Listar devolve a página de eventos que casa com o filtro, mais nova antes.
 //
@@ -167,6 +167,10 @@ func (r *RepositorioSQLite) Listar(ctx context.Context, f Filtro) ([]Evento, boo
 	if f.Resultado != "" {
 		onde.WriteString(" AND resultado = ?")
 		args = append(args, string(f.Resultado))
+	}
+	if f.Origem != "" {
+		onde.WriteString(" AND origem = ?")
+		args = append(args, string(f.Origem))
 	}
 	if !f.Desde.IsZero() {
 		onde.WriteString(" AND ts >= ?")
@@ -229,21 +233,30 @@ func lerEvento(rows *sql.Rows) (Evento, error) {
 		ts        int64
 		duracaoMS int64
 		resultado string
+		origem    string
 	)
 	err := rows.Scan(
 		&e.ID, &ts, &e.EndpointID, &e.EndpointSlug, &e.UpstreamID, &e.UpstreamNome,
 		&e.Ferramenta, &e.Original, &resultado, &e.Erro, &duracaoMS,
-		&e.BytesEntrada, &e.BytesSaida, &e.Sessao, &e.Credencial, &e.Era)
+		&e.BytesEntrada, &e.BytesSaida, &e.Sessao, &e.Credencial, &e.Era, &origem)
 	if err != nil {
 		return Evento{}, fmt.Errorf("trilha: ler chamada: %w", err)
 	}
 	e.Inicio = time.UnixMilli(ts).UTC()
 	e.Duracao = time.Duration(duracaoMS) * time.Millisecond
 	e.Resultado = Resultado(resultado)
+	e.Origem = Origem(origem)
 	return e, nil
 }
 
 // Resumo conta as chamadas de uma janela recente para os contadores do painel.
+//
+// Só as de cliente: a sondagem funcional é diagnóstico, não tráfego, e
+// misturá-la aqui inflaria a taxa por minuto e o contador de erros com o custo
+// da própria observação. Uma sonda a cada 15 min num gateway parado faria o
+// painel dizer "0,07 chamadas/min" sobre um sistema que ninguém usou, e uma
+// sonda quebrada faria "100% de erro" sobre chamadas de cliente que nunca
+// existiram. Quem quer ver a sonda filtra por origem na tabela abaixo.
 func (r *RepositorioSQLite) Resumo(ctx context.Context, janela time.Duration) (Resumo, error) {
 	desde := time.Now().Add(-janela)
 	var res Resumo
@@ -254,7 +267,7 @@ SELECT COUNT(*),
        COALESCE(SUM(CASE WHEN resultado = 'timeout' THEN 1 ELSE 0 END), 0),
        COALESCE(MAX(duracao_ms), 0)
   FROM call_log
- WHERE ts >= ?`, desde.UTC().UnixMilli()).
+ WHERE ts >= ? AND origem = 'cliente'`, desde.UTC().UnixMilli()).
 		Scan(&res.Chamadas, &res.Erros, &res.Timeouts, &res.PiorDuracaoMS)
 	if err != nil {
 		return Resumo{}, fmt.Errorf("trilha: resumir chamadas: %w", err)
