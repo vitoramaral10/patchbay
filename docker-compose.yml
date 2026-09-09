@@ -19,6 +19,12 @@ services:
       # o que decide o atributo Secure do cookie de sessão. O TLS em si é
       # terminado pelo Caddy, não pelo patchbay.
       PATCHBAY_PUBLIC_URL: https://patchbay.exemplo.com
+    # Volume nomeado, e não bind mount, de propósito: a imagem carrega /dados
+    # com dono 65532, e o Docker replica esse dono ao inicializar um volume
+    # vazio. Num bind mount quem manda é o dono do diretório no host, então
+    # trocar por `./dados:/dados` exige um `chown 65532:65532 ./dados` antes do
+    # primeiro `up` — sem isso o SQLite falha com "unable to open database
+    # file (14)".
     volumes:
       - patchbay-dados:/dados
     # Rootfs somente leitura: o único diretório que o processo escreve é o
