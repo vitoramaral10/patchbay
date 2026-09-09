@@ -6,40 +6,10 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
 )
 
-// rotuloDoTransporte nomeia o transporte na tela, com as mesmas palavras que a
-// lista de upstreams usa: o admin vai ver os dois lado a lado.
-func rotuloDoTransporte(t string) string {
-	if t == TransporteSSE {
-		return "sse"
-	}
-	return "streamable http"
-}
-
-// rotuloDaAutenticacao diz o que o servidor vai exigir na hora de conectar.
-//
-// É a informação que decide se adicionar agora resolve ou se ainda falta pegar
-// uma chave em outro lugar — e ela precisa estar visível antes do clique, não
-// depois do upstream ficar degradado.
-func rotuloDaAutenticacao(a string) string {
-	switch a {
-	case AutOAuth:
-		return "consentimento OAuth"
-	case AutToken:
-		return "precisa de token"
-	default:
-		return "sem autenticação"
-	}
-}
-
-func tomDaAutenticacao(a string) webui.Tom {
-	switch a {
-	case AutOAuth:
-		return webui.TomInfo
-	case AutToken:
-		return webui.TomAlerta
-	default:
-		return webui.TomNeutro
-	}
+// rotaDeAdicionar é o link do botão: o patchbay busca a página do servidor na
+// origem e redireciona para o formulário preenchido.
+func rotaDeAdicionar(slug string) string {
+	return webui.RotaBiblioteca + "/" + slug + "/adicionar"
 }
 
 // resumoDoRecorte descreve em uma linha o que está sendo mostrado.
@@ -48,18 +18,19 @@ func tomDaAutenticacao(a string) webui.Tom {
 // contagem que não acompanha o filtro é contagem errada na tela.
 func resumoDoRecorte(mostrados, total int, termo string) string {
 	if termo == "" {
-		return strconv.Itoa(total) + " servidores no catálogo"
+		return strconv.Itoa(total) + " servidores publicados agora pela origem"
 	}
 	return strconv.Itoa(mostrados) + " de " + strconv.Itoa(total) + " servidores"
 }
 
-// TelaBiblioteca é o catálogo de servidores MCP prontos para adicionar.
+// TelaBiblioteca é o catálogo de servidores MCP, lido da origem a cada abertura.
 templ TelaBiblioteca(p Pagina) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "Biblioteca",
-		Subtitulo: "Servidores MCP remotos conhecidos, com endpoint e forma de autenticação já preenchidos. Adicionar abre o formulário de upstream com os campos prontos — você confere e salva.",
+		Subtitulo: "Servidores MCP remotos publicados pelo mcpservers.org, lidos na hora. Adicionar busca o endpoint e a forma de autenticação e abre o formulário de upstream preenchido — você confere e salva.",
 		Secao:     webui.SecaoBiblioteca,
 		Usuario:   webui.UsuarioDoContexto(ctx),
+		Alerta:    p.Alerta,
 	}) {
 		<div class="flex flex-col gap-6">
 			@webui.Cartao("") {
@@ -70,7 +41,7 @@ templ TelaBiblioteca(p Pagina) {
 					hx-get={ webui.RotaBiblioteca }
 					hx-target="#resultados-biblioteca"
 					hx-swap="outerHTML"
-					hx-trigger="input changed delay:200ms from:find input, submit"
+					hx-trigger="input changed delay:250ms from:find input, submit"
 					hx-push-url="true"
 				>
 					<label for="q" class="text-sm font-medium text-conteudo">Buscar no catálogo</label>
@@ -81,104 +52,94 @@ templ TelaBiblioteca(p Pagina) {
 							name="q"
 							type="search"
 							value={ p.Termo }
-							placeholder="notion, jira, postgres, pagamentos..."
+							placeholder="notion, jira, banco de dados, pagamentos..."
 							autocomplete="off"
 							aria-describedby="q-ajuda"
 						/>
 						<button type="submit" class="pb-botao pb-botao-secundario">Buscar</button>
 					</div>
 					<p id="q-ajuda" class="text-sm text-conteudo-tenue">
-						Procura no nome, no resumo e na descrição. Vários termos exigem todos, em qualquer ordem.
+						Procura no nome e no resumo do que a origem publica. Vários termos exigem todos, em qualquer ordem.
 					</p>
 				</form>
 			}
-			@Resultados(p.Itens, p.Termo, p.Total)
+			@Resultados(p.Itens, p.Termo, p.Total, p.Falha)
 			@rodapeDaOrigem()
 		</div>
 	}
 }
 
-// Resultados é a lista filtrada. É o alvo do htmx, e por isso é um componente
-// separado: a busca troca só este pedaço.
-templ Resultados(itens []Item, termo string, total int) {
+// Resultados é a lista. É o alvo do htmx, e por isso é um componente separado:
+// a busca troca só este pedaço.
+templ Resultados(itens []Item, termo string, total int, falha Falha) {
 	<div id="resultados-biblioteca" class="flex flex-col gap-4">
-		if len(itens) == 0 && total == 0 {
-			// O catálogo embutido não carregou. A aplicação degrada para vazio de
-			// propósito — uma tela de conveniência não derruba o gateway —, e é
-			// aqui que essa degradação vira uma frase em vez de uma lista sumida.
-			<div class="pb-cartao flex flex-col items-center gap-3 px-6 py-14 text-center">
-				<p class="text-base font-medium text-conteudo">O catálogo não carregou.</p>
-				<p class="max-w-[55ch] text-conteudo-suave">
-					O instantâneo embutido nesta build está ilegível — o log do processo tem o erro.
-					O cadastro de upstream continua funcionando normalmente.
-				</p>
-				<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo") } class="pb-botao pb-botao-secundario">Cadastrar à mão</a>
-			</div>
-		} else if len(itens) == 0 {
-			<div class="pb-cartao flex flex-col items-center gap-3 px-6 py-14 text-center">
-				<p class="text-base font-medium text-conteudo">Nenhum servidor com esse termo.</p>
-				<p class="max-w-[55ch] text-conteudo-suave">
-					O catálogo cobre servidores MCP remotos conhecidos. Se o que você quer não está aqui —
-					ou é um processo local —, cadastre o upstream à mão.
-				</p>
-				<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo") } class="pb-botao pb-botao-secundario">Cadastrar à mão</a>
-			</div>
-		} else {
-			<p class="text-sm text-conteudo-suave">{ resumoDoRecorte(len(itens), total, termo) }</p>
-			<ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-				for _, i := range itens {
-					<li class="pb-cartao flex flex-col gap-3 px-4 py-4">
-						<div class="flex flex-col gap-1">
-							<h3 class="text-base font-semibold text-conteudo">{ i.Nome }</h3>
-							if i.Resumo != "" {
-								<p class="text-sm text-conteudo-suave">{ i.Resumo }</p>
-							}
-						</div>
-						<div class="flex flex-wrap items-center gap-2">
-							@webui.Selo(webui.TomNeutro, rotuloDoTransporte(i.Transporte))
-							@webui.Selo(tomDaAutenticacao(i.Autenticacao), rotuloDaAutenticacao(i.Autenticacao))
-						</div>
-						<p class="truncate font-mono text-xs text-conteudo-tenue" title={ i.URL }>{ i.URL }</p>
-						if i.Descricao != "" {
-							<details class="text-sm text-conteudo-suave">
-								<summary class="cursor-pointer text-conteudo-tenue">O que este servidor faz</summary>
-								<p class="mt-1">{ i.Descricao }</p>
-							</details>
+		switch falha {
+			case FalhaIndisponivel:
+				@aviso("Não foi possível falar com o mcpservers.org.",
+					"A biblioteca não guarda cópia do catálogo: ela lê a origem a cada uso, então precisa de saída para a internet. Nada mais do patchbay depende disto — o gateway continua servindo e roteando normalmente.")
+			case FalhaFormato:
+				@aviso("A origem respondeu num formato que o patchbay não sabe ler.",
+					"A página chegou, mas a marcação mudou de lugar — tentar de novo não resolve. O log do processo tem o detalhe.")
+			default:
+				if len(itens) == 0 {
+					@aviso("Nenhum servidor com esse termo.",
+						"A origem publica só servidores MCP remotos. Se o que você quer não está aqui — ou é um processo local —, cadastre o upstream à mão.")
+				} else {
+					<p class="text-sm text-conteudo-suave">{ resumoDoRecorte(len(itens), total, termo) }</p>
+					<ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+						for _, i := range itens {
+							<li class="pb-cartao flex flex-col gap-3 px-4 py-4">
+								<div class="flex flex-col gap-1">
+									<h3 class="text-base font-semibold text-conteudo">{ i.Nome }</h3>
+									if i.Resumo != "" {
+										<p class="text-sm text-conteudo-suave">{ i.Resumo }</p>
+									}
+								</div>
+								<div class="mt-auto flex flex-wrap items-center gap-3 pt-1">
+									<a href={ templ.SafeURL(rotaDeAdicionar(i.Slug)) } class="pb-botao pb-botao-primario">
+										Adicionar
+										<span class="sr-only">{ i.Nome }</span>
+									</a>
+									<a
+										href={ templ.SafeURL(BaseMCPServers + "/remote-mcp-servers/" + i.Slug) }
+										target="_blank"
+										rel="noreferrer noopener"
+										class="pb-link text-sm"
+									>
+										Ver na origem
+										<span class="sr-only">a página de { i.Nome } no mcpservers.org (abre em nova aba)</span>
+									</a>
+								</div>
+							</li>
 						}
-						<div class="mt-auto flex flex-wrap items-center gap-3 pt-1">
-							<a href={ templ.SafeURL(i.RotaCadastro()) } class="pb-botao pb-botao-primario">
-								Adicionar
-								<span class="sr-only">{ i.Nome }</span>
-							</a>
-							if i.Docs != "" {
-								<a href={ templ.SafeURL(i.Docs) } target="_blank" rel="noreferrer noopener" class="pb-link text-sm">
-									Documentação
-									<span class="sr-only">de { i.Nome } (abre em nova aba)</span>
-								</a>
-							}
-							if i.Fonte != "" {
-								<a href={ templ.SafeURL(i.Fonte) } target="_blank" rel="noreferrer noopener" class="pb-link text-sm">
-									Ver na origem
-									<span class="sr-only">a página de { i.Nome } no mcpservers.org (abre em nova aba)</span>
-								</a>
-							}
-						</div>
-					</li>
+					</ul>
 				}
-			</ul>
 		}
 	</div>
 }
 
-// rodapeDaOrigem diz de onde o catálogo veio e o que ele não é.
+// aviso é o cartão de estado vazio da tela, com a saída sempre à mão.
+//
+// Toda situação sem lista termina no mesmo lugar — cadastrar à mão —, porque é
+// o que o admin pode fazer agora, e uma tela que só explica o problema deixa
+// ele sem próximo passo.
+templ aviso(titulo, texto string) {
+	<div class="pb-cartao flex flex-col items-center gap-3 px-6 py-14 text-center">
+		<p class="text-base font-medium text-conteudo">{ titulo }</p>
+		<p class="max-w-[55ch] text-conteudo-suave">{ texto }</p>
+		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo") } class="pb-botao pb-botao-secundario">Cadastrar à mão</a>
+	</div>
+}
+
+// rodapeDaOrigem diz de onde veio o que está na tela, e o que ele não é.
 //
 // Fica na tela, e não só no comentário do pacote, porque o admin precisa saber
-// que está lendo um instantâneo de terceiro: a URL não foi verificada pelo
-// patchbay, e um endpoint pode ter mudado desde a build.
+// que está lendo um site de terceiro: a URL não foi verificada pelo patchbay.
 templ rodapeDaOrigem() {
 	<p class="text-sm text-conteudo-tenue">
-		Catálogo montado a partir de
-		<a href="https://mcpservers.org/remote-mcp-servers" target="_blank" rel="noreferrer noopener" class="pb-link">mcpservers.org</a>,
-		embutido nesta build. As URLs são de terceiros e não foram verificadas pelo patchbay — confira antes de salvar.
+		Lido agora de
+		<a href={ templ.SafeURL(BaseMCPServers + "/remote-mcp-servers") } target="_blank" rel="noreferrer noopener" class="pb-link">mcpservers.org</a>.
+		Nada é guardado aqui: a lista some quando você sai da tela e é buscada de novo na próxima.
+		As URLs são de terceiros e não foram verificadas pelo patchbay — confira antes de salvar.
 	</p>
 }

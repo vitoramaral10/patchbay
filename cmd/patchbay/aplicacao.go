@@ -83,19 +83,30 @@ type Aplicacao struct {
 
 // OpcaoApp ajusta o grafo montado.
 //
-// Existe por um componente só: o buscador de documentos de CIMD é o único do
-// patchbay que faz requisição de saída para uma URL escolhida por terceiro, e o
-// teste ponta a ponta precisa apontá-lo a um documento servido em processo — o
-// que o guarda de SSRF, corretamente, recusaria.
+// Existe pelos dois componentes que fazem requisição de saída, e que o teste
+// ponta a ponta precisa apontar para um servidor em processo: o buscador de
+// documentos de CIMD, cuja URL vem de terceiro e que o guarda de SSRF —
+// corretamente — recusaria em teste; e a biblioteca, que lê o catálogo do
+// mcpservers.org e sem isto faria o teste depender da internet.
 type OpcaoApp func(*opcoesApp)
 
 type opcoesApp struct {
-	cimd authsrv.DocumentosCIMD
+	cimd             authsrv.DocumentosCIMD
+	origemBiblioteca string
 }
 
 // ComBuscadorCIMD troca o buscador de documentos de CIMD.
 func ComBuscadorCIMD(b authsrv.DocumentosCIMD) OpcaoApp {
 	return func(o *opcoesApp) { o.cimd = b }
+}
+
+// ComOrigemDaBiblioteca troca a base de onde a biblioteca lê o catálogo.
+//
+// Só o teste usa: em produção a base é o mcpservers.org, fixa no pacote. Não é
+// configuração — apontar a biblioteca para outro lugar em produção seria
+// cadastrar upstream a partir de uma lista que ninguém revisou.
+func ComOrigemDaBiblioteca(base string) OpcaoApp {
+	return func(o *opcoesApp) { o.origemBiblioteca = base }
 }
 
 // montar abre o banco, aplica as migrações e liga os componentes.
@@ -233,19 +244,13 @@ func montar(
 		a.endpoints.Sincronizar, nomeExpostoDe,
 		log.With("componente", "admin_upstream"),
 	)
-	// A biblioteca é só leitura de um instantâneo embutido, então ela nasce
-	// aqui sem repositório e sem gerente.
-	//
-	// Catálogo ilegível não derruba o gateway: a tela fica vazia e o erro vai
-	// para o log. Um instantâneo corrompido é erro de build, e quem o pega é o
-	// teste do pacote — deixar o processo inteiro recusar subir por causa de uma
-	// tela de conveniência seria trocar um defeito pequeno por uma indisponibilidade.
-	bib, err := biblioteca.Embutido()
-	if err != nil {
-		log.Error("catálogo da biblioteca ilegível; a tela vai ficar vazia", "erro", err)
-		bib = biblioteca.Vazio()
-	}
-	a.adminBib = biblioteca.NovoAdmin(bib, log.With("componente", "admin_biblioteca"))
+	// A biblioteca não tem repositório nem gerente: ela lê o catálogo do
+	// mcpservers.org a cada uso e não guarda nada. Se a origem estiver fora, a
+	// tela explica; o resto do gateway não sabe que ela existe.
+	a.adminBib = biblioteca.NovoAdmin(
+		biblioteca.NovaOrigem(opc.origemBiblioteca, 0),
+		log.With("componente", "admin_biblioteca"),
+	)
 	a.adminEnd = endpoint.NovoAdmin(
 		a.repoEndpoint, a.endpoints,
 		upstreamsParaEndpoint{repo: a.repoUpstream, gerente: a.gerente},

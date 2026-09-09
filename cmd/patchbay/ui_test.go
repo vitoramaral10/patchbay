@@ -37,7 +37,7 @@ type uiDeTeste struct {
 	sincronizou <-chan struct{}
 }
 
-func subirUI(t *testing.T) uiDeTeste {
+func subirUI(t *testing.T, opcoes ...OpcaoApp) uiDeTeste {
 	t.Helper()
 
 	// Servidor sem handler primeiro, só para saber a porta: a URL pública precisa
@@ -55,7 +55,7 @@ func subirUI(t *testing.T) uiDeTeste {
 	ctx, cancelar := context.WithCancel(context.Background())
 	t.Cleanup(cancelar)
 
-	app, err := montar(ctx, cfg, cofreDeTeste(t), slog.New(slog.DiscardHandler))
+	app, err := montar(ctx, cfg, cofreDeTeste(t), slog.New(slog.DiscardHandler), opcoes...)
 	if err != nil {
 		t.Fatalf("montar: erro = %v, quer nil", err)
 	}

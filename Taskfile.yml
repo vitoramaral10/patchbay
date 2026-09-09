@@ -14,8 +14,6 @@ vars:
   TAILWIND_ALVO: '{{if eq OS "windows"}}windows-x64.exe{{else if eq OS "darwin"}}macos-{{if eq ARCH "arm64"}}arm64{{else}}x64{{end}}{{else}}linux-{{if eq ARCH "arm64"}}arm64{{else}}x64{{end}}{{end}}'
   TAILWIND: ferramentas/tailwindcss-{{.TAILWIND_ALVO}}
 
-  CACHE_BIBLIOTECA: .cache-biblioteca
-
   CSS_ENTRADA: internal/platform/webui/estatico/css/entrada.css
   CSS_SAIDA: internal/platform/webui/estatico/css/patchbay.css
 
@@ -61,14 +59,6 @@ tasks:
       PATCHBAY_DATA_DIR: "{{.DADOS}}"
     cmds:
       - ./{{.BINARIO}} seed {{.CLI_ARGS}}
-
-  biblioteca:
-    desc: regenera o catálogo embutido de servidores MCP (internal/biblioteca/catalogo.json)
-    # O cache de páginas é o que torna a atualização retomável: a origem responde
-    # com desafio de bot sob rajada, então rodar duas ou três vezes até não
-    # faltar nenhuma é o fluxo normal. O diretório é ignorado pelo git.
-    cmds:
-      - go run ./cmd/patchbay-biblioteca -cache {{.CACHE_BIBLIOTECA}}
 
   # --- front-end -------------------------------------------------------------
 
