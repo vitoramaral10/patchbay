@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -348,7 +349,6 @@ func TestGerente_STDIOReiniciaQuandoOProcessoMorre(t *testing.T) {
 		t.Fatal("Chamar() = nil, quer o erro da chamada que matou o processo")
 	}
 
-	esperarEstado(t, sut, 1, upstream.EstadoPronto)
 	pids := esperarPIDs(t, cenario.arquivoPIDs, 2)
 
 	if pids[0] != primeiro[0] {
@@ -359,10 +359,17 @@ func TestGerente_STDIOReiniciaQuandoOProcessoMorre(t *testing.T) {
 	}
 
 	// E o processo novo serve de verdade, não só existe.
-	res, err := sut.Chamar(context.Background(), 1, ferramentaEco, nil)
-	if err != nil {
-		t.Fatalf("Chamar() depois do restart = %v, quer nil", err)
-	}
+	//
+	// Quem espera é a chamada, e não o estado, porque nenhum dos dois sinais
+	// anteriores diz que a sessão nova já existe: logo depois do suicídio o
+	// estado publicado ainda é o "pronto" do processo morto (um esperarEstado
+	// aqui voltaria na hora, sem provar nada), e o PID novo é anotado pelo
+	// processo filho ao subir, antes de ele completar o initialize. A sessão só
+	// aparece quando descobrir() publica estado e sessão juntos, sob g.mu
+	// (gerente.go:718-731) — e é essa publicação que esperarChamadaAtendida
+	// espera. Sob carga, a janela entre o PID novo e a sessão nova é o que
+	// devolvia "upstream: indisponível" aqui.
+	res := esperarChamadaAtendida(t, sut, 1, ferramentaEco)
 	if len(res.Content) == 0 {
 		t.Error("conteúdo vazio, quer a resposta do processo reiniciado")
 	}
@@ -479,8 +486,26 @@ func comNetoStderrHerdado(_ *cenarioSTDIO, env map[string]string) {
 	env[envNetoHerdaStderr] = "1"
 }
 
+// umCenarioPorVez serializa os testes que sobem processo de verdade.
+//
+// Eles continuam com t.Parallel() — o que serializa é o corpo, não o
+// agendamento —, e a razão é o que eles medem. Cada cenário sobe de dois a três
+// processos, e dois deles cronometram Encerrar() contra um teto (a árvore que
+// tem que morrer, o pipe herdado que não pode pendurar). Rodando junto com os
+// outros, o número medido passa a ser o da máquina: seis cenários disputando
+// criação de processo no Windows fazem o teto de 15s virar sorteio. Serializado,
+// o teto volta a descrever o código.
+//
+// O custo é wall clock de um pacote que já é o mais lento da suíte, e a troca
+// vale: o resto do pacote (dublê, transporte controlável, relógio falso) segue
+// em paralelo.
+var umCenarioPorVez sync.Mutex
+
 func novoCenarioSTDIO(t *testing.T, papel string, opcoes ...opcaoCenario) *cenarioSTDIO {
 	t.Helper()
+
+	umCenarioPorVez.Lock()
+	t.Cleanup(umCenarioPorVez.Unlock)
 
 	dir := t.TempDir()
 	c := &cenarioSTDIO{
@@ -556,6 +581,35 @@ func esperarArquivo(t *testing.T, caminho string) string {
 		case <-limite:
 			t.Fatalf("o processo de fixture não publicou %s em %v", caminho, prazo)
 			return ""
+		}
+	}
+}
+
+// esperarChamadaAtendida repete a chamada enquanto o upstream estiver sem
+// sessão, e devolve a primeira resposta.
+//
+// ErrIndisponivel é o único erro que faz repetir: é o "ainda não reconectou".
+// Qualquer outro é falha de verdade e o teste morre nele, sem gastar o prazo.
+func esperarChamadaAtendida(t *testing.T, g *upstream.Gerente, id int64, nome string) *mcp.CallToolResult {
+	t.Helper()
+
+	tique := time.NewTicker(intervaloDeSondagem)
+	defer tique.Stop()
+	limite := time.After(prazo)
+	for {
+		res, err := g.Chamar(context.Background(), id, nome, nil)
+		switch {
+		case err == nil:
+			return res
+		case !errors.Is(err, upstream.ErrIndisponivel):
+			t.Fatalf("Chamar(%s) = %v, quer nil ou %v", nome, err, upstream.ErrIndisponivel)
+			return nil
+		}
+		select {
+		case <-tique.C:
+		case <-limite:
+			t.Fatalf("Chamar(%s) continuou indisponível depois de %v", nome, prazo)
+			return nil
 		}
 	}
 }

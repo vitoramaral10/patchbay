@@ -3,9 +3,11 @@ package upstream_test
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -330,11 +332,8 @@ func esperarEstado(t *testing.T, g *upstream.Gerente, id int64, quer upstream.Es
 }
 
 // esperarSairDe espera o upstream sair do estado pedido, com um limite de
-// espera próprio: passado a ela, e não fixo em 15s como esperarEstado, porque
-// derrubar uma sessão pronta (TestGerente_ProntoZeraAbandonosConsecutivos)
-// passa pelo reconector do stream SSE autônomo do go-sdk, que tenta de novo
-// até 5 vezes com um backoff próprio antes de desistir — uns 15-20s reais que
-// não há como encurtar sem trocar ComClienteHTTP em produção.
+// espera próprio em vez do fixo de esperarEstado: derrubar uma sessão pronta
+// custa mais que uma tentativa de conexão falhar, e quem chama sabe quanto.
 func esperarSairDe(t *testing.T, g *upstream.Gerente, id int64, de upstream.Estado, limiteEspera time.Duration) {
 	t.Helper()
 
@@ -389,10 +388,10 @@ const (
 	// responder — a issue #1189 do go-sdk, e o que produz um abandono do
 	// watchdog.
 	modoPendurar
-	// modoErro devolve um erro de rede na hora, sem pendurar nada — é o que
-	// faz o reconector do stream SSE autônomo desistir depois de 5 tentativas,
-	// em vez de ficar reconectando com sucesso para sempre.
-	modoErro
+	// modoSessaoSumiu responde 404 a tudo, que no Streamable HTTP é "a sessão
+	// não existe mais" (spec §2.5.3). É o que derruba na hora uma sessão já
+	// pronta, sem passar pelo backoff do reconector.
+	modoSessaoSumiu
 )
 
 // transporteControlavel alterna, sob comando do teste, entre as três respostas
@@ -421,8 +420,24 @@ func (t *transporteControlavel) RoundTrip(req *http.Request) (*http.Response, er
 	case modoPendurar:
 		<-req.Context().Done()
 		return nil, req.Context().Err()
-	case modoErro:
-		return nil, errors.New("transporte de teste: upstream inatingível")
+	case modoSessaoSumiu:
+		// Uma resposta, e não um erro de transporte, é o que faz a diferença de
+		// tempo. Erro de rede o cliente do go-sdk trata como falha transitória
+		// do stream SSE autônomo e tenta reconectar 5 vezes com backoff próprio
+		// (mcp/streamable.go:2680-2712): 1s, 1,5s, 2,25s, 3,375s e 5,06s, cada
+		// uma com jitter cheio que pode dobrá-la — 13s no melhor caso e 26s no
+		// pior, sorteados. Já um 404 vira ErrSessionMissing no checkResponse
+		// (mcp/streamable.go:2534-2538) e derruba a sessão na primeira volta.
+		// Para o que este teste afirma — chegar a pronto zera o consecutivo de
+		// abandonos — tanto faz como a sessão morre; o que não pode é o teste
+		// medir o sorteio do backoff do SDK contra um orçamento fixo.
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Status:     "404 Not Found",
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
 	default:
 		return t.real.RoundTrip(req)
 	}
@@ -456,11 +471,9 @@ func servidorMCPDeTeste(t *testing.T) *httptest.Server {
 // total pode passar do teto sem nunca desabilitar, e que só uma sequência sem
 // nenhum pronto no meio desabilita ao chegar no teto (subteste abaixo).
 //
-// A metade que derruba uma sessão já pronta é lenta: o go-sdk tenta
-// reconectar o stream SSE autônomo até 5 vezes com um backoff próprio antes
-// de desistir, uns 15-20s reais que não há como encurtar sem mudar
-// ComClienteHTTP em produção. É por isso que só este teste do pacote passa de
-// alguns segundos.
+// A metade que derruba uma sessão já pronta responde 404 em vez de erro de rede
+// de propósito: o porquê está em modoSessaoSumiu, e é a diferença entre o teste
+// levar um segundo e levar um sorteio de 13 a 26.
 func TestGerente_ProntoZeraAbandonosConsecutivos(t *testing.T) {
 	t.Parallel()
 
@@ -501,9 +514,9 @@ func TestGerente_ProntoZeraAbandonosConsecutivos(t *testing.T) {
 
 	// Derruba a sessão pronta e volta a pendurar o watchdog para o segundo
 	// grupo de abandonos.
-	tp.definir(modoErro)
+	tp.definir(modoSessaoSumiu)
 	ts.CloseClientConnections()
-	esperarSairDe(t, sut, 1, upstream.EstadoPronto, 30*time.Second)
+	esperarSairDe(t, sut, 1, upstream.EstadoPronto, 10*time.Second)
 	tp.definir(modoPendurar)
 
 	// Segundo grupo: mais abandonos consecutivos. Sem o reset do item 1, o

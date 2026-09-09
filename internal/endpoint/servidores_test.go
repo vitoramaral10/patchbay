@@ -17,6 +17,12 @@ import (
 
 const slugDeTeste = "pessoal"
 
+// prazoEmMemoria é o teto de espera por um ida-e-volta MCP no transporte em
+// memória. Não é orçamento de trabalho: tudo aqui é sincronizado por sinal, e
+// esta espera só existe para o teste falhar com mensagem em vez de pendurar a
+// suíte. Máquina carregada atrasa o escalonamento, nunca em segundos.
+const prazoEmMemoria = 10 * time.Second
+
 // repoFake é o dublê da persistência de endpoints, escrito à mão sobre a
 // interface pequena que o pacote declara.
 type repoFake struct {
@@ -98,12 +104,29 @@ func montarCom(t *testing.T, opcoes []endpoint.Opcao, reg endpoint.Registro, nom
 	return sut, repo, cat
 }
 
+// notificacaoAssinaturaConfirmada é a primeira mensagem que o servidor manda no
+// stream de subscriptions/listen (SEP-2575). O go-sdk v1.7.0 não a expõe como
+// constante nem como handler de ClientOptions, então o nome entra literal.
+const notificacaoAssinaturaConfirmada = "notifications/subscriptions/acknowledged"
+
 // ligarCliente conecta um cliente MCP de verdade ao *mcp.Server do endpoint, por
 // transporte em memória.
 //
 // É o cliente que dá a verdade sobre quais ferramentas o servidor tem: a lista
 // interna do patchbay é justamente o que pode divergir, e conferi-la contra si
 // mesma não provaria nada.
+//
+// Quando o cliente quer tools/list_changed, ligarCliente só volta depois de o
+// servidor confirmar a assinatura. Isso não é zelo: sem a espera o teste tem uma
+// corrida que perde a notificação para sempre. O cliente negocia 2026-07-28, e
+// nesse protocolo a notificação só chega a quem tem assinatura registrada
+// (mcp/server.go:733-762 — sessão moderna não entra em legacySessions). Mas
+// cliente.Connect dispara o subscriptions/listen sem esperar a resposta
+// (mcp/transport.go:260-267), então ele volta antes de o servidor registrar a
+// assinatura. Do outro lado, AddTool agenda a notificação num timer único de
+// 10ms (mcp/server.go:705-724): se ele vencer com toolChangeSubscriptions ainda
+// vazio, notifySessions limpa o pendente e não manda nada — e não há reenvio.
+// Quem esperasse pela notificação esperaria o orçamento inteiro à toa.
 func ligarCliente(t *testing.T, srv *mcp.Server, opcoes *mcp.ClientOptions) *mcp.ClientSession {
 	t.Helper()
 
@@ -117,11 +140,35 @@ func ligarCliente(t *testing.T, srv *mcp.Server, opcoes *mcp.ClientOptions) *mcp
 	t.Cleanup(func() { _ = sessaoServidor.Close() })
 
 	cliente := mcp.NewClient(&mcp.Implementation{Name: "cliente-de-teste", Version: "0.0.1"}, opcoes)
+
+	assinado := make(chan struct{})
+	if opcoes != nil && opcoes.ToolListChangedHandler != nil {
+		// O middleware entra antes do Connect porque a confirmação pode chegar
+		// enquanto ele ainda está em curso.
+		var uma sync.Once
+		cliente.AddReceivingMiddleware(func(proximo mcp.MethodHandler) mcp.MethodHandler {
+			return func(ctx context.Context, metodo string, req mcp.Request) (mcp.Result, error) {
+				if metodo == notificacaoAssinaturaConfirmada {
+					uma.Do(func() { close(assinado) })
+				}
+				return proximo(ctx, metodo, req)
+			}
+		})
+	} else {
+		close(assinado)
+	}
+
 	sessao, err := cliente.Connect(ctx, doCliente, nil)
 	if err != nil {
 		t.Fatalf("conectar cliente: erro = %v, quer nil", err)
 	}
 	t.Cleanup(func() { _ = sessao.Close() })
+
+	select {
+	case <-assinado:
+	case <-time.After(prazoEmMemoria):
+		t.Fatalf("o servidor não confirmou a assinatura de notificações em %v", prazoEmMemoria)
+	}
 	return sessao
 }
 
@@ -190,11 +237,13 @@ func TestServidores_ListChangedChegaAoCliente(t *testing.T) {
 
 	select {
 	case <-avisado:
-	case <-time.After(30 * time.Second):
-		// Já é espera por sinal (canal), não por relógio; o orçamento de 10s
-		// só se mostrou curto demais sob carga (2/4 rodadas), nunca sob carga
-		// leve. 30s dá folga sem trocar o mecanismo de sincronização.
-		t.Fatal("tools/list_changed não chegou ao cliente em 30s")
+	case <-time.After(prazoEmMemoria):
+		// Se estourar aqui, a notificação se perdeu — não atrasou. O SDK manda
+		// tools/list_changed uma vez só, 10ms depois do AddTool, e para quem
+		// estiver assinado naquele instante (mcp/server.go:705-762). ligarCliente
+		// espera a assinatura ser confirmada justamente para esta espera não
+		// depender de quem ganha essa corrida.
+		t.Fatalf("tools/list_changed não chegou ao cliente em %v", prazoEmMemoria)
 	}
 	if nomes := nomesDoServidor(t, sessao); !slices.Equal(nomes, []string{"alfa", "gama"}) {
 		t.Errorf("ferramentas = %v, quer [alfa gama]", nomes)
