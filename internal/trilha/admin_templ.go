@@ -216,7 +216,7 @@ func TelaTrilha(p Pagina) templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"overflow-x-auto\"><table class=\"w-full text-left\"><caption class=\"sr-only\">Chamadas de ferramenta, da mais recente para a mais antiga</caption> <thead class=\"border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave\"><tr><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Quando</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Endpoint</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Upstream</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Ferramenta</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Resultado</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Origem</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\" data-numero>Duração</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\" data-numero>Entrada</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\" data-numero>Saída</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Quem chamou</th></tr></thead> <tbody class=\"divide-y divide-borda\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"overflow-x-auto\"><table class=\"w-full text-left\"><caption class=\"sr-only\">Chamadas de ferramenta, da mais recente para a mais antiga</caption> <thead class=\"border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave\"><tr><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Quando</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Endpoint</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">MCP</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Ferramenta</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Resultado</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Origem</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\" data-numero>Duração</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\" data-numero>Entrada</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\" data-numero>Saída</th><th scope=\"col\" class=\"px-3 py-2.5 font-semibold\">Quem chamou</th></tr></thead> <tbody class=\"divide-y divide-borda\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -278,14 +278,14 @@ func TelaTrilha(p Pagina) templ.Component {
 							return templ_7745c5c3_Err
 						}
 						if e.Original != "" && e.Original != e.Ferramenta {
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div class=\"text-xs text-conteudo-tenue\">no upstream: <code class=\"font-mono\">")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div class=\"text-xs text-conteudo-tenue\">no MCP: <code class=\"font-mono\">")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
 							var templ_7745c5c3_Var10 string
 							templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(e.Original)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/trilha/admin.templ`, Line: 160, Col: 62}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/trilha/admin.templ`, Line: 160, Col: 57}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 							if templ_7745c5c3_Err != nil {
@@ -775,7 +775,7 @@ func filtros(f Filtro, o Opcoes) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = seletor("upstream", "Upstream", "todos", f.Upstream, o.Upstreams).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = seletor("upstream", "MCP", "todos", f.Upstream, o.Upstreams).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1534,7 +1534,7 @@ func TelaAoVivo(d Descarte, limite int) templ.Component {
 		})
 		templ_7745c5c3_Err = webui.Pagina(webui.DadosPagina{
 			Titulo:    "Log ao vivo",
-			Subtitulo: "O que o processo está registrando agora, por SSE. Chave sensível (token, senha, header de autorização) e marca de credencial reconhecível (JWT, chave do patchbay, ghp_, sk-ant-, AKIA...) saem redigidas antes de o log ser escrito, não só antes de aparecer aqui. O que isto não alcança: um header estático de upstream que não segue nenhum desses formatos passa como texto livre.",
+			Subtitulo: "O que o processo está registrando agora, por SSE. Chave sensível (token, senha, header de autorização) e marca de credencial reconhecível (JWT, chave do patchbay, ghp_, sk-ant-, AKIA...) saem redigidas antes de o log ser escrito, não só antes de aparecer aqui. O que isto não alcança: um header estático de MCP que não segue nenhum desses formatos passa como texto livre.",
 			Secao:     webui.SecaoLogs,
 			Usuario:   webui.UsuarioDoContexto(ctx),
 			Acao:      linkTrilha(),

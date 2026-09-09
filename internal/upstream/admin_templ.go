@@ -140,7 +140,7 @@ func TelaLista(linhas []Linha, alerta *webui.Alerta) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = webui.Vazio("Nenhum upstream ainda.",
+				templ_7745c5c3_Err = webui.Vazio("Nenhum MCP ainda.",
 					"Cadastre o primeiro servidor MCP que o patchbay vai agregar: um servidor Streamable HTTP, um servidor SSE legado, ou um processo local que fala MCP pelo stdin e stdout.").Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -158,7 +158,7 @@ func TelaLista(linhas []Linha, alerta *webui.Alerta) templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"overflow-x-auto\"><table class=\"w-full text-left\"><thead class=\"border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave\"><tr><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Upstream</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Estado</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\" data-numero>Ferramentas</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\" data-numero>Endpoints</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Próxima tentativa</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\" data-numero>Timeout</th></tr></thead> <tbody class=\"divide-y divide-borda\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"overflow-x-auto\"><table class=\"w-full text-left\"><thead class=\"border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave\"><tr><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">MCP</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Estado</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\" data-numero>Ferramentas</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\" data-numero>Endpoints</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Próxima tentativa</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\" data-numero>Timeout</th></tr></thead> <tbody class=\"divide-y divide-borda\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -377,8 +377,8 @@ func TelaLista(linhas []Linha, alerta *webui.Alerta) templ.Component {
 			return nil
 		})
 		templ_7745c5c3_Err = webui.Pagina(webui.DadosPagina{
-			Titulo:    "Upstreams",
-			Subtitulo: "Cada upstream é um servidor MCP externo. O patchbay mantém uma sessão por upstream, aberta fora do caminho da requisição do cliente.",
+			Titulo:    "MCPs",
+			Subtitulo: "Cada MCP é um servidor externo que o patchbay consome. Ele mantém uma sessão por MCP, aberta fora do caminho da requisição do cliente.",
 			Secao:     webui.SecaoUpstreams,
 			Usuario:   webui.UsuarioDoContexto(ctx),
 			Acao:      botaoNovo(),
@@ -443,7 +443,7 @@ func botaoNovo() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" class=\"pb-botao pb-botao-secundario\">Novo upstream SSE</a> <a href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" class=\"pb-botao pb-botao-secundario\">Novo MCP SSE</a> <a href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -456,7 +456,7 @@ func botaoNovo() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" class=\"pb-botao pb-botao-primario\">Novo upstream HTTP</a></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" class=\"pb-botao pb-botao-primario\">Novo MCP HTTP</a></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -854,7 +854,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</p><p class=\"mt-2 max-w-[65ch] text-sm text-conteudo-suave\">O upstream continua na lista com o motivo à vista, e a supervisão tenta de novo quando o backoff vencer — exponencial com jitter e teto, para que a frequência de tentativa caia enquanto o servidor não volta. O erro vive em memória: o banco guarda só a intenção de habilitar.</p></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</p><p class=\"mt-2 max-w-[65ch] text-sm text-conteudo-suave\">O MCP continua na lista com o motivo à vista, e a supervisão tenta de novo quando o backoff vencer — exponencial com jitter e teto, para que a frequência de tentativa caia enquanto o servidor não volta. O erro vive em memória: o banco guarda só a intenção de habilitar.</p></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -878,7 +878,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<div class=\"flex flex-col gap-4 px-4 py-4\"><p class=\"max-w-[65ch] text-sm text-conteudo-suave\">Um processo por upstream, compartilhado por todas as sessões de cliente. Ele nasce numa árvore própria do sistema operacional — <em>process group</em> no Linux e no macOS, <em>Job Object</em> no Windows —, e ao encerrar morre a árvore inteira, inclusive o neto que o programa tenha lançado. Matar só o filho direto é o que vaza processo até esgotar os PIDs da máquina.</p><dl class=\"grid gap-x-6 gap-y-4\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<div class=\"flex flex-col gap-4 px-4 py-4\"><p class=\"max-w-[65ch] text-sm text-conteudo-suave\">Um processo por MCP, compartilhado por todas as sessões de cliente. Ele nasce numa árvore própria do sistema operacional — <em>process group</em> no Linux e no macOS, <em>Job Object</em> no Windows —, e ao encerrar morre a árvore inteira, inclusive o neto que o programa tenha lançado. Matar só o filho direto é o que vaza processo até esgotar os PIDs da máquina.</p><dl class=\"grid gap-x-6 gap-y-4\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1063,12 +1063,12 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					if !d.Habilitado {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "O upstream está desabilitado, então não há sessão aberta.")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "O MCP está desabilitado, então não há sessão aberta.")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					} else if d.Estado == EstadoDegradado {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "O upstream está degradado: as ferramentas saem do catálogo enquanto ele não responde, porque ferramenta que não funciona custa contexto no cliente sem entregar nada. Os endpoints continuam servindo o que os outros upstreams trazem, e as ferramentas que saíram ainda respondem por uma janela de graça explicando que saíram.")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "O MCP está degradado: as ferramentas saem do catálogo enquanto ele não responde, porque ferramenta que não funciona custa contexto no cliente sem entregar nada. Os endpoints continuam servindo o que os outros MCPs trazem, e as ferramentas que saíram ainda respondem por uma janela de graça explicando que saíram.")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -1093,7 +1093,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<div class=\"overflow-x-auto\"><table class=\"w-full text-left\"><thead class=\"border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave\"><tr><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Nome exposto</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Nome no upstream</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Descrição</th></tr></thead> <tbody class=\"divide-y divide-borda\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<div class=\"overflow-x-auto\"><table class=\"w-full text-left\"><thead class=\"border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave\"><tr><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Nome exposto</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Nome no MCP</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Descrição</th></tr></thead> <tbody class=\"divide-y divide-borda\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1202,7 +1202,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<div class=\"flex flex-col gap-4 px-4 py-4\"><p class=\"max-w-[65ch] text-sm text-conteudo-suave\">O que o patchbay apresenta ao upstream fica cifrado em repouso (AES-256-GCM, chave derivada da chave mestra). O valor não volta para esta tela nem para o log — o que aparece aqui é só se ele está definido. Para trocar, edite o upstream.</p><dl class=\"grid gap-x-6 gap-y-4 sm:grid-cols-2\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<div class=\"flex flex-col gap-4 px-4 py-4\"><p class=\"max-w-[65ch] text-sm text-conteudo-suave\">O que o patchbay apresenta ao MCP fica cifrado em repouso (AES-256-GCM, chave derivada da chave mestra). O valor não volta para esta tela nem para o log — o que aparece aqui é só se ele está definido. Para trocar, edite o MCP.</p><dl class=\"grid gap-x-6 gap-y-4 sm:grid-cols-2\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1368,7 +1368,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = webui.Cartao("Credenciais apresentadas ao upstream").Render(templ.WithChildren(ctx, templ_7745c5c3_Var54), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = webui.Cartao("Credenciais apresentadas ao MCP").Render(templ.WithChildren(ctx, templ_7745c5c3_Var54), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1385,7 +1385,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				if len(d.Endpoints) == 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "<p class=\"px-4 py-6 max-w-[65ch] text-conteudo-suave\">Nenhum endpoint inclui este upstream, então as ferramentas dele não chegam a cliente nenhum. Edite um endpoint para compô-lo.</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "<p class=\"px-4 py-6 max-w-[65ch] text-conteudo-suave\">Nenhum endpoint inclui este MCP, então as ferramentas dele não chegam a cliente nenhum. Edite um endpoint para compô-lo.</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1420,7 +1420,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = webui.Cartao("Endpoints que incluem este upstream").Render(templ.WithChildren(ctx, templ_7745c5c3_Var60), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = webui.Cartao("Endpoints que incluem este MCP").Render(templ.WithChildren(ctx, templ_7745c5c3_Var60), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2276,7 +2276,7 @@ func cartaoOAuth(d Detalhe) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "Salve o upstream, clique em <em>Autorizar</em> e conclua o consentimento no provedor. O código volta para <code class=\"font-mono\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "Salve o MCP, clique em <em>Autorizar</em> e conclua o consentimento no provedor. O código volta para <code class=\"font-mono\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2521,7 +2521,7 @@ func acoesDoDetalhe(d Detalhe) templ.Component {
 }
 
 func avisoDeRemocao(d Detalhe) string {
-	base := "Remover o upstream " + d.Nome + "? A sessão é fechada na hora."
+	base := "Remover o MCP " + d.Nome + "? A sessão é fechada na hora."
 	if len(d.Endpoints) == 0 {
 		return base
 	}
@@ -2667,7 +2667,7 @@ func TelaForm(f Form) templ.Component {
 					Nome:        "nome",
 					Rotulo:      "Nome",
 					Valor:       f.Nome,
-					Ajuda:       "Como o upstream aparece nesta administração e no log.",
+					Ajuda:       "Como o MCP aparece nesta administração e no log.",
 					Erro:        f.Erros["nome"],
 					Obrigatorio: true,
 				}).Render(ctx, templ_7745c5c3_Buffer)
@@ -2739,7 +2739,7 @@ func TelaForm(f Form) templ.Component {
 					Rotulo:       "Timeout (ms)",
 					Tipo:         "number",
 					Valor:        strconv.FormatInt(f.TimeoutMS, 10),
-					Ajuda:        "Vale para conectar, listar e chamar ferramenta neste upstream. Entre 250 e 120000.",
+					Ajuda:        "Vale para conectar, listar e chamar ferramenta neste MCP. Entre 250 e 120000.",
 					Erro:         f.Erros["timeout_ms"],
 					Obrigatorio:  true,
 					Monoespacado: true,
@@ -2779,7 +2779,7 @@ func TelaForm(f Form) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "<div class=\"flex flex-col gap-6 px-4 py-5\"><p class=\"max-w-[65ch] text-sm text-conteudo-suave\">O que o patchbay <strong>apresenta</strong> ao upstream é cifrado em repouso com AES-256-GCM e nunca é reexibido aqui. Campo em branco mantém o valor gravado; para tirar a credencial, marque <em>limpar</em>.</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "<div class=\"flex flex-col gap-6 px-4 py-5\"><p class=\"max-w-[65ch] text-sm text-conteudo-suave\">O que o patchbay <strong>apresenta</strong> ao MCP é cifrado em repouso com AES-256-GCM e nunca é reexibido aqui. Campo em branco mantém o valor gravado; para tirar a credencial, marque <em>limpar</em>.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2842,7 +2842,7 @@ func TelaForm(f Form) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if f.ID == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "Criar upstream")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "Criar MCP")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2921,7 +2921,7 @@ func cartaoDaSonda(f Form) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 185, "<div class=\"flex flex-col gap-6 px-4 py-5\"><p class=\"max-w-[65ch] text-sm text-conteudo-suave\">A sonda executa um <code class=\"font-mono\">tools/call</code> de verdade, de tempos em tempos, para saber se o servidor <strong>funciona</strong> — e não só se ele responde. Falhar tira as ferramentas deste upstream do catálogo de todos os endpoints, com lápide, e põe o upstream em <code class=\"font-mono\">sonda_falhou</code>.</p><label class=\"flex items-start gap-3\"><input type=\"checkbox\" name=\"sonda_habilitada\" value=\"1\" class=\"mt-0.5 h-4 w-4 accent-[var(--pb-acento)]\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 185, "<div class=\"flex flex-col gap-6 px-4 py-5\"><p class=\"max-w-[65ch] text-sm text-conteudo-suave\">A sonda executa um <code class=\"font-mono\">tools/call</code> de verdade, de tempos em tempos, para saber se o servidor <strong>funciona</strong> — e não só se ele responde. Falhar tira as ferramentas deste MCP do catálogo de todos os endpoints, com lápide, e põe o MCP em <code class=\"font-mono\">sonda_falhou</code>.</p><label class=\"flex items-start gap-3\"><input type=\"checkbox\" name=\"sonda_habilitada\" value=\"1\" class=\"mt-0.5 h-4 w-4 accent-[var(--pb-acento)]\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2931,7 +2931,7 @@ func cartaoDaSonda(f Form) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 187, "> <span><span class=\"text-sm font-medium text-conteudo\">Sondar este upstream</span> <span class=\"block text-sm text-conteudo-tenue\">Vem desligada. Uma sonda mal configurada apaga as ferramentas de um servidor saudável, então escolha uma ferramenta <em>inócua</em>: uma busca com um termo bobo é segura, e nada garante isso para uma ferramenta arbitrária.</span></span></label>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 187, "> <span><span class=\"text-sm font-medium text-conteudo\">Sondar este MCP</span> <span class=\"block text-sm text-conteudo-tenue\">Vem desligada. Uma sonda mal configurada apaga as ferramentas de um servidor saudável, então escolha uma ferramenta <em>inócua</em>: uma busca com um termo bobo é segura, e nada garante isso para uma ferramenta arbitrária.</span></span></label>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2939,7 +2939,7 @@ func cartaoDaSonda(f Form) templ.Component {
 				Nome:         "sonda_ferramenta",
 				Rotulo:       "Ferramenta a chamar",
 				Valor:        f.SondaFerramenta,
-				Ajuda:        "O nome como o upstream o expõe, sem o prefixo de nenhum endpoint: a sonda fala com o servidor direto.",
+				Ajuda:        "O nome como o MCP o expõe, sem o prefixo de nenhum endpoint: a sonda fala com o servidor direto.",
 				Erro:         f.Erros["sonda_ferramenta"],
 				Monoespacado: true,
 				Placeholder:  "nome_da_ferramenta",
@@ -3011,7 +3011,7 @@ func cartaoDaSonda(f Form) templ.Component {
 				Rotulo:       "Timeout da sondagem (ms)",
 				Tipo:         "number",
 				Valor:        strconv.FormatInt(f.SondaTimeoutMS, 10),
-				Ajuda:        "Cancela só a chamada da sonda, nunca a sessão do upstream.",
+				Ajuda:        "Cancela só a chamada da sonda, nunca a sessão do MCP.",
 				Erro:         f.Erros["sonda_timeout_ms"],
 				Monoespacado: true,
 			}).Render(ctx, templ_7745c5c3_Buffer)
@@ -3192,7 +3192,7 @@ func seletorDeModo(f Form) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 203, "> <span><span class=\"text-sm font-medium text-conteudo\">OAuth (authorization code com PKCE)</span> <span class=\"block text-sm text-conteudo-tenue\">O patchbay descobre o authorization server do upstream, você autoriza no navegador, e o token renovado fica cifrado em repouso. Salve primeiro; depois use <em>Autorizar</em> na tela do upstream.</span></span></label><p class=\"text-sm text-conteudo-tenue\">Trocar o modo e salvar recarrega o formulário com os campos do outro modo.</p></fieldset>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 203, "> <span><span class=\"text-sm font-medium text-conteudo\">OAuth (authorization code com PKCE)</span> <span class=\"block text-sm text-conteudo-tenue\">O patchbay descobre o authorization server do MCP, você autoriza no navegador, e o token renovado fica cifrado em repouso. Salve primeiro; depois use <em>Autorizar</em> na tela do MCP.</span></span></label><p class=\"text-sm text-conteudo-tenue\">Trocar o modo e salvar recarrega o formulário com os campos do outro modo.</p></fieldset>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3434,7 +3434,7 @@ func credenciaisEstaticas(f Form) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 224, "<p id=\"bearer-ajuda\" class=\"text-sm text-conteudo-tenue\">Vai como <code class=\"font-mono\">Authorization: Bearer …</code> em toda requisição para este upstream.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 224, "<p id=\"bearer-ajuda\" class=\"text-sm text-conteudo-tenue\">Vai como <code class=\"font-mono\">Authorization: Bearer …</code> em toda requisição para este MCP.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3864,18 +3864,18 @@ func tituloDoForm(f Form) string {
 	}
 	switch f.TipoEfetivo() {
 	case TipoSTDIO:
-		return acao + " upstream STDIO"
+		return acao + " MCP STDIO"
 	case TipoSSE:
-		return acao + " upstream SSE"
+		return acao + " MCP SSE"
 	default:
-		return acao + " upstream HTTP"
+		return acao + " MCP HTTP"
 	}
 }
 
 func subtituloDoForm(f Form) string {
 	switch f.TipoEfetivo() {
 	case TipoSTDIO:
-		return "Um processo local que fala MCP pelo stdin e stdout. O patchbay mantém um processo por upstream, " +
+		return "Um processo local que fala MCP pelo stdin e stdout. O patchbay mantém um processo por MCP, " +
 			"compartilhado por todas as sessões, e mata a árvore inteira ao encerrar. " +
 			"Variáveis sensíveis são cifradas em repouso e nunca voltam para esta tela."
 	case TipoSSE:
@@ -3883,7 +3883,7 @@ func subtituloDoForm(f Form) string {
 			"um POST por mensagem do cliente. Mesmas credenciais do Streamable HTTP, cifradas em repouso " +
 			"e nunca de volta para esta tela."
 	default:
-		return "Upstream MCP Streamable HTTP. Credenciais são cifradas em repouso e nunca voltam para esta tela."
+		return "MCP Streamable HTTP. Credenciais são cifradas em repouso e nunca voltam para esta tela."
 	}
 }
 

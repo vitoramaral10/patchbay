@@ -102,14 +102,14 @@ func TelaConfiguracao(d DadosTela) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"flex flex-col gap-4 px-4 py-5\"><p class=\"max-w-[65ch] text-conteudo-suave\">Baixa a configuração inteira — upstreams, endpoints e a composição de cada um — com a revisão de cada item. Credencial não vai junto: o arquivo traz o nome da variável de ambiente de onde o import lê cada uma.</p><div><a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"flex flex-col gap-4 px-4 py-5\"><p class=\"max-w-[65ch] text-conteudo-suave\">Baixa a configuração inteira — MCPs, endpoints e a composição de cada um — com a revisão de cada item. Credencial não vai junto: o arquivo traz o nome da variável de ambiente de onde o import lê cada uma. No arquivo os MCPs estão sob a chave <code class=\"font-mono\">upstreams</code>, que é o nome do papel deles no formato e não muda.</p><div><a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var4 templ.SafeURL
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(RotaExportar))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 65, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 67, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -132,7 +132,7 @@ func TelaConfiguracao(d DadosTela) templ.Component {
 			var templ_7745c5c3_Var5 templ.SafeURL
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(RotaPlano))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 71, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 73, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -178,7 +178,7 @@ func TelaConfiguracao(d DadosTela) templ.Component {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "> <span class=\"flex-1\"><span class=\"font-medium\">Remover o que não está no arquivo</span> <span class=\"block text-conteudo-tenue\">Sem isto, upstream ou endpoint que existe aqui e não está no arquivo fica como está — o arquivo nunca apaga por omissão.</span></span></label></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "> <span class=\"flex-1\"><span class=\"font-medium\">Remover o que não está no arquivo</span> <span class=\"block text-conteudo-tenue\">Sem isto, MCP ou endpoint que existe aqui e não está no arquivo fica como está — o arquivo nunca apaga por omissão.</span></span></label></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -275,7 +275,7 @@ func TelaPlano(p Plano, texto string) templ.Component {
 			var templ_7745c5c3_Var10 templ.SafeURL
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(RotaAplicar))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 120, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 122, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -288,7 +288,7 @@ func TelaPlano(p Plano, texto string) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(texto)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 121, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 123, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -336,7 +336,7 @@ func TelaPlano(p Plano, texto string) templ.Component {
 			var templ_7745c5c3_Var12 templ.SafeURL
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(webui.RotaConfiguracao))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 136, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 138, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -439,7 +439,7 @@ func TelaRelatorio(r Relatorio) templ.Component {
 					var templ_7745c5c3_Var16 string
 					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(string(res.Item.Operacao))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 172, Col: 78}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 174, Col: 78}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {
@@ -452,7 +452,7 @@ func TelaRelatorio(r Relatorio) templ.Component {
 					var templ_7745c5c3_Var17 string
 					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(res.Item.Nome)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 174, Col: 51}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 176, Col: 51}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {
@@ -465,7 +465,7 @@ func TelaRelatorio(r Relatorio) templ.Component {
 					var templ_7745c5c3_Var18 string
 					templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(res.Item.Tipo)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 175, Col: 82}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 177, Col: 82}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 					if templ_7745c5c3_Err != nil {
@@ -483,7 +483,7 @@ func TelaRelatorio(r Relatorio) templ.Component {
 						var templ_7745c5c3_Var19 string
 						templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(res.Erro)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 177, Col: 52}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 179, Col: 52}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 						if templ_7745c5c3_Err != nil {
@@ -515,7 +515,7 @@ func TelaRelatorio(r Relatorio) templ.Component {
 					var templ_7745c5c3_Var20 string
 					templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(string(item.Operacao))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 187, Col: 74}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 189, Col: 74}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 					if templ_7745c5c3_Err != nil {
@@ -528,7 +528,7 @@ func TelaRelatorio(r Relatorio) templ.Component {
 					var templ_7745c5c3_Var21 string
 					templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(item.Nome)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 189, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 191, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 					if templ_7745c5c3_Err != nil {
@@ -541,7 +541,7 @@ func TelaRelatorio(r Relatorio) templ.Component {
 					var templ_7745c5c3_Var22 string
 					templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(item.Tipo)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 190, Col: 78}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 192, Col: 78}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 					if templ_7745c5c3_Err != nil {
@@ -559,7 +559,7 @@ func TelaRelatorio(r Relatorio) templ.Component {
 						var templ_7745c5c3_Var23 string
 						templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(item.Motivo)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 192, Col: 63}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 194, Col: 63}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 						if templ_7745c5c3_Err != nil {
@@ -592,7 +592,7 @@ func TelaRelatorio(r Relatorio) templ.Component {
 			var templ_7745c5c3_Var24 templ.SafeURL
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(webui.RotaConfiguracao))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 202, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 204, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -665,7 +665,7 @@ func tabelaDeItens(itens []Item) templ.Component {
 				var templ_7745c5c3_Var26 string
 				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(item.Nome)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 227, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 229, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {
@@ -678,7 +678,7 @@ func tabelaDeItens(itens []Item) templ.Component {
 				var templ_7745c5c3_Var27 string
 				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(item.Tipo)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 228, Col: 76}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 230, Col: 76}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 				if templ_7745c5c3_Err != nil {
@@ -696,7 +696,7 @@ func tabelaDeItens(itens []Item) templ.Component {
 					var templ_7745c5c3_Var28 string
 					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(item.Motivo)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 230, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 232, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 					if templ_7745c5c3_Err != nil {
@@ -715,7 +715,7 @@ func tabelaDeItens(itens []Item) templ.Component {
 					var templ_7745c5c3_Var29 string
 					templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(d.Campo)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 234, Col: 51}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 236, Col: 51}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 					if templ_7745c5c3_Err != nil {
@@ -728,7 +728,7 @@ func tabelaDeItens(itens []Item) templ.Component {
 					var templ_7745c5c3_Var30 string
 					templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(" — arquivo: ")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 235, Col: 28}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 237, Col: 28}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 					if templ_7745c5c3_Err != nil {
@@ -741,7 +741,7 @@ func tabelaDeItens(itens []Item) templ.Component {
 					var templ_7745c5c3_Var31 string
 					templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(ouTraco(d.NoYAML))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 236, Col: 102}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 238, Col: 102}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 					if templ_7745c5c3_Err != nil {
@@ -754,7 +754,7 @@ func tabelaDeItens(itens []Item) templ.Component {
 					var templ_7745c5c3_Var32 string
 					templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(" / banco: ")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 237, Col: 24}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 239, Col: 24}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 					if templ_7745c5c3_Err != nil {
@@ -767,7 +767,7 @@ func tabelaDeItens(itens []Item) templ.Component {
 					var templ_7745c5c3_Var33 string
 					templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(ouTraco(d.NoBanco))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 238, Col: 103}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/configuracao/admin.templ`, Line: 240, Col: 103}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 					if templ_7745c5c3_Err != nil {

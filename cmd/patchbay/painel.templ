@@ -35,13 +35,13 @@ templ telaPainel(d dadosPainel, alerta *webui.Alerta) {
 	}) {
 		if d.Upstreams == 0 && d.Endpoints == 0 {
 			@webui.Vazio("O patchbay está vazio.",
-				"O caminho é: cadastrar um upstream, criar um endpoint que o inclua e emitir uma chave de API. Depois disso um cliente MCP conecta.") {
-				<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo") } class="pb-botao pb-botao-primario">Cadastrar o primeiro upstream</a>
+				"O caminho é: cadastrar um MCP, criar um endpoint que o inclua e emitir uma chave de API. Depois disso um cliente MCP conecta.") {
+				<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo") } class="pb-botao pb-botao-primario">Cadastrar o primeiro MCP</a>
 			}
 		} else {
 			<div class="flex flex-col gap-6">
 				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-					@indicador("Upstreams", strconv.Itoa(d.Upstreams), rodapeUpstreams(d), webui.RotaUpstreams)
+					@indicador("MCPs", strconv.Itoa(d.Upstreams), rodapeUpstreams(d), webui.RotaUpstreams)
 					@indicador("Endpoints", strconv.Itoa(d.Endpoints), "no ar", webui.RotaEndpoints)
 					@indicador("Ferramentas expostas", valorFerramentas(d), "somando todos os endpoints", webui.RotaEndpoints)
 					@indicador("Chaves ativas", strconv.Itoa(d.ChavesAtivas), rodapeChaves(d), webui.RotaChaves)

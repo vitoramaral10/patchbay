@@ -71,7 +71,7 @@ func tomDoAviso(a catalogo.Aviso) webui.Tom {
 templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "Endpoints",
-		Subtitulo: "Cada endpoint é uma URL MCP que agrega os upstreams escolhidos e é uma fronteira de autorização própria.",
+		Subtitulo: "Cada endpoint é uma URL MCP que o cliente registra: ela agrega os MCPs escolhidos e é uma fronteira de autorização própria.",
 		Secao:     webui.SecaoEndpoints,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Acao:      botaoNovo(),
@@ -79,7 +79,7 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 	}) {
 		if len(linhas) == 0 {
 			@webui.Vazio("Nenhum endpoint ainda.",
-				"Um endpoint é o que o cliente de IA registra. Crie o primeiro, escolha quais upstreams entram nele e emita uma chave de API.") {
+				"Um endpoint é o que o cliente de IA registra. Crie o primeiro, escolha quais MCPs entram nele e emita uma chave de API.") {
 				@botaoNovo()
 			}
 		} else {
@@ -90,7 +90,7 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 							<tr>
 								<th scope="col" class="px-4 py-2.5 font-semibold">Endpoint</th>
 								<th scope="col" class="px-4 py-2.5 font-semibold">URL</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Upstreams</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>MCPs</th>
 								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Ferramentas</th>
 							</tr>
 						</thead>
@@ -167,7 +167,7 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 							<span class="text-conteudo-tenue">+{ strconv.Itoa(len(d.Lapides)) } lápide(s)</span>
 						}
 					}
-					@dado("Upstreams na composição") {
+					@dado("MCPs na composição") {
 						<span data-numero>{ strconv.Itoa(len(d.Composicao)) }</span>
 					}
 				</dl>
@@ -175,8 +175,8 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 			@webui.Cartao("Composição") {
 				if len(d.Composicao) == 0 {
 					<p class="px-4 py-6 text-conteudo-suave">
-						Nenhum upstream compõe este endpoint, então ele responde <code class="font-mono">tools/list</code> vazio.
-						Edite o endpoint para escolher os upstreams.
+						Nenhum MCP compõe este endpoint, então ele responde <code class="font-mono">tools/list</code> vazio.
+						Edite o endpoint para escolher os MCPs.
 					</p>
 				} else {
 					<ul class="divide-y divide-borda">
@@ -185,7 +185,7 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 								<div class="flex flex-wrap items-center justify-between gap-3">
 									<span class="font-medium">{ u.Nome }</span>
 									<span class="flex items-center gap-3">
-										<span class="text-sm text-conteudo-suave" data-numero title="Ferramentas deste upstream que sobrevivem à composição deste endpoint, sobre as que ele expõe.">
+										<span class="text-sm text-conteudo-suave" data-numero title="Ferramentas deste MCP que sobrevivem à composição deste endpoint, sobre as que ele expõe.">
 											{ strconv.Itoa(u.NoEndpoint) } de { strconv.Itoa(u.Ferramentas) } ferramentas
 										</span>
 										@webui.Selo(tomDoEstado(u.Estado, u.Habilitado), rotuloDoEstado(u.Estado, u.Habilitado))
@@ -217,7 +217,7 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 					<p class="px-4 py-6 text-conteudo-suave">
 						Nenhuma ferramenta no ar. Lista vazia é resposta legítima: o cliente recebe
 						<code class="font-mono">tools/list</code> sem itens em vez de erro, e volta a ver as
-						ferramentas quando algum upstream ficar pronto.
+						ferramentas quando algum MCP ficar pronto.
 					</p>
 				} else {
 					<ul class="divide-y divide-borda">
@@ -339,16 +339,16 @@ templ TelaForm(f Form, opcoes []UpstreamOpcao) {
 			@webui.Cartao("Composição") {
 				if len(opcoes) == 0 {
 					<p class="px-4 py-6 text-conteudo-suave">
-						Nenhum upstream cadastrado. Crie um upstream primeiro — um endpoint sem upstream
+						Nenhum MCP cadastrado. Crie um MCP primeiro — um endpoint sem MCP
 						responde <code class="font-mono">tools/list</code> vazio.
 					</p>
 				} else {
 					<fieldset class="flex flex-col gap-2 px-4 py-4">
-						<legend class="sr-only">Upstreams deste endpoint</legend>
+						<legend class="sr-only">MCPs deste endpoint</legend>
 						<p class="text-sm text-conteudo-tenue">
-							O prefixo e as regras valem só neste endpoint: o mesmo upstream pode entrar em
+							O prefixo e as regras valem só neste endpoint: o mesmo MCP pode entrar em
 							outro com outra composição. A ordem é filtro, renome e prefixo — e o filtro casa
-							contra o nome original no upstream, nunca contra o nome já prefixado.
+							contra o nome original no MCP, nunca contra o nome já prefixado.
 						</p>
 						<ul class="flex flex-col gap-1">
 							for _, o := range opcoes {
@@ -400,7 +400,7 @@ templ itemDaComposicao(o UpstreamOpcao) {
 				Rotulo:       "Prefixo",
 				Valor:        o.Prefixo,
 				Erro:         o.ErroPrefixo,
-				Ajuda:        "Entra no nome que o cliente vê, nunca no nome chamado no upstream. Resolve colisão entre dois upstreams que expõem search.",
+				Ajuda:        "Entra no nome que o cliente vê, nunca no nome chamado no MCP. Resolve colisão entre dois MCPs que expõem search.",
 				Placeholder:  "nt_",
 				Monoespacado: true,
 			})

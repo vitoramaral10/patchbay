@@ -135,7 +135,7 @@ templ TelaTrilha(p Pagina) {
 								<tr>
 									<th scope="col" class="px-3 py-2.5 font-semibold">Quando</th>
 									<th scope="col" class="px-3 py-2.5 font-semibold">Endpoint</th>
-									<th scope="col" class="px-3 py-2.5 font-semibold">Upstream</th>
+									<th scope="col" class="px-3 py-2.5 font-semibold">MCP</th>
 									<th scope="col" class="px-3 py-2.5 font-semibold">Ferramenta</th>
 									<th scope="col" class="px-3 py-2.5 font-semibold">Resultado</th>
 									<th scope="col" class="px-3 py-2.5 font-semibold">Origem</th>
@@ -157,7 +157,7 @@ templ TelaTrilha(p Pagina) {
 											<code class="font-mono text-xs text-conteudo">{ ouTraco(e.Ferramenta) }</code>
 											if e.Original != "" && e.Original != e.Ferramenta {
 												<div class="text-xs text-conteudo-tenue">
-													no upstream: <code class="font-mono">{ e.Original }</code>
+													no MCP: <code class="font-mono">{ e.Original }</code>
 												</div>
 											}
 										</td>
@@ -261,7 +261,7 @@ templ filtros(f Filtro, o Opcoes) {
 		<form method="get" action={ templ.SafeURL(webui.RotaTrilha) } class="flex flex-col gap-4 px-4 py-4">
 			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
 				@seletor("endpoint", "Endpoint", "todos", f.Endpoint, o.Endpoints)
-				@seletor("upstream", "Upstream", "todos", f.Upstream, o.Upstreams)
+				@seletor("upstream", "MCP", "todos", f.Upstream, o.Upstreams)
 				<div class="flex flex-col gap-1.5">
 					<label for="ferramenta" class="text-sm font-medium text-conteudo">Ferramenta</label>
 					<input
@@ -385,7 +385,7 @@ func ultimoCursor(eventos []Evento) (int64, int64) {
 templ TelaAoVivo(d Descarte, limite int) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "Log ao vivo",
-		Subtitulo: "O que o processo está registrando agora, por SSE. Chave sensível (token, senha, header de autorização) e marca de credencial reconhecível (JWT, chave do patchbay, ghp_, sk-ant-, AKIA...) saem redigidas antes de o log ser escrito, não só antes de aparecer aqui. O que isto não alcança: um header estático de upstream que não segue nenhum desses formatos passa como texto livre.",
+		Subtitulo: "O que o processo está registrando agora, por SSE. Chave sensível (token, senha, header de autorização) e marca de credencial reconhecível (JWT, chave do patchbay, ghp_, sk-ant-, AKIA...) saem redigidas antes de o log ser escrito, não só antes de aparecer aqui. O que isto não alcança: um header estático de MCP que não segue nenhum desses formatos passa como texto livre.",
 		Secao:     webui.SecaoLogs,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Acao:      linkTrilha(),
