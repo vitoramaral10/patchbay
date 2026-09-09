@@ -27,6 +27,12 @@ services:
     # publicação e ligue os dois por uma rede compartilhada.
     ports:
       - "127.0.0.1:8787:8787"
+    # Volume nomeado, e não bind mount, de propósito: a imagem carrega /dados
+    # com dono 65532, e o Docker replica esse dono ao inicializar um volume
+    # vazio. Num bind mount quem manda é o dono do diretório no host, então
+    # trocar por `./dados:/dados` exige um `chown 65532:65532 ./dados` antes do
+    # primeiro `up` — sem isso o SQLite falha com "unable to open database
+    # file (14)".
     volumes:
       - patchbay-dados:/dados
     # Rootfs somente leitura: o único diretório que o processo escreve é o
