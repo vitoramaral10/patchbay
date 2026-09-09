@@ -1,0 +1,283 @@
+package configuracao
+
+import "github.com/vitoramaral10/patchbay/internal/platform/webui"
+
+// RotaExportar, RotaPlano e RotaAplicar são as três rotas da tela.
+//
+// Três e não uma: baixar é GET (e precisa ser um link que o navegador salva),
+// planejar e aplicar são POST distintos — e a separação é o que faz o plano
+// aparecer antes de qualquer escrita, como o --dry-run da linha de comando.
+const (
+	RotaExportar = webui.RotaConfiguracao + "/exportar"
+	RotaPlano    = webui.RotaConfiguracao + "/plano"
+	RotaAplicar  = webui.RotaConfiguracao + "/aplicar"
+)
+
+// tomDaOperacao é a cor do selo de cada operação. O rótulo de texto vai junto
+// sempre: cor sozinha não informa.
+func tomDaOperacao(op Operacao) webui.Tom {
+	switch op {
+	case OperacaoCriar, OperacaoAtualizar:
+		return webui.TomSucesso
+	case OperacaoRemover:
+		return webui.TomPerigo
+	case OperacaoConflito:
+		return webui.TomAlerta
+	case OperacaoErro:
+		return webui.TomPerigo
+	case OperacaoAusente:
+		return webui.TomInfo
+	default:
+		return webui.TomNeutro
+	}
+}
+
+// DadosTela é o que a tela de configuração precisa para se redesenhar depois de
+// uma recusa: o texto que a pessoa colou, a opção que ela marcou e o motivo.
+//
+// Um struct e não quatro parâmetros porque a tela é reexibida de três lugares, e
+// acrescentar um campo não pode virar três chamadas a corrigir.
+type DadosTela struct {
+	Texto           string
+	RemoverAusentes bool
+	Erro            string
+	Alerta          *webui.Alerta
+}
+
+// TelaConfiguracao é o export e o formulário de import.
+templ TelaConfiguracao(d DadosTela) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Configuração",
+		Subtitulo: "O YAML é artefato de export e import. Ele nunca é lido na inicialização: aplicar é sempre um clique seu, e o plano aparece antes.",
+		Secao:     webui.SecaoConfiguracao,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Alerta:    d.Alerta,
+	}) {
+		<div class="flex max-w-3xl flex-col gap-8">
+			@webui.Cartao("Exportar") {
+				<div class="flex flex-col gap-4 px-4 py-5">
+					<p class="max-w-[65ch] text-conteudo-suave">
+						Baixa a configuração inteira — upstreams, endpoints e a composição de cada um —
+						com a revisão de cada item. Credencial não vai junto: o arquivo traz o nome da
+						variável de ambiente de onde o import lê cada uma.
+					</p>
+					<div>
+						<a href={ templ.SafeURL(RotaExportar) } class="pb-botao pb-botao-primario" download>
+							Baixar patchbay.yaml
+						</a>
+					</div>
+				</div>
+			}
+			<form method="post" action={ templ.SafeURL(RotaPlano) } class="flex flex-col gap-8">
+				@webui.Cartao("Importar") {
+					<div class="flex flex-col gap-4 px-4 py-5">
+						@webui.CampoTexto(webui.DadosCampo{
+							Nome:   "yaml",
+							Rotulo: "Cole o YAML",
+							Valor:  d.Texto,
+							Erro:   d.Erro,
+							Ajuda:  "Nada é escrito agora: o próximo passo mostra o plano, item a item, e só então você aplica.",
+						})
+						<label class="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 transition-colors duration-150 ease-out hover:bg-superficie-alta">
+							<input
+								type="checkbox"
+								name="remover_ausentes"
+								value="1"
+								class="h-4 w-4 accent-[var(--pb-acento)]"
+								checked?={ d.RemoverAusentes }
+							/>
+							<span class="flex-1">
+								<span class="font-medium">Remover o que não está no arquivo</span>
+								<span class="block text-conteudo-tenue">
+									Sem isto, upstream ou endpoint que existe aqui e não está no arquivo
+									fica como está — o arquivo nunca apaga por omissão.
+								</span>
+							</span>
+						</label>
+					</div>
+				}
+				<div>
+					<button type="submit" class="pb-botao pb-botao-primario">Ver o plano</button>
+				</div>
+			</form>
+		</div>
+	}
+}
+
+// TelaPlano mostra o que o import faria, e só então oferece o botão de aplicar.
+templ TelaPlano(p Plano, texto string) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Plano do import",
+		Subtitulo: "Nada foi escrito ainda. Confira item a item e aplique — ou volte e edite o arquivo.",
+		Secao:     webui.SecaoConfiguracao,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Alerta:    alertaDoPlano(p),
+	}) {
+		<div class="flex max-w-3xl flex-col gap-8">
+			@webui.Cartao("") {
+				@tabelaDeItens(p.Itens)
+			}
+			<form method="post" action={ templ.SafeURL(RotaAplicar) } class="flex items-center gap-3">
+				<textarea name="yaml" class="sr-only" aria-hidden="true" tabindex="-1">{ texto }</textarea>
+				if p.RemoverAusentes {
+					<input type="hidden" name="remover_ausentes" value="1"/>
+				}
+				<button
+					type="submit"
+					class="pb-botao pb-botao-primario"
+					disabled?={ p.Aplicaveis() == 0 }
+				>
+					if p.Aplicaveis() == 0 {
+						Nada a aplicar
+					} else {
+						Aplicar o plano
+					}
+				</button>
+				<a href={ templ.SafeURL(webui.RotaConfiguracao) } class="pb-botao pb-botao-secundario">Voltar</a>
+			</form>
+		</div>
+	}
+}
+
+// TelaRelatorio mostra o que entrou, o que falhou e o que ficou de fora.
+templ TelaRelatorio(r Relatorio) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo:    "Import aplicado",
+		Subtitulo: "Cada item é uma transação própria: o que falhou não desfez o que entrou.",
+		Secao:     webui.SecaoConfiguracao,
+		Usuario:   webui.UsuarioDoContexto(ctx),
+		Alerta:    alertaDoRelatorio(r),
+	}) {
+		<div class="flex max-w-3xl flex-col gap-8">
+			@webui.Cartao("") {
+				<div class="overflow-x-auto">
+					<table class="w-full text-left">
+						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+							<tr>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Resultado</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Operação</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Item</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-borda">
+							for _, res := range r.Resultados {
+								<tr>
+									<td class="px-4 py-3">
+										if res.Erro == "" {
+											@webui.Selo(webui.TomSucesso, "aplicado")
+										} else {
+											@webui.Selo(webui.TomPerigo, "falhou")
+										}
+									</td>
+									<td class="px-4 py-3 text-conteudo-suave">{ string(res.Item.Operacao) }</td>
+									<td class="px-4 py-3">
+										<span class="font-medium">{ res.Item.Nome }</span>
+										<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ res.Item.Tipo }</code>
+										if res.Erro != "" {
+											<p class="text-sm text-perigo">{ res.Erro }</p>
+										}
+									</td>
+								</tr>
+							}
+							for _, item := range r.Ignorados {
+								<tr>
+									<td class="px-4 py-3">
+										@webui.Selo(tomDaOperacao(item.Operacao), "não aplicado")
+									</td>
+									<td class="px-4 py-3 text-conteudo-suave">{ string(item.Operacao) }</td>
+									<td class="px-4 py-3">
+										<span class="font-medium">{ item.Nome }</span>
+										<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ item.Tipo }</code>
+										if item.Motivo != "" {
+											<p class="text-sm text-conteudo-suave">{ item.Motivo }</p>
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+			<div>
+				<a href={ templ.SafeURL(webui.RotaConfiguracao) } class="pb-botao pb-botao-primario">Voltar à configuração</a>
+			</div>
+		</div>
+	}
+}
+
+templ tabelaDeItens(itens []Item) {
+	if len(itens) == 0 {
+		<p class="px-4 py-6 text-conteudo-suave">O arquivo não descreve nenhum item.</p>
+	} else {
+		<div class="overflow-x-auto">
+			<table class="w-full text-left">
+				<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+					<tr>
+						<th scope="col" class="px-4 py-2.5 font-semibold">Operação</th>
+						<th scope="col" class="px-4 py-2.5 font-semibold">Item</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-borda">
+					for _, item := range itens {
+						<tr>
+							<td class="px-4 py-3">
+								@webui.Selo(tomDaOperacao(item.Operacao), string(item.Operacao))
+							</td>
+							<td class="px-4 py-3">
+								<span class="font-medium">{ item.Nome }</span>
+								<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ item.Tipo }</code>
+								if item.Motivo != "" {
+									<p class="text-sm text-conteudo-suave">{ item.Motivo }</p>
+								}
+								for _, d := range item.Divergencias {
+									<p class="text-sm text-conteudo-suave">
+										<code class="font-mono text-xs">{ d.Campo }</code>
+										{ " — arquivo: " }
+										<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs">{ ouTraco(d.NoYAML) }</code>
+										{ " / banco: " }
+										<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs">{ ouTraco(d.NoBanco) }</code>
+									</p>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+func ouTraco(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
+// alertaDoPlano é o aviso da trava otimista, no topo da tela do plano.
+func alertaDoPlano(p Plano) *webui.Alerta {
+	if !p.BancoAvancou {
+		return nil
+	}
+	return &webui.Alerta{
+		Tom:    webui.TomAlerta,
+		Titulo: "O banco mudou desde o export deste arquivo.",
+		Texto: "O import mescla: aplica o que só o arquivo mudou, mantém o que só o banco mudou, " +
+			"e não aplica o que os dois mudaram — esses aparecem como conflito, com os campos lado a lado.",
+	}
+}
+
+func alertaDoRelatorio(r Relatorio) *webui.Alerta {
+	if r.Falhas() > 0 {
+		return &webui.Alerta{
+			Tom:    webui.TomPerigo,
+			Titulo: "Parte do arquivo não entrou.",
+			Texto:  "Os itens marcados como falha estão abaixo, com o motivo. O que entrou continua aplicado.",
+		}
+	}
+	return &webui.Alerta{
+		Tom:    webui.TomSucesso,
+		Titulo: "Import aplicado.",
+		Texto:  "O que ficou de fora aparece abaixo com o motivo.",
+	}
+}
