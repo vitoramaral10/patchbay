@@ -14,6 +14,7 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/apikey"
 	"github.com/vitoramaral10/patchbay/internal/authsrv"
 	"github.com/vitoramaral10/patchbay/internal/catalogo"
+	"github.com/vitoramaral10/patchbay/internal/configuracao"
 	"github.com/vitoramaral10/patchbay/internal/endpoint"
 	"github.com/vitoramaral10/patchbay/internal/platform/cripto"
 	"github.com/vitoramaral10/patchbay/internal/platform/store"
@@ -49,12 +50,13 @@ type Aplicacao struct {
 	repoChave    *apikey.RepositorioSQLite
 	repoOAuth    *authsrv.RepositorioSQLite
 
-	admHTTP    *admin.HTTP
-	oauthHTTP  *authsrv.HTTP
-	adminUp    *upstream.Admin
-	adminEnd   *endpoint.Admin
-	adminChave *apikey.Admin
-	adminOAuth *authsrv.Admin
+	admHTTP     *admin.HTTP
+	oauthHTTP   *authsrv.HTTP
+	adminUp     *upstream.Admin
+	adminEnd    *endpoint.Admin
+	adminChave  *apikey.Admin
+	adminOAuth  *authsrv.Admin
+	adminConfig *configuracao.Admin
 
 	mu         sync.Mutex
 	observados []func()
@@ -146,6 +148,33 @@ func montar(ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logg
 		endpointsParaChave{repo: a.repoEndpoint},
 		cfg.PublicURL, log.With("componente", "admin_chave"),
 	)
+	// O export/import de YAML recebe as quatro features pelos adaptadores de
+	// configuracao.go, e o gerente junto: um import feito pela tela precisa valer
+	// no ar, sem esperar o próximo boot. O subcomando de linha de comando monta o
+	// mesmo serviço sem gerente nenhum — lá não há supervisão a atualizar.
+	logConfig := log.With("componente", "configuracao")
+	a.adminConfig = configuracao.NovoAdmin(
+		configuracao.NovoServico(
+			upstreamsDaConfiguracao{
+				repo: a.repoUpstream, gerente: a.gerente,
+				rematerializar: a.endpoints.Sincronizar, log: logConfig,
+			},
+			segredosDaConfiguracao{repo: a.repoUpstream},
+			endpointsDaConfiguracao{
+				repo: a.repoEndpoint, upstreams: a.repoUpstream,
+				servidores: a.endpoints, log: logConfig,
+			},
+			logConfig,
+			configuracao.ComChaves(chavesDaConfiguracao{repo: a.repoChave}),
+			configuracao.ComClientes(clientesDaConfiguracao{repo: a.repoOAuth}),
+			// O import lê segredo do ambiente do processo. Em serve isso é o
+			// ambiente com que o patchbay subiu — a chave mestra já saiu de lá
+			// no boot (cofreDoAmbiente).
+			configuracao.ComAmbiente(os.LookupEnv),
+		),
+		logConfig,
+	)
+
 	a.oauthHTTP = authsrv.NovoHTTP(a.oauth, log.With("componente", "authsrv_http"))
 	a.adminOAuth = authsrv.NovoAdmin(
 		a.repoOAuth, endpointsParaOAuth{repo: a.repoEndpoint},
@@ -263,6 +292,7 @@ func (a *Aplicacao) Handler() http.Handler {
 	a.adminEnd.Rotas(protegido)
 	a.adminChave.Rotas(protegido)
 	a.adminOAuth.Rotas(protegido)
+	a.adminConfig.Rotas(protegido)
 	mux.Handle(webui.RotaPainel, a.admHTTP.Proteger(protegido))
 
 	// O authorize endpoint é o único do AS que exige sessão de admin: o

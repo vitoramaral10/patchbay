@@ -17,6 +17,8 @@ const (
 	RotaChaves = "/admin/chaves"
 	// RotaClientesOAuth é a lista de clientes OAuth do authorization server.
 	RotaClientesOAuth = "/admin/oauth"
+	// RotaConfiguracao é o export e o import do YAML versionável.
+	RotaConfiguracao = "/admin/configuracao"
 	// RotaLogin é o formulário de entrada.
 	RotaLogin = "/admin/login"
 	// RotaSetup é o formulário de criação do admin único; deixa de existir
@@ -33,6 +35,8 @@ const (
 	SecaoEndpoints = "endpoints"
 	SecaoChaves    = "chaves"
 	SecaoOAuth     = "oauth"
+	// SecaoConfiguracao é o export/import de YAML.
+	SecaoConfiguracao = "configuracao"
 )
 
 type itemNav struct {
@@ -47,4 +51,5 @@ var navegacao = []itemNav{
 	{Rota: RotaEndpoints, Rotulo: "Endpoints", Secao: SecaoEndpoints},
 	{Rota: RotaChaves, Rotulo: "Chaves de API", Secao: SecaoChaves},
 	{Rota: RotaClientesOAuth, Rotulo: "Clientes OAuth", Secao: SecaoOAuth},
+	{Rota: RotaConfiguracao, Rotulo: "Configuração", Secao: SecaoConfiguracao},
 }
