@@ -5,12 +5,12 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: fatias **1, 2, 3, 4, 5, 6 e 10** do épico entregues — catálogo e
+> Estado: fatias **1, 2, 3, 4, 5, 6, 10 e 11** do épico entregues — catálogo e
 > endpoint, resiliência de upstream, composição fina do endpoint, upstream
 > STDIO com supervisor de processo, segredos cifrados em repouso e o
-> authorization server essencial. OAuth de upstream (fatias 7-8), sonda
-> funcional (fatia 9) e CIMD/DCR/redirect URI de loopback (fatia 11) seguem
-> pendentes.
+> authorization server completo (CIMD, DCR e redirect URI de loopback
+> incluídos). OAuth de upstream (fatias 7-8), sonda funcional (fatia 9) e
+> observabilidade (fatia 12) seguem pendentes.
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
@@ -59,6 +59,12 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 - `internal/apikey` — chave com prefixo legível, verificada por hash SHA-256,
   com escopo de endpoints, plugada em `auth.RequireBearerToken` do go-sdk.
   Credencial em query string vem desligada.
+- `internal/authsrv` — o **authorization server OAuth 2.1** embutido: PKCE S256
+  obrigatório, metadata RFC 8414 e RFC 9728 por endpoint, `resource` do RFC 8707
+  no `aud`, rotação de refresh com família e detecção de replay, revogação
+  RFC 7009, e as três formas de um cliente existir — cadastrado na tela,
+  **CIMD** (o documento que o próprio cliente publica) e **DCR** (RFC 7591,
+  deprecado mas mantido). Ver [Authorization server](#authorization-server).
 - `internal/admin` — administrador único com senha em argon2id, setup no
   primeiro acesso, sessão por cookie `HttpOnly`/`SameSite=Lax` em tabela com
   expiração, e o portão que protege as rotas de UI.
@@ -82,6 +88,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
 | `/admin/upstreams` | CRUD de upstream HTTP (bearer e headers estáticos) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora |
 | `/admin/endpoints` | CRUD de endpoint com composição fina — quais upstreams entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada upstream dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
+| `/admin/oauth` | Clientes do authorization server: cadastro à mão, e as linhas que aparecem sozinhas por **CIMD** ou **DCR** — a coluna Origem diz qual é qual. Detalhe com a allowlist de redirect, o escopo, as sessões vivas e a revogação de cliente ou de sessão |
 
 **Nada exige reiniciar o processo.** Criar, editar, desabilitar ou remover um
 upstream reconfigura a supervisão na mesma requisição; mudar a composição de um
@@ -335,6 +342,113 @@ está cifrado no banco não volta, e o caminho é apagar o banco e recadastrar.
 Guarde-a onde você guarda segredo de produção, e faça backup dela junto com o
 `patchbay.db` — um sem o outro não serve para nada.
 
+## Authorization server
+
+O patchbay é o próprio authorization server dos seus clientes. Um cliente MCP
+remoto — claude.ai, Claude Code, o que você escrever — conecta em
+`/mcp/<slug>`, recebe 401 com `WWW-Authenticate` apontando para a metadata
+daquele endpoint, e dela chega ao `/oauth/authorize`. **Nada disso precisa ser
+configurado no cliente:** só a URL do endpoint.
+
+O "usuário" deste AS é o administrador do patchbay. `/oauth/authorize` é a única
+rota do protocolo atrás da sessão de admin: sem sessão ela leva ao login
+carregando o destino, e o clique do consentimento não se perde.
+
+| Rota | O que é |
+|---|---|
+| `/.well-known/oauth-authorization-server` | Metadata RFC 8414 |
+| `/.well-known/oauth-protected-resource/mcp/<slug>` | Metadata RFC 9728 do endpoint, mais o fallback na raiz |
+| `/oauth/authorize` | Consentimento, atrás da sessão de admin |
+| `/oauth/token` | `authorization_code` e `refresh_token`, em `application/x-www-form-urlencoded` |
+| `/oauth/revoke` | Revogação RFC 7009 |
+| `/oauth/register` | Registro dinâmico RFC 7591 (DCR), aberto e com teto |
+
+**O token vale para um endpoint só.** O `resource` do RFC 8707 é obrigatório na
+autorização e vira o `aud` do token; apresentá-lo em outro endpoint devolve 403,
+não 401 — 403 porque o token é válido, só não é para ali. O slug entra nessa URL
+canônica, e é por isso que ele não muda depois de criado.
+
+**Refresh com rotação e família.** Cada consentimento abre uma família de
+tokens; cada refresh troca o par e encadeia o antigo ao novo. Reapresentar um
+refresh já rotacionado — ou um código de autorização já usado — **revoga a
+família inteira**, o que força reautenticação. É o comportamento desejado, e é
+o que torna a rotação útil em vez de decorativa.
+
+### As três formas de um cliente existir
+
+| Forma | Como nasce | Como morre |
+|---|---|---|
+| **Cadastro à mão** | `/admin/oauth` → *Novo cliente*. A `redirect_uri` do claude.ai já vem sugerida | Revogado na tela |
+| **CIMD** | O `client_id` **é** uma URL https, e o documento de metadados está publicado nela. Nada é registrado: o documento é buscado e cacheado com TTL de uma hora | O cache vence e é rebuscado; revogar na tela impede o rebusque |
+| **DCR** (RFC 7591) | O cliente faz `POST /oauth/register` e guarda o `client_id` que recebe | Revogado na tela, e aí o `client_id` deixa de existir |
+
+CIMD é o que a spec MCP 2026-07-28 pôs no lugar do DCR. O claude.ai só o escolhe
+se a metadata anunciar `client_id_metadata_document_supported: true` **e**
+`"none"` em `token_endpoint_auth_methods_supported` — o patchbay anuncia os dois.
+Faltando um, ele cai para DCR e registra um cliente novo a cada conexão fresca.
+DCR continua ligado porque a remoção mais cedo possível é a primeira revisão da
+spec publicada em ou depois de 2027-07-28, e porque há cliente que só tem ele.
+
+Cliente que se registra sozinho **não tem escopo escolhido por ninguém**, então
+ele pode *pedir* qualquer endpoint. O que autoriza de fato continua sendo o
+consentimento: uma vez por endpoint, na sua sessão de administração, com o slug
+e o hostname do redirect na tela. A lista de `/admin/oauth` separa as três
+origens numa coluna própria — uma linha que apareceu sem você pedir tem de ser
+reconhecível como tal.
+
+### Redirect de loopback, e por que a porta sai da comparação
+
+Duas regras de comparação de `redirect_uri` convivem no mesmo endpoint, e é a
+URI cadastrada que escolhe qual vale:
+
+- **Exata, caractere a caractere**, para tudo. Comparação por prefixo é a falha
+  clássica que transforma um AS em redirecionador aberto.
+- **Ignorando a porta**, para `http` em loopback (RFC 8252 §7.3). O Claude Code
+  é cliente nativo: ele escuta numa porta efêmera que só conhece depois de abrir
+  o listener, então a porta não pode fazer parte do que foi cadastrado. Esquema,
+  hostname, caminho e query continuam sendo comparados exatamente — e `localhost`
+  e `127.0.0.1` são hostnames **diferentes**, então quem precisa dos dois declara
+  os dois, como o Claude Code faz no próprio documento de CIMD.
+
+### O guard de SSRF do CIMD
+
+Buscar um documento de CIMD é a única vez em que o patchbay faz uma requisição de
+saída para uma URL escolhida por quem chama — de dentro do processo que tem o
+banco e a chave mestra em mãos. É a troca que a spec fez ao deprecar DCR: menos
+inflação de clientes, um fetch controlado por terceiro. Os guard-rails:
+
+- **Só `https`**, e só com caminho (nunca a raiz de um domínio); sem `userinfo`,
+  sem fragmento.
+- **Faixas privadas bloqueadas antes e depois do DNS.** Se o host já é um IP, a
+  recusa acontece sem abrir socket; se é um nome, a checagem roda no
+  `Control` do discador, com o endereço resolvido, imediatamente antes de
+  conectar — não sobra janela para **DNS rebinding**. Loopback, RFC 1918,
+  link-local (onde mora `169.254.169.254`), unique-local IPv6, CGNAT e as
+  reservadas ficam de fora, e o IPv4 mapeado em IPv6 é desembrulhado antes da
+  checagem.
+- **Redirect não é seguido**: seguir um 302 é como a URL validada deixa de ser a
+  URL buscada.
+- **`Content-Type` de JSON exigido**, corpo limitado a 64 KiB, timeout de 5 s
+  para o fetch inteiro, e **single-flight** por identificador.
+- **O documento tem de fechar com a URL**: o `client_id` de dentro é comparado
+  exatamente com a URL de fora. É o que impede publicar, num domínio seu, um
+  documento que se apresenta como cliente de outro.
+- **Erro nunca é cacheado**, e uma busca que falha serve o **último documento
+  bom** que houver. Um cliente que já funcionava não perde a conexão porque a
+  CDN do dono piscou.
+
+Resíduo aceito, e está no estudo: provedor legítimo atrás de CDN cujo IP caia
+numa faixa bloqueada falha o registro. O erro aparece, e o caminho de saída é
+cadastrar o cliente à mão em `/admin/oauth`.
+
+O `/oauth/register` é aberto por desenho — é o que "dynamic" quer dizer — e por
+isso tem teto: um balde de fichas por IP e por minuto, mais um teto de registros
+por origem e por hora e outro agregado. Um só dos dois não bastaria: o balde
+deixa gravar para sempre em ritmo lento, e o teto sozinho deixa gastar a cota da
+hora em um segundo. `client_secret` de DCR só é emitido se o cliente pedir
+autenticação com segredo, aparece **uma única vez** na resposta do registro, e o
+que fica no banco é o hash mais o prefixo visível.
+
 ## Segurança
 
 - **CSRF**: `http.NewCrossOriginProtection` (nativo desde Go 1.25) envolve o mux
@@ -349,7 +463,9 @@ Guarde-a onde você guarda segredo de produção, e faça backup dela junto com 
   cookie `HttpOnly` + `SameSite=Lax`, validade absoluta de 12 horas, varredura
   horária das vencidas.
 - **Duas classes de segredo**: o que o patchbay *verifica* (chave de API, sessão
-  de admin) vai como hash, e não volta nunca; o que ele *apresenta* (bearer e
+  de admin, e todo o que o authorization server emite — código de autorização,
+  access token, refresh token, `client_secret` de cliente) vai como hash, e não
+  volta nunca; o que ele *apresenta* (bearer e
   header estático de upstream, variável de ambiente sensível de upstream STDIO,
   e adiante os tokens de OAuth) precisa voltar em claro e vai em cifra
   reversível. O token de um servidor lançado por linha de comando é a mesma
