@@ -129,7 +129,7 @@ func TelaLista(linhas []Linha, alerta *webui.Alerta) templ.Component {
 					return nil
 				})
 				templ_7745c5c3_Err = webui.Vazio("Nenhum endpoint ainda.",
-					"Um endpoint é o que o cliente de IA registra. Crie o primeiro, escolha quais upstreams entram nele e emita uma chave de API.").Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
+					"Um endpoint é o que o cliente de IA registra. Crie o primeiro, escolha quais MCPs entram nele e emita uma chave de API.").Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -146,7 +146,7 @@ func TelaLista(linhas []Linha, alerta *webui.Alerta) templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"overflow-x-auto\"><table class=\"w-full text-left\"><thead class=\"border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave\"><tr><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Endpoint</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">URL</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\" data-numero>Upstreams</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\" data-numero>Ferramentas</th></tr></thead> <tbody class=\"divide-y divide-borda\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"overflow-x-auto\"><table class=\"w-full text-left\"><thead class=\"border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave\"><tr><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Endpoint</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">URL</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\" data-numero>MCPs</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\" data-numero>Ferramentas</th></tr></thead> <tbody class=\"divide-y divide-borda\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -263,7 +263,7 @@ func TelaLista(linhas []Linha, alerta *webui.Alerta) templ.Component {
 		})
 		templ_7745c5c3_Err = webui.Pagina(webui.DadosPagina{
 			Titulo:    "Endpoints",
-			Subtitulo: "Cada endpoint é uma URL MCP que agrega os upstreams escolhidos e é uma fronteira de autorização própria.",
+			Subtitulo: "Cada endpoint é uma URL MCP que o cliente registra: ela agrega os MCPs escolhidos e é uma fronteira de autorização própria.",
 			Secao:     webui.SecaoEndpoints,
 			Usuario:   webui.UsuarioDoContexto(ctx),
 			Acao:      botaoNovo(),
@@ -588,7 +588,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = dado("Upstreams na composição").Render(templ.WithChildren(ctx, templ_7745c5c3_Var26), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = dado("MCPs na composição").Render(templ.WithChildren(ctx, templ_7745c5c3_Var26), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -615,7 +615,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				if len(d.Composicao) == 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<p class=\"px-4 py-6 text-conteudo-suave\">Nenhum upstream compõe este endpoint, então ele responde <code class=\"font-mono\">tools/list</code> vazio. Edite o endpoint para escolher os upstreams.</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<p class=\"px-4 py-6 text-conteudo-suave\">Nenhum MCP compõe este endpoint, então ele responde <code class=\"font-mono\">tools/list</code> vazio. Edite o endpoint para escolher os MCPs.</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -638,7 +638,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</span> <span class=\"flex items-center gap-3\"><span class=\"text-sm text-conteudo-suave\" data-numero title=\"Ferramentas deste upstream que sobrevivem à composição deste endpoint, sobre as que ele expõe.\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</span> <span class=\"flex items-center gap-3\"><span class=\"text-sm text-conteudo-suave\" data-numero title=\"Ferramentas deste MCP que sobrevivem à composição deste endpoint, sobre as que ele expõe.\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -753,7 +753,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				if len(d.Ferramentas) == 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<p class=\"px-4 py-6 text-conteudo-suave\">Nenhuma ferramenta no ar. Lista vazia é resposta legítima: o cliente recebe <code class=\"font-mono\">tools/list</code> sem itens em vez de erro, e volta a ver as ferramentas quando algum upstream ficar pronto.</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<p class=\"px-4 py-6 text-conteudo-suave\">Nenhuma ferramenta no ar. Lista vazia é resposta legítima: o cliente recebe <code class=\"font-mono\">tools/list</code> sem itens em vez de erro, e volta a ver as ferramentas quando algum MCP ficar pronto.</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1231,12 +1231,12 @@ func TelaForm(f Form, opcoes []UpstreamOpcao) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				if len(opcoes) == 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<p class=\"px-4 py-6 text-conteudo-suave\">Nenhum upstream cadastrado. Crie um upstream primeiro — um endpoint sem upstream responde <code class=\"font-mono\">tools/list</code> vazio.</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<p class=\"px-4 py-6 text-conteudo-suave\">Nenhum MCP cadastrado. Crie um MCP primeiro — um endpoint sem MCP responde <code class=\"font-mono\">tools/list</code> vazio.</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<fieldset class=\"flex flex-col gap-2 px-4 py-4\"><legend class=\"sr-only\">Upstreams deste endpoint</legend><p class=\"text-sm text-conteudo-tenue\">O prefixo e as regras valem só neste endpoint: o mesmo upstream pode entrar em outro com outra composição. A ordem é filtro, renome e prefixo — e o filtro casa contra o nome original no upstream, nunca contra o nome já prefixado.</p><ul class=\"flex flex-col gap-1\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<fieldset class=\"flex flex-col gap-2 px-4 py-4\"><legend class=\"sr-only\">MCPs deste endpoint</legend><p class=\"text-sm text-conteudo-tenue\">O prefixo e as regras valem só neste endpoint: o mesmo MCP pode entrar em outro com outra composição. A ordem é filtro, renome e prefixo — e o filtro casa contra o nome original no MCP, nunca contra o nome já prefixado.</p><ul class=\"flex flex-col gap-1\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1397,7 +1397,7 @@ func itemDaComposicao(o UpstreamOpcao) templ.Component {
 			Rotulo:       "Prefixo",
 			Valor:        o.Prefixo,
 			Erro:         o.ErroPrefixo,
-			Ajuda:        "Entra no nome que o cliente vê, nunca no nome chamado no upstream. Resolve colisão entre dois upstreams que expõem search.",
+			Ajuda:        "Entra no nome que o cliente vê, nunca no nome chamado no MCP. Resolve colisão entre dois MCPs que expõem search.",
 			Placeholder:  "nt_",
 			Monoespacado: true,
 		}).Render(ctx, templ_7745c5c3_Buffer)

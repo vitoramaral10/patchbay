@@ -142,7 +142,7 @@ func TestLerForm(t *testing.T) {
 		t.Run(nome, func(t *testing.T) {
 			t.Parallel()
 
-			r := httptest.NewRequest("POST", "/admin/upstreams", strings.NewReader(tc.corpo))
+			r := httptest.NewRequest("POST", "/admin/mcps", strings.NewReader(tc.corpo))
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 			f, err := lerForm(r)

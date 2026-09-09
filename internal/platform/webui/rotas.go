@@ -9,8 +9,13 @@ package webui
 const (
 	// RotaPainel é a raiz da UI e o destino do login bem-sucedido.
 	RotaPainel = "/admin/"
-	// RotaUpstreams é a lista de upstreams.
-	RotaUpstreams = "/admin/upstreams"
+	// RotaUpstreams é a lista de MCPs.
+	//
+	// A UI chama a tela de "MCPs" porque é assim que quem configura um cliente
+	// de IA nomeia a coisa; o identificador e o pacote seguem "upstream", que é
+	// o papel que o servidor tem aqui dentro e o que distingue esta ponta do
+	// endpoint — que também é MCP.
+	RotaUpstreams = "/admin/mcps"
 	// RotaBiblioteca é o catálogo de servidores MCP conhecidos, de onde um
 	// upstream nasce já preenchido.
 	RotaBiblioteca = "/admin/biblioteca"
@@ -42,7 +47,10 @@ const (
 	//
 	// É contrato com o provedor: o redirect_uri registrado lá é este caminho
 	// sobre a URL pública, e mudá-lo depois quebra todo consentimento existente.
-	RotaCallbackOAuthUpstream = RotaUpstreams + "/oauth/callback"
+	// Por isso o caminho é literal e não deriva mais de RotaUpstreams: quando a
+	// tela virou "/admin/mcps", mover o callback junto teria invalidado o
+	// consentimento de todo upstream já autorizado.
+	RotaCallbackOAuthUpstream = "/admin/upstreams/oauth/callback"
 	// RotaMetadataClienteUpstream é o Client ID Metadata Document do patchbay
 	// como cliente OAuth (SEP-991).
 	//
@@ -62,7 +70,7 @@ const (
 // Seções da navegação, usadas para marcar o item ativo.
 const (
 	SecaoPainel    = "painel"
-	SecaoUpstreams = "upstreams"
+	SecaoUpstreams = "mcps"
 	// SecaoBiblioteca é o catálogo de servidores MCP conhecidos.
 	SecaoBiblioteca = "biblioteca"
 	SecaoEndpoints  = "endpoints"
@@ -82,7 +90,7 @@ type itemNav struct {
 
 var navegacao = []itemNav{
 	{Rota: RotaPainel, Rotulo: "Painel", Secao: SecaoPainel},
-	{Rota: RotaUpstreams, Rotulo: "Upstreams", Secao: SecaoUpstreams},
+	{Rota: RotaUpstreams, Rotulo: "MCPs", Secao: SecaoUpstreams},
 	{Rota: RotaBiblioteca, Rotulo: "Biblioteca", Secao: SecaoBiblioteca},
 	{Rota: RotaEndpoints, Rotulo: "Endpoints", Secao: SecaoEndpoints},
 	{Rota: RotaChaves, Rotulo: "Chaves de API", Secao: SecaoChaves},

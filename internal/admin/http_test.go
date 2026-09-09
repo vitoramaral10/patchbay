@@ -188,9 +188,9 @@ func TestLogin(t *testing.T) {
 			querDestino: webui.RotaPainel,
 		},
 		"senha certa respeita o destino pedido": {
-			campos:      url.Values{"usuario": {usuario}, "senha": {senha}, "destino": {"/admin/upstreams"}},
+			campos:      url.Values{"usuario": {usuario}, "senha": {senha}, "destino": {"/admin/mcps"}},
 			querStatus:  http.StatusSeeOther,
-			querDestino: "/admin/upstreams",
+			querDestino: "/admin/mcps",
 		},
 		"destino absoluto de outro host é ignorado": {
 			campos:      url.Values{"usuario": {usuario}, "senha": {senha}, "destino": {"https://exemplo.invalido/roubar"}},
@@ -254,7 +254,7 @@ func TestProteger_SemSessaoVaiParaLoginComDestino(t *testing.T) {
 	criarAdmin(t, clienteSemSeguir(t), s)
 
 	// Cliente novo: tem admin cadastrado, não tem cookie.
-	res := pegar(t, clienteSemSeguir(t), s.servidor.URL+"/admin/upstreams?pagina=2")
+	res := pegar(t, clienteSemSeguir(t), s.servidor.URL+"/admin/mcps?pagina=2")
 	if res.StatusCode != http.StatusSeeOther {
 		t.Fatalf("status = %d, quer %d", res.StatusCode, http.StatusSeeOther)
 	}
@@ -262,7 +262,7 @@ func TestProteger_SemSessaoVaiParaLoginComDestino(t *testing.T) {
 	if !strings.HasPrefix(destino, webui.RotaLogin+"?destino=") {
 		t.Fatalf("Location = %q, quer %s com o destino original", destino, webui.RotaLogin)
 	}
-	if !strings.Contains(destino, url.QueryEscape("/admin/upstreams?pagina=2")) {
+	if !strings.Contains(destino, url.QueryEscape("/admin/mcps?pagina=2")) {
 		t.Errorf("Location = %q, quer o caminho original preservado", destino)
 	}
 }

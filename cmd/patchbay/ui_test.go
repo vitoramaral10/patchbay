@@ -652,7 +652,7 @@ func TestUI_ValidacaoDosFormularios(t *testing.T) {
 		"upstream sem nome": {
 			rota:       webui.RotaUpstreams,
 			campos:     url.Values{"url": {"https://exemplo.invalido/mcp"}, "timeout_ms": {"5000"}},
-			querTrecho: "nome ao upstream",
+			querTrecho: "nome ao MCP",
 		},
 		"upstream com url inválida": {
 			rota:       webui.RotaUpstreams,

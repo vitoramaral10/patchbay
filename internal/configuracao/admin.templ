@@ -57,9 +57,11 @@ templ TelaConfiguracao(d DadosTela) {
 			@webui.Cartao("Exportar") {
 				<div class="flex flex-col gap-4 px-4 py-5">
 					<p class="max-w-[65ch] text-conteudo-suave">
-						Baixa a configuração inteira — upstreams, endpoints e a composição de cada um —
+						Baixa a configuração inteira — MCPs, endpoints e a composição de cada um —
 						com a revisão de cada item. Credencial não vai junto: o arquivo traz o nome da
-						variável de ambiente de onde o import lê cada uma.
+						variável de ambiente de onde o import lê cada uma. No arquivo os MCPs estão sob
+						a chave <code class="font-mono">upstreams</code>, que é o nome do papel deles no
+						formato e não muda.
 					</p>
 					<div>
 						<a href={ templ.SafeURL(RotaExportar) } class="pb-botao pb-botao-primario" download>
@@ -89,7 +91,7 @@ templ TelaConfiguracao(d DadosTela) {
 							<span class="flex-1">
 								<span class="font-medium">Remover o que não está no arquivo</span>
 								<span class="block text-conteudo-tenue">
-									Sem isto, upstream ou endpoint que existe aqui e não está no arquivo
+									Sem isto, MCP ou endpoint que existe aqui e não está no arquivo
 									fica como está — o arquivo nunca apaga por omissão.
 								</span>
 							</span>
