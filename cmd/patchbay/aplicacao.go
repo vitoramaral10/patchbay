@@ -13,6 +13,7 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/admin"
 	"github.com/vitoramaral10/patchbay/internal/apikey"
 	"github.com/vitoramaral10/patchbay/internal/authsrv"
+	"github.com/vitoramaral10/patchbay/internal/biblioteca"
 	"github.com/vitoramaral10/patchbay/internal/catalogo"
 	"github.com/vitoramaral10/patchbay/internal/configuracao"
 	"github.com/vitoramaral10/patchbay/internal/endpoint"
@@ -67,6 +68,8 @@ type Aplicacao struct {
 	admHTTP     *admin.HTTP
 	oauthHTTP   *authsrv.HTTP
 	adminUp     *upstream.Admin
+	adminBib    *biblioteca.Admin
+	sincBib     *biblioteca.Sincronizador
 	adminEnd    *endpoint.Admin
 	adminChave  *apikey.Admin
 	adminOAuth  *authsrv.Admin
@@ -81,19 +84,51 @@ type Aplicacao struct {
 
 // OpcaoApp ajusta o grafo montado.
 //
-// Existe por um componente só: o buscador de documentos de CIMD é o único do
-// patchbay que faz requisição de saída para uma URL escolhida por terceiro, e o
-// teste ponta a ponta precisa apontá-lo a um documento servido em processo — o
-// que o guarda de SSRF, corretamente, recusaria.
+// Existe pelos dois componentes que fazem requisição de saída, e que o teste
+// ponta a ponta precisa apontar para um servidor em processo: o buscador de
+// documentos de CIMD, cuja URL vem de terceiro e que o guarda de SSRF —
+// corretamente — recusaria em teste; e a biblioteca, que varre o registry
+// oficial e sem isto faria o teste depender da internet.
 type OpcaoApp func(*opcoesApp)
 
 type opcoesApp struct {
-	cimd authsrv.DocumentosCIMD
+	cimd                authsrv.DocumentosCIMD
+	origemBiblioteca    string
+	curadoriaBiblioteca string
+	intervaloBiblioteca time.Duration
 }
 
 // ComBuscadorCIMD troca o buscador de documentos de CIMD.
 func ComBuscadorCIMD(b authsrv.DocumentosCIMD) OpcaoApp {
 	return func(o *opcoesApp) { o.cimd = b }
+}
+
+// ComOrigemDaBiblioteca troca a base de onde a biblioteca varre o catálogo.
+//
+// Só o teste usa: em produção a base é o registry oficial, fixa no pacote. Não
+// é configuração — apontar a biblioteca para outro lugar em produção seria
+// cadastrar upstream a partir de uma lista que ninguém revisou.
+func ComOrigemDaBiblioteca(base string) OpcaoApp {
+	return func(o *opcoesApp) { o.origemBiblioteca = base }
+}
+
+// ComCuradoriaDaBiblioteca troca a base da segunda origem da biblioteca, a
+// lista curada de servidores remotos.
+//
+// Só o teste usa, pela mesma razão de ComOrigemDaBiblioteca: sem isto a suíte
+// sairia para o mcpservers.org a cada execução.
+func ComCuradoriaDaBiblioteca(base string) OpcaoApp {
+	return func(o *opcoesApp) { o.curadoriaBiblioteca = base }
+}
+
+// ComIntervaloDaBiblioteca troca de quanto em quanto tempo o catálogo local é
+// refeito.
+//
+// Só o teste usa, e por um motivo específico: sem isto, o teste que sobe o
+// patchbay inteiro esperaria doze horas para ver a segunda varredura. Em
+// produção o intervalo é constante do pacote.
+func ComIntervaloDaBiblioteca(d time.Duration) OpcaoApp {
+	return func(o *opcoesApp) { o.intervaloBiblioteca = d }
 }
 
 // montar abre o banco, aplica as migrações e liga os componentes.
@@ -231,6 +266,26 @@ func montar(
 		a.endpoints.Sincronizar, nomeExpostoDe,
 		log.With("componente", "admin_upstream"),
 	)
+	// A biblioteca tem cópia local de duas origens — o registry oficial e a
+	// lista curada do mcpservers.org —, mesclada por uma goroutine de fundo. A
+	// tela lê o banco e nunca a rede: é o que faz a busca digitada responder na
+	// hora, e o que mantém a tela de pé com a internet fora.
+	//
+	// O resto do gateway não sabe que ela existe — nem o boot depende dela: a
+	// primeira varredura acontece depois, em Iniciar, e enquanto ela não termina
+	// a tela diz que o catálogo ainda está vindo.
+	a.sincBib = biblioteca.NovoSincronizador(
+		biblioteca.NovaOrigem(opc.origemBiblioteca),
+		biblioteca.NovaCuradoria(opc.curadoriaBiblioteca),
+		biblioteca.NovoRepositorio(leitura, escrita),
+		log.With("componente", "biblioteca_sync"),
+		biblioteca.ComIntervalo(opc.intervaloBiblioteca),
+	)
+	a.adminBib = biblioteca.NovoAdmin(
+		biblioteca.NovoRepositorio(leitura, escrita),
+		a.sincBib,
+		log.With("componente", "admin_biblioteca"),
+	)
 	a.adminEnd = endpoint.NovoAdmin(
 		a.repoEndpoint, a.endpoints,
 		upstreamsParaEndpoint{repo: a.repoUpstream, gerente: a.gerente},
@@ -356,6 +411,15 @@ func (a *Aplicacao) Iniciar(ctx context.Context) {
 		a.registrador.Varrer(ctx)
 	}()
 
+	// A cópia local do catálogo de servidores MCP. A primeira varredura só
+	// acontece se o que está no banco estiver vencido, então reiniciar o
+	// patchbay não custa trezentas requisições ao registry.
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		a.sincBib.Manter(ctx)
+	}()
+
 	// Solta os handlers de SSE no desligamento. Sem isto o Shutdown esperaria o
 	// prazo inteiro por conexões que, por desenho, só terminam quando o cliente
 	// desiste.
@@ -427,6 +491,7 @@ func (a *Aplicacao) Handler() http.Handler {
 	protegido := http.NewServeMux()
 	protegido.HandleFunc("GET "+webui.RotaPainel, a.painel)
 	a.adminUp.Rotas(protegido)
+	a.adminBib.Rotas(protegido)
 	a.adminEnd.Rotas(protegido)
 	a.adminChave.Rotas(protegido)
 	a.adminOAuth.Rotas(protegido)

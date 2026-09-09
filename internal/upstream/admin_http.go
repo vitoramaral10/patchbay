@@ -102,6 +102,13 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 // muda depois: um upstream HTTP e um upstream STDIO pedem campos diferentes, e
 // um formulário que mostra os dois conjuntos ao mesmo tempo obriga o admin a
 // adivinhar quais valem.
+//
+// Nome, URL e modo de credencial também entram pela query, e é assim que a
+// biblioteca (internal/biblioteca) adiciona um servidor do catálogo: ela não
+// cria o upstream, ela abre este formulário preenchido. Preencher e não criar é
+// deliberado — a URL vem de um catálogo de terceiro, e o admin confere antes de
+// salvar. Nenhum campo de credencial entra por aqui: segredo em URL vaza para
+// histórico do navegador, log de proxy e Referer.
 func (a *Admin) formNovo(w http.ResponseWriter, r *http.Request) {
 	// A sonda vem com os números preenchidos e desligada. Os dois juntos: campo
 	// numérico em branco obrigaria o admin a inventar um valor para ligar a
@@ -113,17 +120,98 @@ func (a *Admin) formNovo(w http.ResponseWriter, r *http.Request) {
 		SondaTimeoutMS:   SondaTimeoutPadraoMS,
 		SondaTolerancia:  SondaToleranciaPadrao,
 	}
-	switch r.URL.Query().Get("tipo") {
+	q := r.URL.Query()
+	switch q.Get("tipo") {
 	case TipoSTDIO:
 		form.Tipo = TipoSTDIO
 	case TipoSSE:
 		form.Tipo = TipoSSE
 	}
+	preencherDaQuery(&form, q)
 	if err := a.completarForm(r.Context(), &form); err != nil {
 		webui.ErroInterno(w, r, a.log, err)
 		return
 	}
 	webui.Renderizar(w, r, http.StatusOK, a.log, TelaForm(form))
+}
+
+// limiteDePreenchimento corta o que vem da query antes de ela virar valor de
+// input.
+//
+// Não é validação — Validar() ainda roda no POST. É contenção: a query é
+// escrita por quem monta o link, e um nome de 200 kB no atributo value seria
+// uma tela ilegível servida a partir de uma URL.
+const limiteDePreenchimento = 512
+
+// preencherDaQuery aplica os campos não sensíveis vindos da URL.
+//
+// Só nome, URL e modo, e só o que faz sentido para o tipo: preencher URL num
+// formulário STDIO deixaria na tela um campo que aquele transporte ignora, e o
+// admin leria isso como configuração em vigor. Modo só é aceito nos dois
+// valores conhecidos — qualquer outra coisa cai no padrão de ModoEfetivo, em
+// vez de gravar um modo que nenhum caminho do código entende.
+func preencherDaQuery(form *Form, q url.Values) {
+	if nome := cortar(q.Get("nome")); nome != "" {
+		form.Nome = nome
+	}
+	if form.STDIO() {
+		// No STDIO o que preenche é a execução, e ela vem em dois parâmetros
+		// porque argumento com espaço não sobrevive a uma string só: "arg"
+		// repete, e cada repetição é um argumento, na ordem em que veio.
+		//
+		// URL não entra aqui: preenchê-la num formulário STDIO deixaria na tela
+		// um campo que aquele transporte ignora, e o admin leria isso como
+		// configuração em vigor.
+		if comando := cortar(q.Get("comando")); comando != "" {
+			form.Comando = comando
+		}
+		if args := argsDaQuery(q); len(args) > 0 {
+			form.ArgsTexto = TextoDeArgs(args)
+		}
+		return
+	}
+	if bruta := cortar(q.Get("url")); bruta != "" {
+		form.URL = bruta
+	}
+	if q.Get("modo") == ModoOAuth {
+		form.Modo = ModoOAuth
+	}
+}
+
+// limiteDeArgs corta quantos argumentos a query pode preencher.
+//
+// Mesma razão de limiteDePreenchimento: quem monta o link escreve isto, e uma
+// lista sem fim viraria uma caixa de texto sem fim servida a partir de uma URL.
+const limiteDeArgs = 32
+
+// argsDaQuery lê os argumentos repetidos, apara cada um e descarta o que não
+// pode virar argumento — vazio, ou com quebra de linha, que partiria a caixa de
+// texto onde um argumento é uma linha.
+func argsDaQuery(q url.Values) []string {
+	brutos := q["arg"]
+	if len(brutos) > limiteDeArgs {
+		brutos = brutos[:limiteDeArgs]
+	}
+	args := make([]string, 0, len(brutos))
+	for _, a := range brutos {
+		a = cortar(a)
+		if a == "" || strings.ContainsAny(a, "\x00\n\r") {
+			continue
+		}
+		args = append(args, a)
+	}
+	return args
+}
+
+// cortar apara e limita, contando runas e não bytes: cortar no byte partiria um
+// caractere acentuado ao meio e o valor sairia da tela como um losango.
+func cortar(v string) string {
+	v = strings.TrimSpace(v)
+	runas := []rune(v)
+	if len(runas) > limiteDePreenchimento {
+		return string(runas[:limiteDePreenchimento])
+	}
+	return v
 }
 
 // completarForm preenche o formulário com o que já está gravado — credenciais
@@ -164,6 +252,11 @@ func (a *Admin) completarForm(ctx context.Context, form *Form) error {
 	// sabe disso — o banco não guarda o tools/list.
 	form.AvisoSondaFerramenta = avisoFerramentaForaDoCatalogo(
 		form.SondaFerramenta, a.gerente.FerramentasDescobertas(form.ID))
+	// O mesmo tipo de aviso, para o transporte que executa um programa: o
+	// comando pode simplesmente não existir aqui.
+	if form.STDIO() {
+		form.AvisoComando = avisoComandoForaDoPath(form.Comando)
+	}
 	return nil
 }
 
