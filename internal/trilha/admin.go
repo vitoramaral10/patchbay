@@ -86,7 +86,12 @@ type Filtro struct {
 	Upstream   string
 	Ferramenta string
 	Resultado  Resultado
-	Periodo    Periodo
+	// Origem separa a chamada de cliente da sondagem funcional. Vazia é
+	// "todas", e é o padrão de propósito: um filtro que esconde linhas sem
+	// dizer é a trilha mentindo por omissão. Quem não quer ver a sonda a
+	// escolhe no seletor; os contadores do painel, esses, já contam só cliente.
+	Origem  Origem
+	Periodo Periodo
 
 	// Desde e Ate são o recorte absoluto. Normalizado deriva Desde do Periodo
 	// quando ele não veio preenchido; o teste preenche direto para não depender
@@ -121,6 +126,9 @@ func (f Filtro) Normalizado() Filtro {
 	if f.Resultado != "" && !f.Resultado.Valido() {
 		f.Resultado = ""
 	}
+	if f.Origem != "" && !f.Origem.Valida() {
+		f.Origem = ""
+	}
 	if _, conhecido := f.Periodo.Duracao(); !conhecido {
 		f.Periodo = PeriodoTudo
 	}
@@ -139,7 +147,7 @@ func (f Filtro) Normalizado() Filtro {
 // estado vazio de "nada casa com este filtro" para "a trilha está vazia".
 func (f Filtro) Vazio() bool {
 	return f.Endpoint == "" && f.Upstream == "" && f.Ferramenta == "" &&
-		f.Resultado == "" && f.Periodo == PeriodoTudo
+		f.Resultado == "" && f.Origem == "" && f.Periodo == PeriodoTudo
 }
 
 // Query monta a query string do filtro com o cursor de uma linha — o link de
@@ -158,6 +166,9 @@ func (f Filtro) Query(cursorTS, cursorID int64) string {
 	}
 	if f.Resultado != "" {
 		q.Set("resultado", string(f.Resultado))
+	}
+	if f.Origem != "" {
+		q.Set("origem", string(f.Origem))
 	}
 	if f.Periodo != PeriodoTudo {
 		q.Set("periodo", string(f.Periodo))
@@ -181,6 +192,7 @@ func LerFiltro(q url.Values) Filtro {
 		Upstream:   strings.TrimSpace(q.Get("upstream")),
 		Ferramenta: strings.TrimSpace(q.Get("ferramenta")),
 		Resultado:  Resultado(strings.TrimSpace(q.Get("resultado"))),
+		Origem:     Origem(strings.TrimSpace(q.Get("origem"))),
 		Periodo:    Periodo(strings.TrimSpace(q.Get("periodo"))),
 		CursorTS:   cursorTS,
 		CursorID:   cursorID,
@@ -194,7 +206,9 @@ type Opcoes struct {
 	Ferramentas []string
 }
 
-// Resumo são os contadores de uma janela recente.
+// Resumo são os contadores de uma janela recente. Só de chamada de cliente: a
+// sondagem funcional é o custo da observação, não tráfego (ver
+// RepositorioSQLite.Resumo).
 type Resumo struct {
 	Janela        time.Duration
 	Chamadas      int64

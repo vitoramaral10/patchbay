@@ -61,6 +61,65 @@ func (r Resultado) Rotulo() string {
 	}
 }
 
+// Origem diz quem pediu a chamada.
+//
+// Coluna própria em vez de um valor novo em Resultado, e a diferença é a
+// pergunta que cada um responde: Resultado é "o que aconteceu" (ok, erro,
+// timeout) e Origem é "quem pediu". Um 'sonda_erro' dentro de Resultado faria
+// uma sondagem que estourou o prazo deixar de ser encontrável pelo filtro de
+// timeout, e obrigaria todo consumidor de Resultado a aprender dois
+// vocabulários para a mesma pergunta. Separadas, o resumo do painel exclui a
+// sonda com um predicado só e os contadores continuam significando "chamada de
+// cliente de verdade".
+type Origem string
+
+// Origens possíveis. Os mesmos textos estão no CHECK da migração 00012.
+const (
+	// OrigemCliente é o tools/call que chegou por um endpoint. É o padrão: toda
+	// linha gravada antes da fatia 9 é desta origem, porque era o único caminho
+	// que existia.
+	OrigemCliente Origem = "cliente"
+	// OrigemSonda é a sondagem funcional da fatia 9, disparada pela supervisão
+	// do upstream ou pelo botão "Sondar agora".
+	OrigemSonda Origem = "sonda"
+)
+
+// Valida informa se o é uma das duas origens conhecidas.
+func (o Origem) Valida() bool {
+	switch o {
+	case OrigemCliente, OrigemSonda:
+		return true
+	default:
+		return false
+	}
+}
+
+// OuCliente devolve a origem, tratando a vazia ou desconhecida como cliente.
+//
+// Existe porque "não disse de onde veio" é chamada de cliente, e não erro:
+// quem preenche o evento no caminho da requisição não deveria precisar dizer o
+// óbvio. Normalizar no tipo, e não só em quem grava, é o que impede um caller
+// futuro de esbarrar no CHECK da migração por um campo que ele nem sabia que
+// existia.
+func (o Origem) OuCliente() Origem {
+	if o.Valida() {
+		return o
+	}
+	return OrigemCliente
+}
+
+// Rotulo é como a origem aparece na tela.
+func (o Origem) Rotulo() string {
+	switch o {
+	case OrigemCliente:
+		return "cliente"
+	case OrigemSonda:
+		return "sonda"
+	default:
+		return string(o)
+	}
+}
+
 // Evento é uma chamada de ferramenta já respondida.
 //
 // Ele carrega tamanho de entrada e de saída, nunca o conteúdo: argumento e
@@ -87,6 +146,9 @@ type Evento struct {
 	Original   string
 
 	Resultado Resultado
+	// Origem separa a chamada de um cliente da sondagem funcional. Vazia é
+	// cliente: Registrador.Consumir normaliza antes de gravar.
+	Origem Origem
 	// Erro é a mensagem, já redigida. Nunca o erro cru: a mensagem de um
 	// upstream pode repetir o token que ele recusou.
 	Erro string
