@@ -55,7 +55,10 @@ type patchbayOAuth struct {
 	cliente     *http.Client
 }
 
-func subirPatchbayOAuth(t *testing.T, urlUpstream string) patchbayOAuth {
+// subirPatchbayOAuth sobe o patchbay em processo. opcoes existe para a fatia 11:
+// o teste de CIMD troca o buscador de documentos por um que alcança o httptest
+// em loopback.
+func subirPatchbayOAuth(t *testing.T, urlUpstream string, opcoes ...OpcaoApp) patchbayOAuth {
 	t.Helper()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -126,7 +129,7 @@ func subirPatchbayOAuth(t *testing.T, urlUpstream string) patchbayOAuth {
 		t.Fatalf("fechar banco do seed: erro = %v, quer nil", err)
 	}
 
-	app, err := montar(ctx, cfg, cofreDeTeste(t), log)
+	app, err := montar(ctx, cfg, cofreDeTeste(t), log, opcoes...)
 	if err != nil {
 		t.Fatalf("montar: erro = %v, quer nil", err)
 	}
@@ -454,10 +457,18 @@ func TestMetadataBemFormada(t *testing.T) {
 		case !meta.AuthorizationResponseIssParameterSupported:
 			t.Error("authorization_response_iss_parameter_supported = false, quer true")
 		}
-		// CIMD e DCR são a fatia 11: os campos existem e continuam zerados, e é
-		// isso que faz o claude.ai cair para o caminho pré-registrado.
-		if meta.ClientIDMetadataDocumentSupported || meta.RegistrationEndpoint != "" {
-			t.Error("metadata anuncia CIMD ou DCR, que são da fatia 11")
+		// O par que decide entre CIMD e DCR no claude.ai. Faltando um dos dois,
+		// ele cai para DCR e registra um cliente novo a cada conexão fresca —
+		// então este assert é o critério de "o claude.ai escolhe CIMD".
+		if !meta.ClientIDMetadataDocumentSupported {
+			t.Error("client_id_metadata_document_supported = false, quer true")
+		}
+		if !slices.Contains(meta.TokenEndpointAuthMethodsSupported, "none") {
+			t.Error(`token_endpoint_auth_methods_supported não tem "none", e sem ele não há CIMD`)
+		}
+		// E o registration_endpoint, que é o que o cliente que só sabe DCR usa.
+		if quer := p.urlPublica + authsrv.RotaRegistrar; meta.RegistrationEndpoint != quer {
+			t.Errorf("registration_endpoint = %q, quer %q", meta.RegistrationEndpoint, quer)
 		}
 	})
 

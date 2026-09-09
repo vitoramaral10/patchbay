@@ -1,6 +1,7 @@
 package authsrv
 
 import (
+	"net/url"
 	"strconv"
 	"time"
 
@@ -25,11 +26,73 @@ func tipoDoCliente(c Cliente) string {
 	return "público"
 }
 
+// origemDoCliente é como o registro se apresenta na tela.
+//
+// A distinção importa: o cliente cadastrado à mão é o que o admin escolheu; o de
+// DCR se registrou sozinho num endpoint aberto; o de CIMD nem é registro, é uma
+// cópia de um documento que o dono do cliente publica e pode mudar. Uma lista que
+// não separa os três esconde que a linha ali apareceu sem ninguém pedir.
+func origemDoCliente(c Cliente) string {
+	switch c.Tipo {
+	case TipoDCR:
+		if c.Origem != "" {
+			return "DCR · " + c.Origem
+		}
+		return "DCR"
+	case TipoCIMD:
+		return "CIMD · " + c.Origem
+	default:
+		return "cadastro manual"
+	}
+}
+
+// tomDaOrigem destaca o registro que apareceu sozinho.
+func tomDaOrigem(c Cliente) webui.Tom {
+	if c.Tipo == TipoPrereg {
+		return webui.TomNeutro
+	}
+	return webui.TomAlerta
+}
+
+// escopoDoCliente descreve o escopo em uma linha.
+func escopoDoCliente(c Cliente) string {
+	if c.EscopoAberto {
+		return "todos os endpoints"
+	}
+	return ""
+}
+
+// explicacaoDaOrigem diz, na tela de detalhe, o que aquela origem implica.
+func explicacaoDaOrigem(c Cliente) string {
+	switch c.Tipo {
+	case TipoDCR:
+		return "Registrou-se sozinho em POST /oauth/register (RFC 7591), do endereço acima. " +
+			"Revogar aqui é definitivo: o client_id que ele guardou deixa de existir."
+	case TipoCIMD:
+		return "Não é registro: é a cópia em cache de um Client ID Metadata Document que o " +
+			"próprio cliente publica naquela URL. Revogar aqui impede que ele seja buscado de novo."
+	default:
+		return "Cadastrado à mão nesta tela."
+	}
+}
+
+// temLoopback informa se alguma redirect_uri do cliente cai na regra de
+// comparação sem porta do RFC 8252.
+func temLoopback(c Cliente) bool {
+	for _, uri := range c.RedirectURIs {
+		u, err := url.Parse(uri)
+		if err == nil && u.Scheme == "http" && ehLoopback(u.Hostname()) {
+			return true
+		}
+	}
+	return false
+}
+
 // TelaClientes lista os clientes OAuth cadastrados.
 templ TelaClientes(clientes []Cliente, alerta *webui.Alerta) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "Clientes OAuth",
-		Subtitulo: "Quem pode pedir um token ao authorization server do patchbay, e para quais endpoints. O consentimento acontece nesta sessão de administração.",
+		Subtitulo: "Quem pode pedir um token ao authorization server do patchbay, e para quais endpoints. O consentimento acontece nesta sessão de administração. Linhas de DCR e de CIMD aparecem sozinhas, quando um cliente se registra ou publica o próprio documento — a coluna Origem diz qual é qual.",
 		Secao:     webui.SecaoOAuth,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Acao:      botaoNovoCliente(),
@@ -48,9 +111,10 @@ templ TelaClientes(clientes []Cliente, alerta *webui.Alerta) {
 							<tr>
 								<th scope="col" class="px-4 py-2.5 font-semibold">Cliente</th>
 								<th scope="col" class="px-4 py-2.5 font-semibold">client_id</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Origem</th>
 								<th scope="col" class="px-4 py-2.5 font-semibold">Tipo</th>
 								<th scope="col" class="px-4 py-2.5 font-semibold">Endpoints</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Cadastrado</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Registrado</th>
 							</tr>
 						</thead>
 						<tbody class="divide-y divide-borda">
@@ -67,13 +131,20 @@ templ TelaClientes(clientes []Cliente, alerta *webui.Alerta) {
 									<td class="px-4 py-3">
 										<code class="font-mono text-xs text-conteudo-suave">{ c.ClientID }</code>
 									</td>
+									<td class="px-4 py-3">
+										@webui.Selo(tomDaOrigem(c), origemDoCliente(c))
+									</td>
 									<td class="px-4 py-3 text-conteudo-suave">{ tipoDoCliente(c) }</td>
 									<td class="px-4 py-3">
-										<span class="flex flex-wrap gap-1">
-											for _, e := range c.Endpoints {
-												<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs text-conteudo-suave">{ e.Slug }</code>
-											}
-										</span>
+										if c.EscopoAberto {
+											<span class="text-xs text-conteudo-suave">{ escopoDoCliente(c) }</span>
+										} else {
+											<span class="flex flex-wrap gap-1">
+												for _, e := range c.Endpoints {
+													<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs text-conteudo-suave">{ e.Slug }</code>
+												}
+											</span>
+										}
 									</td>
 									<td class="px-4 py-3 text-conteudo-suave">{ instante(c.CriadoEm) }</td>
 								</tr>
@@ -271,16 +342,40 @@ templ TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.
 						</dd>
 					</div>
 					<div>
+						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Origem do registro</dt>
+						<dd class="mt-1 flex flex-col items-start gap-1">
+							@webui.Selo(tomDaOrigem(c), origemDoCliente(c))
+							<span class="text-sm text-conteudo-tenue">{ explicacaoDaOrigem(c) }</span>
+							if !c.ExpiraEm.IsZero() {
+								<span class="text-sm text-conteudo-tenue">
+									Documento em cache até { instante(c.ExpiraEm) }; depois disso ele é buscado de novo.
+								</span>
+							}
+						</dd>
+					</div>
+					<div>
 						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">redirect_uri</dt>
 						<dd class="mt-1 flex flex-col gap-1">
 							for _, uri := range c.RedirectURIs {
 								<code class="font-mono text-xs text-conteudo-suave">{ uri }</code>
+							}
+							if temLoopback(c) {
+								<span class="text-sm text-conteudo-tenue">
+									A porta do loopback é ignorada na comparação (RFC 8252): um cliente nativo
+									escuta numa porta efêmera que ele só descobre ao abrir o listener.
+								</span>
 							}
 						</dd>
 					</div>
 					<div>
 						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Endpoints no escopo</dt>
 						<dd class="mt-1 flex flex-col gap-1">
+							if c.EscopoAberto {
+								<span class="text-sm text-conteudo-suave">
+									Todos os endpoints — ninguém escolheu por este cliente. O que autoriza de
+									fato é o consentimento, uma vez por endpoint, nesta sessão de administração.
+								</span>
+							}
 							for _, e := range c.Endpoints {
 								<code class="font-mono text-xs text-conteudo-suave">{ urlPublica }/mcp/{ e.Slug }</code>
 							}

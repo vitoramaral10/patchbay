@@ -62,11 +62,38 @@ type Aplicacao struct {
 	wg sync.WaitGroup
 }
 
+// OpcaoApp ajusta o grafo montado.
+//
+// Existe por um componente só: o buscador de documentos de CIMD é o único do
+// patchbay que faz requisição de saída para uma URL escolhida por terceiro, e o
+// teste ponta a ponta precisa apontá-lo a um documento servido em processo — o
+// que o guarda de SSRF, corretamente, recusaria.
+type OpcaoApp func(*opcoesApp)
+
+type opcoesApp struct {
+	cimd authsrv.DocumentosCIMD
+}
+
+// ComBuscadorCIMD troca o buscador de documentos de CIMD.
+func ComBuscadorCIMD(b authsrv.DocumentosCIMD) OpcaoApp {
+	return func(o *opcoesApp) { o.cimd = b }
+}
+
 // montar abre o banco, aplica as migrações e liga os componentes.
 //
 // O cofre entra por parâmetro e não pela Config: a Config é impressa em log de
 // boot e vai inteira para os testes, e a chave mestra não pode passar por lá.
-func montar(ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logger) (*Aplicacao, error) {
+func montar(
+	ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logger, opcoes ...OpcaoApp,
+) (*Aplicacao, error) {
+	var opc opcoesApp
+	for _, o := range opcoes {
+		o(&opc)
+	}
+	if opc.cimd == nil {
+		opc.cimd = authsrv.NovoBuscadorCIMD(log.With("componente", "authsrv_cimd"))
+	}
+
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("criar diretório de dados %s: %w", cfg.DataDir, err)
 	}
@@ -101,6 +128,12 @@ func montar(ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logg
 		a.repoOAuth, endpointsParaOAuth{repo: a.repoEndpoint},
 		cfg.PublicURL, apikey.Escopo,
 		log.With("componente", "authsrv"),
+		// Passar o buscador é o que faz a metadata anunciar
+		// client_id_metadata_document_supported — e é esse anúncio, junto com
+		// "none" em token_endpoint_auth_methods_supported, que faz o claude.ai
+		// escolher CIMD em vez de registrar um cliente novo por DCR a cada
+		// conexão fresca.
+		authsrv.ComCIMD(opc.cimd),
 	)
 
 	cfgs, err := upstream.Habilitados(ctx, leitura)
