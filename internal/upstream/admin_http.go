@@ -19,16 +19,25 @@ import (
 type Admin struct {
 	repo           *RepositorioSQLite
 	gerente        *Gerente
+	oauth          *BrokerOAuth
 	rematerializar Rematerializar
 	nomeExposto    NomeExpostoDe
 	log            *slog.Logger
 }
 
 // NovoAdmin monta o CRUD de upstream.
-func NovoAdmin(repo *RepositorioSQLite, gerente *Gerente, rematerializar Rematerializar, nomeExposto NomeExpostoDe, log *slog.Logger) *Admin {
+//
+// O broker de OAuth pode ser nulo: sem ele o modo oauth não aparece na tela e o
+// botão "Autorizar" responde que a autorização está indisponível, em vez de
+// oferecer um fluxo que ninguém completaria.
+func NovoAdmin(
+	repo *RepositorioSQLite, gerente *Gerente, oauth *BrokerOAuth,
+	rematerializar Rematerializar, nomeExposto NomeExpostoDe, log *slog.Logger,
+) *Admin {
 	return &Admin{
 		repo:           repo,
 		gerente:        gerente,
+		oauth:          oauth,
 		rematerializar: rematerializar,
 		nomeExposto:    nomeExposto,
 		log:            log,
@@ -45,6 +54,10 @@ func (a *Admin) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}", a.atualizar)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/remover", a.remover)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/reconectar", a.reconectar)
+	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/autorizar", a.autorizar)
+	// O callback é caminho literal de quatro segmentos, então não compete com o
+	// /{id} de três acima: o ServeMux resolve os dois sem ambiguidade.
+	mux.HandleFunc("GET "+webui.RotaCallbackOAuthUpstream, a.callback)
 }
 
 func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
@@ -86,11 +99,53 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 // adivinhar quais valem.
 func (a *Admin) formNovo(w http.ResponseWriter, r *http.Request) {
 	form := Form{Tipo: TipoHTTP, TimeoutMS: TimeoutPadraoMS, Habilitado: true}
-	if r.URL.Query().Get("tipo") == TipoSTDIO {
+	switch r.URL.Query().Get("tipo") {
+	case TipoSTDIO:
 		form.Tipo = TipoSTDIO
+	case TipoSSE:
+		form.Tipo = TipoSSE
 	}
-	form.CompletarCredenciais(nil)
+	if err := a.completarForm(r.Context(), &form); err != nil {
+		webui.ErroInterno(w, r, a.log, err)
+		return
+	}
 	webui.Renderizar(w, r, http.StatusOK, a.log, TelaForm(form))
+}
+
+// completarForm preenche o formulário com o que já está gravado — credenciais
+// estáticas e estado de OAuth — a partir do banco.
+//
+// Roda antes de Validar(), e não só ao reexibir: validarOAuth recusa bearer
+// estático junto com modo oauth olhando f.BearerDefinido, e esse campo só
+// existe depois desta chamada. Sem isto, salvar em modo oauth um upstream que
+// já tinha bearer gravado passaria pela validação vendo BearerDefinido = false
+// e sairia com as duas credenciais em vigor — o bearer que clienteDe ainda
+// filtra por defesa, mas que a tela diria "sem credencial nenhuma".
+func (a *Admin) completarForm(ctx context.Context, form *Form) error {
+	form.OAuthDisponivel = a.oauth != nil
+	if form.OAuthDisponivel {
+		// O redirect_uri completo, e não só o caminho: é o valor byte a byte que
+		// precisa ir para o cadastro do cliente no provedor, e o admin não tem
+		// como montar isso de cabeça a partir da URL pública mais o caminho.
+		form.OAuthRedirectURI = a.oauth.RedirectURI()
+	}
+	if form.ID == 0 {
+		// Upstream ainda não existe: não há o que ler, e as linhas em branco do
+		// formulário são as mesmas de um formulário novo.
+		form.CompletarCredenciais(nil)
+		return nil
+	}
+	definidas, err := a.repo.CredenciaisDefinidas(ctx, form.ID)
+	if err != nil {
+		return err
+	}
+	form.CompletarCredenciais(definidas)
+	estado, err := a.repo.EstadoOAuth(ctx, form.ID)
+	if err != nil {
+		return err
+	}
+	form.CompletarOAuth(estado)
+	return nil
 }
 
 // reexibir devolve o formulário recusado com o estado das credenciais gravadas
@@ -99,15 +154,9 @@ func (a *Admin) formNovo(w http.ResponseWriter, r *http.Request) {
 // Sem isto, um erro de validação apagaria o "definido" da tela e o admin leria
 // "nenhum bearer" sobre um upstream que tem um.
 func (a *Admin) reexibir(w http.ResponseWriter, r *http.Request, status int, form Form) {
-	if form.ID != 0 {
-		definidas, err := a.repo.CredenciaisDefinidas(r.Context(), form.ID)
-		if err != nil {
-			webui.ErroInterno(w, r, a.log, err)
-			return
-		}
-		form.CompletarCredenciais(definidas)
-	} else {
-		form.CompletarCredenciais(nil)
+	if err := a.completarForm(r.Context(), &form); err != nil {
+		webui.ErroInterno(w, r, a.log, err)
+		return
 	}
 	webui.Renderizar(w, r, status, a.log, TelaForm(form))
 }
@@ -116,6 +165,10 @@ func (a *Admin) criar(w http.ResponseWriter, r *http.Request) {
 	form, err := lerForm(r)
 	if err != nil {
 		http.Error(w, "formulário inválido", http.StatusBadRequest)
+		return
+	}
+	if err := a.completarForm(r.Context(), &form); err != nil {
+		webui.ErroInterno(w, r, a.log, err)
 		return
 	}
 	if !form.Validar() {
@@ -161,10 +214,20 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Também sem decifrar: só client_id, registro e instantes. O que a tela diz
+	// de OAuth nunca inclui token, e é por isso que ela continua abrindo quando
+	// nada do que está cifrado volta.
+	estadoOAuth, err := a.repo.EstadoOAuth(r.Context(), reg.ID)
+	if err != nil {
+		webui.ErroInterno(w, r, a.log, err)
+		return
+	}
+
 	d := Detalhe{
 		Registro:      reg,
 		Endpoints:     slugs,
 		Credenciais:   credenciais,
+		OAuth:         estadoOAuth,
 		TetoAbandonos: a.gerente.TetoDeAbandonos(),
 	}
 	if s, ok := a.gerente.Situacao(reg.ID); ok {
@@ -230,13 +293,12 @@ func (a *Admin) formEditar(w http.ResponseWriter, r *http.Request) {
 		Env:        reg.Env,
 		TimeoutMS:  reg.TimeoutMS,
 		Habilitado: reg.Habilitado,
+		Modo:       reg.ModoEfetivo(),
 	}
-	definidas, err := a.repo.CredenciaisDefinidas(r.Context(), reg.ID)
-	if err != nil {
+	if err := a.completarForm(r.Context(), &form); err != nil {
 		webui.ErroInterno(w, r, a.log, err)
 		return
 	}
-	form.CompletarCredenciais(definidas)
 	webui.Renderizar(w, r, http.StatusOK, a.log, TelaForm(form))
 }
 
@@ -255,6 +317,10 @@ func (a *Admin) atualizar(w http.ResponseWriter, r *http.Request) {
 	// aceitá-lo do formulário deixaria um POST forjado trocar o transporte de um
 	// upstream sem que nada na tela dissesse isso.
 	form.Tipo = reg.Tipo
+	if err := a.completarForm(r.Context(), &form); err != nil {
+		webui.ErroInterno(w, r, a.log, err)
+		return
+	}
 	if !form.Validar() {
 		a.reexibir(w, r, http.StatusUnprocessableEntity, form)
 		return
@@ -377,6 +443,12 @@ func lerForm(r *http.Request) (Form, error) {
 		BearerLimpar: r.PostFormValue("bearer_limpar") != "",
 		Headers:      lerHeaders(r.PostForm),
 		EnvSecretos:  lerEnvSecretos(r.PostForm),
+
+		Modo:               r.PostFormValue("modo"),
+		OAuthClientID:      r.PostFormValue("oauth_client_id"),
+		OAuthSegredo:       cripto.Segredo(r.PostFormValue("oauth_segredo")),
+		OAuthSegredoLimpar: r.PostFormValue("oauth_segredo_limpar") != "",
+		OAuthIssuer:        r.PostFormValue("oauth_issuer"),
 	}, nil
 }
 
@@ -397,6 +469,7 @@ func registroDoForm(id int64, f Form) Registro {
 		Env:        f.Env,
 		TimeoutMS:  f.TimeoutMS,
 		Habilitado: f.Habilitado,
+		Modo:       f.ModoEfetivo(),
 	}
 }
 
@@ -457,4 +530,43 @@ var avisos = map[string]webui.Alerta{
 	"removido":     {Tom: webui.TomInfo, Titulo: "Upstream removido.", Texto: "A sessão e a goroutine de supervisão foram encerradas, e os endpoints já refletem a remoção."},
 	"reconectando": {Tom: webui.TomInfo, Titulo: "Reconexão pedida.", Texto: "A sessão antiga foi descartada, o backoff voltou ao começo e o contador de abandonos zerou."},
 	"desabilitado": {Tom: webui.TomAlerta, Titulo: "O upstream está desabilitado.", Texto: "Habilite-o na edição para que a supervisão volte a tentar."},
+
+	"autorizado": {
+		Tom:    webui.TomSucesso,
+		Titulo: "Consentimento recebido.",
+		Texto: "O código voltou do provedor e a troca por token acontece na supervisão, " +
+			"não nesta requisição. O estado abaixo se atualiza a cada recarga.",
+	},
+	"consentimento_invalido": {
+		Tom:    webui.TomPerigo,
+		Titulo: "Consentimento não reconhecido.",
+		Texto: "O state não pertence a nenhuma autorização em curso — ou ela já foi usada, " +
+			"ou expirou. Clique em Autorizar de novo.",
+	},
+	"consentimento_recusado": {
+		Tom:    webui.TomAlerta,
+		Titulo: "O provedor recusou a autorização.",
+		Texto:  "Nada foi gravado. Confira a conta usada no provedor e tente de novo.",
+	},
+	"consentimento_demorou": {
+		Tom:    webui.TomAlerta,
+		Titulo: "A autorização ainda está sendo preparada.",
+		Texto: "A supervisão precisa reconectar e descobrir o authorization server antes de " +
+			"montar a URL. Clique em Autorizar de novo em alguns segundos.",
+	},
+	"consentimento_falhou": {
+		Tom:    webui.TomPerigo,
+		Titulo: "A autorização não pôde começar.",
+		Texto:  "O motivo está no log do patchbay, com o nome do upstream e sem nenhum segredo.",
+	},
+	"oauth_indisponivel": {
+		Tom:    webui.TomAlerta,
+		Titulo: "Este upstream não usa OAuth.",
+		Texto:  "Troque o modo de credencial na edição para autorizá-lo.",
+	},
+	"oauth_desabilitado": {
+		Tom:    webui.TomAlerta,
+		Titulo: "O upstream está desabilitado.",
+		Texto:  "Sem supervisão não há quem monte a URL de autorização. Habilite-o antes.",
+	},
 }

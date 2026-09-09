@@ -105,8 +105,19 @@ func (g *Gerente) clienteDe(ctx context.Context, cfg Config) (*http.Client, erro
 	// Só o que vira header entra no transporte. Variável de ambiente de upstream
 	// stdio mora na mesma tabela e sai pelo mesmo LerCredenciais, e mandá-la
 	// como header seria vazar um segredo por um canal que ninguém pediu.
+	//
+	// Em modo oauth o bearer estático é ignorado mesmo que exista linha gravada
+	// no banco: é defesa, não o caminho normal — aplicarOAuth já apaga o bearer
+	// na mesma transação que liga o modo oauth (oauth_sqlite.go), e este filtro
+	// é o que garante que uma linha antiga sobrevivente (de um esquema anterior a
+	// essa transação, ou de uma gravação direta no banco) nunca chega a
+	// sobrepor o Authorization que o token OAuth monta.
+	usaOAuth := cfg.UsaOAuth()
 	creds := make([]Credencial, 0, len(todas))
 	for _, c := range todas {
+		if c.Tipo == CredencialBearer && usaOAuth {
+			continue
+		}
 		if c.Tipo == CredencialBearer || c.Tipo == CredencialHeader {
 			creds = append(creds, c)
 		}

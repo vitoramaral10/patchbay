@@ -17,6 +17,25 @@ const (
 	RotaChaves = "/admin/chaves"
 	// RotaClientesOAuth é a lista de clientes OAuth do authorization server.
 	RotaClientesOAuth = "/admin/oauth"
+	// RotaCallbackOAuthUpstream é onde o authorization server de um upstream
+	// devolve o navegador do admin depois do consentimento.
+	//
+	// Mora sob /admin/upstreams e não sob /admin/oauth porque /admin/oauth já é
+	// a lista de clientes do authorization server *do patchbay*: o mesmo prefixo
+	// significaria dois papéis opostos — o patchbay como cliente de um provedor
+	// e o patchbay como servidor de seus clientes — e o caminho literal ainda
+	// sombrearia o /admin/oauth/{id} daquela tela.
+	//
+	// É contrato com o provedor: o redirect_uri registrado lá é este caminho
+	// sobre a URL pública, e mudá-lo depois quebra todo consentimento existente.
+	RotaCallbackOAuthUpstream = RotaUpstreams + "/oauth/callback"
+	// RotaMetadataClienteUpstream é o Client ID Metadata Document do patchbay
+	// como cliente OAuth (SEP-991).
+	//
+	// Público, sem sessão: quem o lê é o authorization server do upstream, do
+	// lado de fora. O caminho não é a raiz porque o SDK exige URL HTTPS
+	// não-raiz para usar CIMD como client_id.
+	RotaMetadataClienteUpstream = "/oauth/patchbay-cliente.json"
 	// RotaLogin é o formulário de entrada.
 	RotaLogin = "/admin/login"
 	// RotaSetup é o formulário de criação do admin único; deixa de existir
