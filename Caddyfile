@@ -1,0 +1,12 @@
+# Proxy reverso com TLS na frente do patchbay. Troque o host pelo seu domínio
+# público — o Caddy emite e renova o certificado sozinho (ACME/Let's Encrypt),
+# sem passo manual.
+patchbay.exemplo.com {
+	reverse_proxy patchbay:8787
+	encode zstd gzip
+
+	log {
+		output stdout
+		format json
+	}
+}

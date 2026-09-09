@@ -12,5 +12,9 @@
 # front-end.
 /ferramentas/
 
+# Segredo local do docker-compose.yml de exemplo — nunca o versionado
+# secrets.env.exemplo, que fica sem valor.
+/secrets.env
+
 # worktrees de agentes
 .claude/worktrees/

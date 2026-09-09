@@ -1,0 +1,40 @@
+# Contexto de build do patchbay: só o que `go build ./cmd/patchbay` precisa.
+# Sem isso, `.git`, o binário local e os dados de desenvolvimento subiriam
+# para o daemon a cada build e invalidariam cache por arquivo irrelevante.
+
+.git/
+.github/
+
+# Binários locais (nomes do .gitignore) e artefato do goreleaser.
+/patchbay
+/patchbay.exe
+/dist/
+
+# Estado de desenvolvimento: nunca dentro da imagem.
+/dados/
+*.db
+*.db-wal
+*.db-shm
+
+# Ferramentas de front-end baixadas por `task ui:ferramentas` — o CSS e o
+# *_templ.go que elas geram já estão versionados e vão junto do `COPY . .`.
+/ferramentas/
+
+# Documentação e estudo: não é artefato de execução.
+/docs/
+*.md
+!README.md
+
+# Deploy de exemplo: lido pelo operador, não pelo build da imagem.
+/docker-compose.yml
+/Caddyfile
+/secrets.env*
+/.goreleaser.yaml
+/Taskfile.yml
+
+# Editor e SO.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,60 @@
+# Exemplo de deploy do patchbay atrás de um proxy reverso com TLS (Caddy).
+#
+# `PATCHBAY_MASTER_KEY` não vai em `environment:` de propósito — um valor
+# escrito aqui é um segredo versionado. Ela vem de `secrets.env`, um arquivo
+# fora do controle de versão (veja `secrets.env.exemplo`), montado só neste
+# serviço. Gere a chave com `docker compose run --rm patchbay chave-mestra
+# gerar` antes do primeiro `up` — ver a seção "Chave mestra" do README.
+services:
+  patchbay:
+    image: ghcr.io/vitoramaral10/patchbay:latest
+    container_name: patchbay
+    restart: unless-stopped
+    env_file:
+      - secrets.env
+    environment:
+      PATCHBAY_LISTEN: 0.0.0.0:8787
+      PATCHBAY_DATA_DIR: /dados
+      # Esquema https e o host público: é o que a UI mostra ao cliente MCP e
+      # o que decide o atributo Secure do cookie de sessão. O TLS em si é
+      # terminado pelo Caddy, não pelo patchbay.
+      PATCHBAY_PUBLIC_URL: https://patchbay.exemplo.com
+    volumes:
+      - patchbay-dados:/dados
+    # Rootfs somente leitura: o único diretório que o processo escreve é o
+    # data dir, montado à parte como volume. /tmp entra por tmpfs porque a
+    # imagem distroless não tem onde criar um mesmo sem ele.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 512m
+    # Só a rede interna: quem fala com o patchbay de fora é o Caddy, na porta
+    # 8787 não publicada aqui.
+    networks:
+      - interno
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: patchbay-proxy
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-dados:/data
+    depends_on:
+      - patchbay
+    networks:
+      - interno
+
+networks:
+  interno:
+
+volumes:
+  patchbay-dados:
+  caddy-dados:
