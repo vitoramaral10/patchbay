@@ -18,6 +18,7 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/platform/cripto"
 	"github.com/vitoramaral10/patchbay/internal/platform/store"
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
+	"github.com/vitoramaral10/patchbay/internal/trilha"
 	"github.com/vitoramaral10/patchbay/internal/upstream"
 )
 
@@ -44,17 +45,30 @@ type Aplicacao struct {
 	gerente   *upstream.Gerente
 	endpoints *endpoint.Servidores
 
+	// hub e registrador são a observabilidade: o fan-out do log ao vivo e a
+	// fila que grava a trilha fora do caminho da latência.
+	hub         *trilha.Hub
+	registrador *trilha.Registrador
+	// pararTrilha é o sinal próprio do consumidor da trilha — disparado só
+	// depois de srv.Shutdown() retornar, nunca no cancelamento do ctx do
+	// serviço (que chega antes, enquanto requisições ainda estão em curso).
+	// Ver PararConsumoDaTrilha.
+	pararTrilha    chan struct{}
+	pararTrilhaUma sync.Once
+
 	repoUpstream *upstream.RepositorioSQLite
 	repoEndpoint *endpoint.RepositorioSQLite
 	repoChave    *apikey.RepositorioSQLite
 	repoOAuth    *authsrv.RepositorioSQLite
+	repoTrilha   *trilha.RepositorioSQLite
 
-	admHTTP    *admin.HTTP
-	oauthHTTP  *authsrv.HTTP
-	adminUp    *upstream.Admin
-	adminEnd   *endpoint.Admin
-	adminChave *apikey.Admin
-	adminOAuth *authsrv.Admin
+	admHTTP     *admin.HTTP
+	oauthHTTP   *authsrv.HTTP
+	adminUp     *upstream.Admin
+	adminEnd    *endpoint.Admin
+	adminChave  *apikey.Admin
+	adminOAuth  *authsrv.Admin
+	adminTrilha *trilha.Admin
 
 	mu         sync.Mutex
 	observados []func()
@@ -70,12 +84,20 @@ func montar(ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logg
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("criar diretório de dados %s: %w", cfg.DataDir, err)
 	}
+
+	// O hub do log ao vivo nasce antes de todo componente, e o logger é
+	// reembrulhado aqui: daqui para baixo *todo* log do processo passa pela
+	// redação de segredo e é replicado para a tela. Redigir só na tela deixaria o
+	// vazamento no destino que ninguém revisa (seção 11).
+	hub := trilha.NovoHub()
+	log = slog.New(trilha.NovoHandlerLog(log.Handler(), hub))
+
 	st, err := store.Abrir(ctx, cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
 
-	a := &Aplicacao{cfg: cfg, log: log, st: st}
+	a := &Aplicacao{cfg: cfg, log: log, st: st, hub: hub, pararTrilha: make(chan struct{})}
 	leitura, escrita := st.Leitura(), st.Escrita()
 
 	// Antes de qualquer componente: se o canário não confere, a chave mestra
@@ -89,6 +111,16 @@ func montar(ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logg
 	a.repoEndpoint = endpoint.NovoRepositorioSQLite(leitura, escrita)
 	a.repoChave = apikey.NovoRepositorioSQLite(leitura, escrita)
 	a.repoOAuth = authsrv.NovoRepositorioSQLite(leitura, escrita)
+	a.repoTrilha = trilha.NovoRepositorioSQLite(leitura, escrita)
+
+	// A fila da trilha é montada antes dos endpoints porque é ela que o gancho de
+	// captura recebe. Nada aqui é opcional por configuração: a trilha é a única
+	// forma de responder "o que esse cliente andou chamando", e um gateway sem
+	// ela mente por omissão.
+	a.registrador = trilha.NovoRegistrador(
+		a.repoTrilha, log.With("componente", "trilha"),
+		trilha.ComHub(hub),
+	)
 
 	a.chave = apikey.NovoServico(a.repoChave, log.With("componente", "apikey"))
 	a.adm = admin.NovoServico(
@@ -128,6 +160,10 @@ func montar(ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logg
 		cat,
 		a.gerente,
 		log.With("componente", "endpoint"),
+		// O gancho de captura da trilha. É a única costura entre a fatia 12 e o
+		// caminho da requisição, e o que ele faz por chamada é um envio não
+		// bloqueante num canal com buffer.
+		endpoint.ComObservador(trilhaDoEndpoint{registrador: a.registrador}),
 	)
 
 	a.admHTTP = admin.NovoHTTP(a.adm, cfg.PublicURL, log.With("componente", "admin_http"))
@@ -151,6 +187,10 @@ func montar(ctx context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logg
 		a.repoOAuth, endpointsParaOAuth{repo: a.repoEndpoint},
 		cfg.PublicURL, log.With("componente", "admin_oauth"),
 	)
+	a.adminTrilha = trilha.NovoAdmin(
+		a.repoTrilha, a.registrador, hub,
+		log.With("componente", "admin_trilha"),
+	)
 
 	// Materializa o que der para materializar antes de escutar: o endpoint sobe
 	// servindo catálogo vazio se nenhum upstream conectou, nunca travando.
@@ -171,8 +211,9 @@ func (a *Aplicacao) Observar(fn func()) {
 }
 
 // Iniciar sobe as goroutines de fundo: a supervisão dos upstreams, os dois
-// gravadores de "último uso" (chave de API e token OAuth) e a limpeza de estado
-// vencido. Todas morrem com o ctx.
+// gravadores de "último uso" (chave de API e token OAuth), a limpeza de estado
+// vencido, a varredura de lápides e — da fatia 12 — o consumidor da trilha, a
+// retenção e o desligamento do hub de SSE. Todas morrem com o ctx.
 func (a *Aplicacao) Iniciar(ctx context.Context) {
 	a.gerente.Iniciar(ctx)
 
@@ -201,6 +242,42 @@ func (a *Aplicacao) Iniciar(ctx context.Context) {
 	go func() {
 		defer a.wg.Done()
 		a.endpoints.VigiarLapides(ctx)
+	}()
+
+	// O consumidor único da trilha. Um só, porque o SQLite aceita um escritor
+	// por vez: dois competiriam pela mesma conexão para gravar a mesma tabela.
+	//
+	// context.Background() e não ctx: o consumidor para pelo sinal próprio
+	// (a.pararTrilha, fechado só depois de srv.Shutdown() retornar), não pelo
+	// cancelamento de ctx — que chega antes, enquanto requisições ainda em
+	// curso podem chamar Observar. Se as gravações em andamento recebessem um
+	// ctx já cancelado nessa janela, elas falhariam por causa do mesmo sinal
+	// que não deveria afetá-las.
+	a.wg.Add(1)
+	//nolint:gosec,contextcheck // G118 e contextcheck pedem os dois para
+	// propagar ctx aqui; context.Background() é a escolha certa, não um
+	// esquecimento — ver o comentário acima desta goroutine.
+	go func() {
+		defer a.wg.Done()
+		a.registrador.Consumir(context.Background(), a.pararTrilha)
+	}()
+
+	// A retenção. Em lotes pequenos, de propósito: um DELETE sem limite seria
+	// uma transação de tamanho imprevisível no único escritor.
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		a.registrador.Varrer(ctx)
+	}()
+
+	// Solta os handlers de SSE no desligamento. Sem isto o Shutdown esperaria o
+	// prazo inteiro por conexões que, por desenho, só terminam quando o cliente
+	// desiste.
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		<-ctx.Done()
+		a.hub.Encerrar()
 	}()
 }
 
@@ -263,6 +340,7 @@ func (a *Aplicacao) Handler() http.Handler {
 	a.adminEnd.Rotas(protegido)
 	a.adminChave.Rotas(protegido)
 	a.adminOAuth.Rotas(protegido)
+	a.adminTrilha.Rotas(protegido)
 	mux.Handle(webui.RotaPainel, a.admHTTP.Proteger(protegido))
 
 	// O authorize endpoint é o único do AS que exige sessão de admin: o
@@ -348,8 +426,28 @@ var avisosDoPainel = map[string]webui.Alerta{
 	},
 }
 
+// PararConsumoDaTrilha sinaliza ao consumidor da trilha que pode drenar o que
+// sobrou na fila e voltar. Idempotente: chamar mais de uma vez não entra em
+// pânico (sync.Once fechando o canal).
+//
+// Chame só depois de ter certeza de que nenhuma requisição em curso vai mais
+// chamar Observar — no processo real, depois de srv.Shutdown() retornar (ver
+// servir); em teste, depois que o servidor de teste já garantiu o mesmo.
+// Chamar cedo demais reabre o furo que esta função existe para fechar: uma
+// chamada que termina depois cai numa fila que ninguém mais drena.
+func (a *Aplicacao) PararConsumoDaTrilha() {
+	a.pararTrilhaUma.Do(func() { close(a.pararTrilha) })
+}
+
 // Fechar espera as goroutines de fundo e fecha o banco.
+//
+// PararConsumoDaTrilha aqui é a rede de segurança: quem já passou pelo fluxo
+// completo de servir() a chamou antes, e esta chamada é um no-op idempotente.
+// Quem monta a Aplicacao fora desse fluxo (teste que sobe e derruba pela
+// tela) nunca a chama sozinho, e sem isto a.wg.Wait() abaixo travaria para
+// sempre esperando o consumidor.
 func (a *Aplicacao) Fechar() error {
+	a.PararConsumoDaTrilha()
 	a.gerente.Aguardar()
 	a.wg.Wait()
 	return a.st.Close()
@@ -400,7 +498,9 @@ func servir(ctx context.Context, cfg Config, log *slog.Logger) error {
 
 	erros := make(chan error, 1)
 	go func() {
-		log.Info("patchbay escutando",
+		// a.log e não log: daqui em diante o logger é o que redige segredo e
+		// replica para a tela de log ao vivo.
+		a.log.Info("patchbay escutando",
 			"listen", cfg.Listen, "url_publica", cfg.PublicURL, "banco", a.st.Caminho(),
 			"administracao", cfg.PublicURL+webui.RotaPainel)
 		erros <- srv.ListenAndServe()
@@ -408,16 +508,26 @@ func servir(ctx context.Context, cfg Config, log *slog.Logger) error {
 
 	select {
 	case err := <-erros:
+		// O servidor saiu por conta própria (crash de listener, por exemplo):
+		// nenhuma requisição pode mais estar em curso, então já é seguro parar
+		// o consumidor da trilha.
+		a.PararConsumoDaTrilha()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("servir: %w", err)
 		}
 		return nil
 	case <-ctx.Done():
-		log.Info("desligando")
+		a.log.Info("desligando")
 		ctxDesligar, cancelar := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancelar()
-		if err := srv.Shutdown(ctxDesligar); err != nil {
-			return fmt.Errorf("desligar: %w", err)
+		erroDesligar := srv.Shutdown(ctxDesligar)
+		// Só depois de Shutdown retornar: é a garantia de que toda requisição
+		// em curso — e toda chamada a Observar que ela ainda pudesse fazer —
+		// terminou. Chamar isto no ctx.Done() de cima perderia justamente essa
+		// garantia (ver o comentário de Consumir em trilha/registrador.go).
+		a.PararConsumoDaTrilha()
+		if erroDesligar != nil {
+			return fmt.Errorf("desligar: %w", erroDesligar)
 		}
 		return nil
 	}

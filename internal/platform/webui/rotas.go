@@ -17,6 +17,15 @@ const (
 	RotaChaves = "/admin/chaves"
 	// RotaClientesOAuth é a lista de clientes OAuth do authorization server.
 	RotaClientesOAuth = "/admin/oauth"
+	// RotaTrilha é a trilha filtrável de chamadas de ferramenta.
+	RotaTrilha = "/admin/trilha"
+	// RotaLogsAoVivo é a tela de log ao vivo.
+	RotaLogsAoVivo = "/admin/logs/ao-vivo"
+	// RotaLogsFluxo é o stream de SSE que alimenta a tela de log ao vivo. É
+	// rota separada da tela porque uma responde text/html e a outra
+	// text/event-stream, e um handler que decide isso pelo Accept é um handler
+	// que quebra quando o navegador muda de opinião.
+	RotaLogsFluxo = "/admin/logs/ao-vivo/fluxo"
 	// RotaLogin é o formulário de entrada.
 	RotaLogin = "/admin/login"
 	// RotaSetup é o formulário de criação do admin único; deixa de existir
@@ -33,6 +42,8 @@ const (
 	SecaoEndpoints = "endpoints"
 	SecaoChaves    = "chaves"
 	SecaoOAuth     = "oauth"
+	SecaoTrilha    = "trilha"
+	SecaoLogs      = "logs"
 )
 
 type itemNav struct {
@@ -47,4 +58,6 @@ var navegacao = []itemNav{
 	{Rota: RotaEndpoints, Rotulo: "Endpoints", Secao: SecaoEndpoints},
 	{Rota: RotaChaves, Rotulo: "Chaves de API", Secao: SecaoChaves},
 	{Rota: RotaClientesOAuth, Rotulo: "Clientes OAuth", Secao: SecaoOAuth},
+	{Rota: RotaTrilha, Rotulo: "Trilha", Secao: SecaoTrilha},
+	{Rota: RotaLogsAoVivo, Rotulo: "Logs", Secao: SecaoLogs},
 }
