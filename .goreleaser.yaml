@@ -1,0 +1,95 @@
+# Empacotamento do patchbay (fatia 16 do épico — docs/estudos/2026-09-08-patchbay-estudo-previo.html).
+#
+# CGO_ENABLED=0 em todo alvo: o driver SQLite é modernc.org/sqlite, puro Go, e
+# é essa escolha (seção "Bibliotecas" do estudo) que torna o cross-compile
+# Windows→Linux e a imagem distroless possíveis sem toolchain C por alvo.
+version: 2
+
+project_name: patchbay
+
+builds:
+  - id: patchbay
+    main: ./cmd/patchbay
+    # O nome do binário é sempre "patchbay": regra do dono contra binário com
+    # nome genérico ou curto demais (mínimo 5 caracteres, nome do projeto).
+    binary: patchbay
+    # Build reproduzível: sem isto, o timestamp de cada arquivo embutido no
+    # binário é o horário do build, e dois builds do mesmo commit produzem
+    # binários com hash diferente.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/vitoramaral10/patchbay/internal/platform/versao.Numero={{.Version}}
+      - -X github.com/vitoramaral10/patchbay/internal/platform/versao.Commit={{.ShortCommit}}
+      - -X github.com/vitoramaral10/patchbay/internal/platform/versao.Data={{.Date}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # Windows/arm64 fica fora: sem pedido do dono e sem forma barata de
+      # verificar (a fatia 16 pede "3 plataformas + darwin se for barato").
+      - goos: windows
+        goarch: arm64
+      # darwin/amd64 fica fora pelo mesmo motivo: o pedido foi
+      # especificamente darwin/arm64 (Apple Silicon), não os dois.
+      - goos: darwin
+        goarch: amd64
+
+archives:
+  - id: patchbay
+    ids: [patchbay]
+    # patchbay_<versao>_<os>_<arch>, como o dono pediu — sem o formato no nome,
+    # que já é a extensão do arquivo.
+    name_template: >-
+      patchbay_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      # Glob: não falha o build se o repositório ainda não tiver LICENSE.
+      - LICENSE*
+
+checksum:
+  name_template: "patchbay_{{ .Version }}_checksums.txt"
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: "Funcionalidades"
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "Correções"
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: "Outras mudanças"
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "^style:"
+      - "^Merge"
+
+release:
+  # A imagem Docker multi-arch é publicada à parte no GHCR, por
+  # docker/build-push-action no workflow de release (ver .github/workflows/
+  # release.yml) — decisão registrada lá, não neste arquivo.
+  github:
+    owner: vitoramaral10
+    name: patchbay
+
+snapshot:
+  version_template: "{{ .Version }}-snapshot-{{ .ShortCommit }}"
