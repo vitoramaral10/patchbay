@@ -8,12 +8,15 @@ import (
 	"time"
 )
 
-const sqlTodosClientes = `
-SELECT id, client_id, nome, tipo, confidencial, segredo_prefixo, criado_em, revogado_em
+var sqlTodosClientes = `SELECT ` + colunasClienteLista + `
   FROM oauth_client
  ORDER BY revogado_em IS NOT NULL, criado_em DESC, id DESC`
 
 // TodosClientes devolve os clientes cadastrados, ativos primeiro.
+//
+// Sem o hash do segredo: esta é a listagem, e carregar a credencial de cada
+// cliente cadastrado para montar uma tabela que nunca a usa é superfície sem
+// necessidade — a tela de detalhe (ClientePorID) é quem lê a coluna inteira.
 func (r *RepositorioSQLite) TodosClientes(ctx context.Context) ([]Cliente, error) {
 	rows, err := r.leitura.QueryContext(ctx, sqlTodosClientes)
 	if err != nil {
@@ -23,19 +26,10 @@ func (r *RepositorioSQLite) TodosClientes(ctx context.Context) ([]Cliente, error
 
 	var out []Cliente
 	for rows.Next() {
-		var (
-			c            Cliente
-			confidencial int
-			criadoEm     int64
-			revogadoEm   nulo
-		)
-		if err := rows.Scan(&c.ID, &c.ClientID, &c.Nome, &c.Tipo, &confidencial,
-			&c.SegredoPrefixo, &criadoEm, &revogadoEm); err != nil {
+		c, err := lerClienteLista(rows.Scan)
+		if err != nil {
 			return nil, fmt.Errorf("authsrv: ler cliente: %w", err)
 		}
-		c.Confidencial = confidencial == 1
-		c.CriadoEm = time.Unix(criadoEm, 0).UTC()
-		c.RevogadoEm = revogadoEm.instante()
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -45,47 +39,26 @@ func (r *RepositorioSQLite) TodosClientes(ctx context.Context) ([]Cliente, error
 	// Escopo e allowlist linha a linha: são poucos clientes numa instalação
 	// pessoal, e um JOIN com agregação de texto trocaria clareza por nada.
 	for i := range out {
-		if out[i].Endpoints, err = r.endpointsDoCliente(ctx, out[i].ID); err != nil {
-			return nil, err
-		}
-		if out[i].RedirectURIs, err = r.redirects(ctx, out[i].ID); err != nil {
+		if err := r.completar(ctx, &out[i]); err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
 }
 
-const sqlClientePorID = `
-SELECT id, client_id, nome, tipo, confidencial, segredo_prefixo, criado_em, revogado_em
-  FROM oauth_client
- WHERE id = ?`
+var sqlClientePorID = `SELECT ` + colunasCliente + ` FROM oauth_client WHERE id = ?`
 
 // ClientePorID devolve um cliente, revogado ou não — a tela de detalhe precisa
 // mostrar o revogado para que "revogar" não seja indistinguível de "apaguei".
 func (r *RepositorioSQLite) ClientePorID(ctx context.Context, id int64) (Cliente, error) {
-	var (
-		c            Cliente
-		confidencial int
-		criadoEm     int64
-		revogadoEm   nulo
-	)
-	err := r.leitura.QueryRowContext(ctx, sqlClientePorID, id).Scan(
-		&c.ID, &c.ClientID, &c.Nome, &c.Tipo, &confidencial,
-		&c.SegredoPrefixo, &criadoEm, &revogadoEm)
+	c, err := lerCliente(r.leitura.QueryRowContext(ctx, sqlClientePorID, id).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Cliente{}, ErrClienteNaoEncontrado
 	}
 	if err != nil {
 		return Cliente{}, fmt.Errorf("authsrv: selecionar cliente %d: %w", id, err)
 	}
-	c.Confidencial = confidencial == 1
-	c.CriadoEm = time.Unix(criadoEm, 0).UTC()
-	c.RevogadoEm = revogadoEm.instante()
-
-	if c.RedirectURIs, err = r.redirects(ctx, c.ID); err != nil {
-		return Cliente{}, err
-	}
-	if c.Endpoints, err = r.endpointsDoCliente(ctx, c.ID); err != nil {
+	if err := r.completar(ctx, &c); err != nil {
 		return Cliente{}, err
 	}
 	return c, nil

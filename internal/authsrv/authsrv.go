@@ -123,6 +123,19 @@ type Cliente struct {
 	CriadoEm     time.Time
 	RevogadoEm   time.Time
 
+	// EscopoAberto marca o cliente que pode *pedir* qualquer endpoint, em vez de
+	// ter uma lista escolhida pelo admin. É o caso de todo registro dinâmico —
+	// DCR e CIMD —, porque ninguém escolheu endpoint por ele. Endpoints vem
+	// preenchido com todos os existentes quando isto é verdadeiro, então o resto
+	// do pacote não precisa saber da diferença.
+	EscopoAberto bool
+	// Origem é de onde o registro veio: o IP remoto no DCR, o hostname do
+	// documento no CIMD, vazio no cadastro pela UI.
+	Origem string
+	// ExpiraEm é o TTL do cache de um documento de CIMD. Zero para quem não é
+	// cache: registro não expira, é revogado.
+	ExpiraEm time.Time
+
 	// segredoHash e SegredoPrefixo seguem a mesma regra da chave de API: o
 	// segredo aparece em claro uma vez, na criação, e depois só o prefixo — que
 	// é o que permite a UI dizer qual credencial é qual sem guardá-la.
@@ -133,19 +146,8 @@ type Cliente struct {
 // Revogado informa se o cliente foi revogado.
 func (c Cliente) Revogado() bool { return !c.RevogadoEm.IsZero() }
 
-// PermiteRedirect informa se uri está na allowlist, por comparação exata.
-//
-// Exata e não por prefixo: comparação frouxa de redirect_uri é a falha clássica
-// que transforma um AS num redirecionador aberto, e é ela que entrega o código
-// de autorização a quem registrou um caminho parecido.
-func (c Cliente) PermiteRedirect(uri string) bool {
-	for _, permitida := range c.RedirectURIs {
-		if permitida == uri {
-			return true
-		}
-	}
-	return false
-}
+// PermiteRedirect e a regra de loopback do RFC 8252 estão em dinamico.go, junto
+// da resolução de CIMD que as tornou necessárias.
 
 // EndpointPorSlug devolve o endpoint do escopo do cliente pelo slug.
 func (c Cliente) EndpointPorSlug(slug string) (EndpointRef, bool) {

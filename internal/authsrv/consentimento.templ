@@ -12,6 +12,40 @@ type DadosConsentimento struct {
 	Autorizacao Autorizacao
 	Recurso     string
 	Hospedeiro  string
+	// HospedeiroCliente é o hostname do client_id, e só é preenchido quando o
+	// client_id é uma URL — isto é, num cliente de CIMD.
+	//
+	// Ele é a outra metade da defesa: o client_name de um documento de CIMD é
+	// texto que quem publicou escolheu, e qualquer um pode publicar um. O
+	// hostname é a única parte que exige controle de um domínio, e por isso é o
+	// que aparece em destaque ao lado do nome.
+	HospedeiroCliente string
+}
+
+// alertaDeClienteDinamico avisa quando o cliente não foi cadastrado pelo admin.
+//
+// Aparece porque as duas formas dinâmicas não passaram por nenhuma decisão
+// anterior: nesta tela, e só nela, é que alguém olha para o cliente pela
+// primeira vez.
+func alertaDeClienteDinamico(c Cliente) *webui.Alerta {
+	switch c.Tipo {
+	case TipoCIMD:
+		return &webui.Alerta{
+			Tom:    webui.TomAlerta,
+			Titulo: "Este cliente não foi cadastrado por você.",
+			Texto: "Ele se identifica por um documento publicado na própria URL do client_id. " +
+				"O nome vem desse documento e não é verificado por ninguém — confira o hostname.",
+		}
+	case TipoDCR:
+		return &webui.Alerta{
+			Tom:    webui.TomAlerta,
+			Titulo: "Este cliente não foi cadastrado por você.",
+			Texto: "Ele se registrou sozinho em /oauth/register. O nome é o que ele declarou no " +
+				"registro — confira para onde o código vai.",
+		}
+	default:
+		return nil
+	}
 }
 
 // TelaConsentimento é o passo humano do fluxo: o admin é o "usuário" deste
@@ -26,10 +60,21 @@ templ TelaConsentimento(d DadosConsentimento) {
 		Subtitulo: "Um cliente OAuth está pedindo acesso a um endpoint deste patchbay.",
 		Secao:     webui.SecaoOAuth,
 		Usuario:   webui.UsuarioDoContexto(ctx),
+		Alerta:    alertaDeClienteDinamico(d.Autorizacao.Cliente),
 	}) {
 		<div class="flex max-w-2xl flex-col gap-6">
 			@webui.Cartao(d.Autorizacao.Cliente.Nome) {
 				<dl class="flex flex-col gap-4 px-4 py-4">
+					if d.HospedeiroCliente != "" {
+						<div>
+							<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Documento publicado em</dt>
+							<dd class="mt-1 text-lg font-semibold text-conteudo">{ d.HospedeiroCliente }</dd>
+							<dd class="mt-0.5 text-sm text-conteudo-tenue">
+								O nome acima vem desse documento e não é verificado; o hostname é a parte
+								que exige controle do domínio.
+							</dd>
+						</div>
+					}
 					<div>
 						<dt class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">Vai receber o código em</dt>
 						<dd class="mt-1 text-lg font-semibold text-conteudo">{ d.Hospedeiro }</dd>

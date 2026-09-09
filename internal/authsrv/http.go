@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
 )
@@ -23,6 +24,7 @@ type HTTP struct {
 
 	limiteToken     *limitador
 	limiteAutorizar *limitador
+	limiteRegistro  *limitador
 }
 
 // NovoHTTP monta a borda HTTP do AS.
@@ -32,6 +34,12 @@ func NovoHTTP(s *Servico, log *slog.Logger) *HTTP {
 		log:             log,
 		limiteToken:     novoLimitador(LimiteTokenPorMinuto, time.Minute, s.agora),
 		limiteAutorizar: novoLimitador(LimiteAutorizarPorMinuto, time.Minute, s.agora),
+		// O registro é o único endpoint de escrita aberto do AS: o balde por
+		// minuto contém a rajada, e o teto por origem/hora do Servico contém o
+		// crescimento da tabela. Um só dos dois não bastaria — o balde deixa
+		// gravar para sempre em ritmo lento, e o teto sozinho deixa gastar as
+		// cinco fichas da hora em um segundo.
+		limiteRegistro: novoLimitador(LimiteRegistroPorMinuto, time.Minute, s.agora),
 	}
 }
 
@@ -48,6 +56,7 @@ func (h *HTTP) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc(RotaMetadataRecursoRaiz, h.metadataRecursoRaiz)
 	mux.HandleFunc(RotaToken, h.token)
 	mux.HandleFunc(RotaRevogar, h.revogar)
+	mux.HandleFunc(RotaRegistrar, h.registrar)
 }
 
 // RotasAutorizacao registra o authorize endpoint.
@@ -67,7 +76,9 @@ func (h *HTTP) RotasAutorizacao(mux *http.ServeMux) {
 // origem por desenho: um cliente MCP que rode no navegador manda Origin, e a
 // proteção — que existe para formulário de UI — recusaria a troca de código com
 // 403. A defesa deles é a autenticação de cliente e o PKCE, não o Origin.
-var PadroesSemProtecaoDeOrigem = []string{RotaToken, RotaRevogar}
+// O registration endpoint entra na lista pelo mesmo motivo: é API de protocolo,
+// e o cliente que faz DCR de dentro de um navegador manda Origin.
+var PadroesSemProtecaoDeOrigem = []string{RotaToken, RotaRevogar, RotaRegistrar}
 
 // --- metadata ---
 
@@ -137,6 +148,9 @@ func (h *HTTP) autorizarForm(w http.ResponseWriter, r *http.Request) {
 		Autorizacao: autz,
 		Recurso:     h.s.Recurso(autz.Endpoint.Slug),
 		Hospedeiro:  hospedeiroDe(p.RedirectURI),
+		// Só num cliente de CIMD o client_id é uma URL, e só aí há hostname de
+		// cliente a mostrar.
+		HospedeiroCliente: hospedeiroDoClientID(autz.Cliente.ClientID),
 	}))
 }
 
@@ -369,6 +383,86 @@ func (h *HTTP) responderToken(w http.ResponseWriter, c Concessao) {
 	}
 }
 
+// --- registro dinâmico (RFC 7591) ---
+
+// tamanhoMaximoRegistro é o teto do corpo do POST /oauth/register. Metadados de
+// cliente são alguns campos de texto; 16 KiB é folga e ainda impede que um corpo
+// gigante ocupe o parser antes de qualquer validação.
+const tamanhoMaximoRegistro = 16 << 10
+
+func (h *HTTP) registrar(w http.ResponseWriter, r *http.Request) {
+	if pararNoPreflight(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST, OPTIONS")
+		respostaErro(w, h.log, &ErroOAuth{
+			Codigo: ErroInvalidRequest, Descricao: "o registration endpoint só aceita POST",
+			Status: http.StatusMethodNotAllowed,
+		})
+		return
+	}
+	// O limite vem antes de ler o corpo: recusar depois de parsear já teria
+	// pagado o custo que o limite existe para evitar.
+	if !h.limiteRegistro.permitir(chaveDoCliente(r, "")) {
+		w.Header().Set("Retry-After", "60")
+		respostaErro(w, h.log, &ErroOAuth{
+			Codigo:    ErroInvalidClientMetadata,
+			Descricao: "registros demais; tente de novo em um minuto",
+			Status:    http.StatusTooManyRequests,
+		})
+		return
+	}
+	if err := conferirTipoJSON(r); err != nil {
+		respostaErro(w, h.log, err)
+		return
+	}
+
+	var meta oauthex.ClientRegistrationMetadata
+	corpo := http.MaxBytesReader(w, r.Body, tamanhoMaximoRegistro)
+	if err := json.NewDecoder(corpo).Decode(&meta); err != nil {
+		respostaErro(w, h.log, &ErroOAuth{
+			Codigo:    ErroInvalidClientMetadata,
+			Descricao: "corpo do registro não é um JSON de metadados de cliente",
+			Status:    http.StatusBadRequest,
+			Causa:     err,
+		})
+		return
+	}
+
+	// A origem é o IP do RemoteAddr, nunca X-Forwarded-For, pelo mesmo motivo do
+	// limitador: header que o cliente escreve zera o teto por variação.
+	registrado, err := h.s.Registrar(r.Context(), meta, chaveDoCliente(r, ""))
+	if err != nil {
+		respostaErro(w, h.log, comoErroOAuth(err))
+		return
+	}
+
+	// RFC 7591 §3.2.1: 201 com o corpo dos metadados registrados. Sem cache: a
+	// resposta pode carregar client_secret.
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(registrado.RespostaRegistro()); err != nil {
+		h.log.Error("não escreveu a resposta do registration endpoint", "erro", err)
+	}
+}
+
+// conferirTipoJSON exige application/json no corpo do registro, que é o que o
+// RFC 7591 §3.1 manda — e o que o cliente do go-sdk manda
+// (oauthex/dcr.go:RegisterClient).
+func conferirTipoJSON(r *http.Request) *ErroOAuth {
+	if err := conferirJSON(r.Header.Get("Content-Type")); err != nil {
+		return &ErroOAuth{
+			Codigo:    ErroInvalidRequest,
+			Descricao: err.Error() + ": use application/json",
+			Status:    http.StatusBadRequest,
+		}
+	}
+	return nil
+}
+
 // --- revogação ---
 
 func (h *HTTP) revogar(w http.ResponseWriter, r *http.Request) {
@@ -423,7 +517,11 @@ func (h *HTTP) revogar(w http.ResponseWriter, r *http.Request) {
 // que garante que os dois validam exatamente o mesmo pedido.
 func pedidoDaQuery(v url.Values) PedidoAutorizacao {
 	return PedidoAutorizacao{
-		ClientID:            v.Get("client_id"),
+		// recortar e não um erro: um client_id maior que o teto não bate com
+		// nenhum cliente cadastrado nem com URL de CIMD nenhuma, então ele já
+		// sai recusado adiante como client_id desconhecido — sem que a forma
+		// bruta, do tamanho que for, chegue a ValidarURLCIMD.
+		ClientID:            recortar(v.Get("client_id"), tamanhoMaximoParametro),
 		RedirectURI:         v.Get("redirect_uri"),
 		ResponseType:        v.Get("response_type"),
 		CodeChallenge:       v.Get("code_challenge"),
@@ -498,6 +596,16 @@ func escreverJSONPublico(w http.ResponseWriter, log *slog.Logger, v any) {
 //
 // O hostname do redirect é a informação que decide o consentimento: é ele que
 // diz para onde o código vai. Aparece em destaque, e não perdido no meio da URI.
+// hospedeiroDoClientID devolve o hostname de um client_id de CIMD, ou vazio
+// quando o client_id não é uma URL — que é o caso de todo cliente cadastrado
+// pela UI ou registrado por DCR.
+func hospedeiroDoClientID(clientID string) string {
+	if !ehIdentificadorCIMD(clientID) {
+		return ""
+	}
+	return hospedeiroDe(clientID)
+}
+
 func hospedeiroDe(uri string) string {
 	u, err := url.Parse(uri)
 	if err != nil || u.Host == "" {
