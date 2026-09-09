@@ -5,12 +5,13 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: fatias **1, 2, 3, 4, 5, 6 e 10** do épico entregues — catálogo e
-> endpoint, resiliência de upstream, composição fina do endpoint, upstream
-> STDIO com supervisor de processo, segredos cifrados em repouso e o
-> authorization server essencial. OAuth de upstream (fatias 7-8), sonda
-> funcional (fatia 9) e CIMD/DCR/redirect URI de loopback (fatia 11) seguem
-> pendentes.
+> Estado: fatias **1, 2, 3, 4, 5, 6, 7, 8, 10 e 14** do épico entregues —
+> catálogo e endpoint, resiliência de upstream, composição fina do endpoint,
+> upstream STDIO com supervisor de processo, segredos cifrados em repouso,
+> **OAuth de upstream com consentimento pela tela, refresh serializado, CIMD e
+> registro dinâmico**, o authorization server essencial e o **transporte SSE
+> legado**. A sonda funcional (fatia 9) e o CIMD/DCR do lado servidor mais o
+> redirect URI de loopback (fatia 11) seguem pendentes.
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
@@ -46,10 +47,14 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
   automática, e backoff exponencial próprio com jitter e teto — sem
   `cenkalti/backoff`, com relógio injetado. **Nenhum estado de erro é
   persistido:** o banco guarda só `habilitado`, e todo boot recomeça em
-  `novo → conectando`. **Dois transportes na mesma máquina de estados:**
-  Streamable HTTP e STDIO — um processo por servidor, compartilhado por todas as
-  sessões de cliente, com a árvore inteira morrendo junto e restart pelo mesmo
-  backoff.
+  `novo → conectando`. **Três transportes na mesma máquina de estados:**
+  Streamable HTTP, SSE legado (o HTTP+SSE da revisão 2024-11-05) e STDIO — um
+  processo por servidor, compartilhado por todas as sessões de cliente, com a
+  árvore inteira morrendo junto e restart pelo mesmo backoff.
+  **OAuth de upstream** com consentimento pela tela, uma `oauth2.TokenSource`
+  por upstream para o processo inteiro, refresh serializado e proativo na
+  supervisão, e o estado `sem_consentimento` para o que depende de um clique —
+  ver [OAuth de upstream](#oauth-de-upstream).
 - `internal/endpoint` — um `*mcp.Server` e um `StreamableHTTPHandler` vivos por
   endpoint, servidos em `/mcp/{slug}` com sessão retida. **Catálogo parcial
   servido sem hesitar:** endpoint com três upstreams e um degradado serve as
@@ -79,9 +84,15 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
 | `/admin/setup` | Cria o administrador único. Existe **só** no primeiro acesso |
 | `/admin/login` · `/admin/sair` | Entrada e saída |
 | `/admin/` | Painel: upstreams por estado, endpoints, ferramentas, chaves |
-| `/admin/upstreams` | CRUD de upstream HTTP (bearer e headers estáticos) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora |
+| `/admin/upstreams` | CRUD de upstream HTTP e SSE (bearer e headers estáticos, ou OAuth) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora, e botão **Autorizar** no modo OAuth |
 | `/admin/endpoints` | CRUD de endpoint com composição fina — quais upstreams entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada upstream dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
+| `/admin/upstreams/oauth/callback` | Onde o provedor devolve o navegador depois do consentimento OAuth de upstream. Atrás da sessão de admin, como o resto de `/admin` |
+
+Uma rota fora de `/admin` pertence ao OAuth de upstream:
+`/oauth/patchbay-cliente.json` é o Client ID Metadata Document do patchbay como
+cliente. É público porque quem o lê é o authorization server do provedor, e ele
+só existe quando a URL pública é `https://`.
 
 **Nada exige reiniciar o processo.** Criar, editar, desabilitar ou remover um
 upstream reconfigura a supervisão na mesma requisição; mudar a composição de um
@@ -245,6 +256,116 @@ falha. Para trocar, crie outro upstream e recomponha os endpoints.
 Isolamento em container está fora do escopo da v1 — o patchbay roda o processo
 nu, e é por isso que a morte de árvore é obrigatória e não opcional.
 
+## OAuth de upstream
+
+Upstream HTTP ou SSE tem dois **modos de credencial**, escolhidos na edição e
+excludentes: `estatica` — bearer e headers colados por você — e `oauth`. São
+excludentes porque os dois montam o mesmo header `Authorization`, e um servidor
+que recebe dois escolhe um sem dizer qual: o sintoma seria 401 intermitente que
+ninguém liga a um formulário salvo semanas antes.
+
+No modo OAuth o patchbay é um **cliente** OAuth 2.1 com PKCE. A descoberta
+(RFC 9728 e RFC 8414), a ordem de registro de cliente e o refresh são do
+`go-sdk` e do `golang.org/x/oauth2`; o que o patchbay acrescenta é o
+consentimento pelo navegador de um admin que está em outra máquina, e a
+persistência cifrada do que ele produz.
+
+### O fluxo
+
+1. Cadastre o upstream com o modo **OAuth** e salve.
+2. Na tela do upstream, clique em **Autorizar**. O patchbay descobre o
+   authorization server do provedor, registra ou reaproveita o cliente, monta a
+   URL de autorização com `state` e `code_challenge`, e leva você para lá.
+3. Você autoriza no provedor. Ele devolve o navegador para
+   `<URL pública>/admin/upstreams/oauth/callback`.
+4. A troca do código por token acontece na **supervisão**, não na requisição do
+   navegador. Assim que ela termina, o upstream sai de `sem_consentimento` e
+   conecta.
+
+O `redirect_uri` é **contrato**: registre no provedor exatamente
+`<URL pública>/admin/upstreams/oauth/callback`. Mudar `PATCHBAY_PUBLIC_URL`
+depois invalida todo consentimento existente.
+
+### Qual client_id
+
+A ordem é a da especificação, e é o `go-sdk` quem a executa: **Client ID
+Metadata Document → cliente pré-registrado → registro dinâmico**.
+
+| Caminho | Quando | O que você faz |
+|---|---|---|
+| CIMD | A URL pública é `https://` e o provedor anuncia suporte | Nada. O documento é servido em `/oauth/patchbay-cliente.json` |
+| Pré-registrado | O provedor não anuncia CIMD nem `registration_endpoint` — o caso do Google | Cola `client_id` e `client_secret` no formulário |
+| Registro dinâmico | O provedor anuncia `registration_endpoint` | Nada. O `client_id` emitido fica gravado e é reusado |
+
+**Pré-registrado é caminho normal, não recuperação de erro.** O Google não
+anuncia nenhuma das duas alternativas, então sem colar `client_id` e
+`client_secret` à mão ele simplesmente não funciona.
+
+O `client_id` que o registro dinâmico emitiu é **persistido e reusado**: sem
+isso, cada reautorização registraria mais um cliente no provedor e o cadastro
+de lá viraria uma lista de clientes órfãos.
+
+O campo **issuer** é opcional e só vale com `client_id` pré-registrado. Quando
+preenchido, o patchbay recusa usar aquela credencial com um authorization
+server diferente daquele — é a proteção contra confundir dois provedores.
+
+Sobre `http://` o CIMD fica **desligado**, e o boot diz isso no log: um
+`client_id` que é uma URL só vale como identidade se ninguém no caminho puder
+trocar o documento.
+
+### Refresh, revogação e o estado `sem_consentimento`
+
+- **Uma `oauth2.TokenSource` por upstream, para o processo inteiro.** É a
+  unicidade da instância que serializa o refresh: duas instâncias para o mesmo
+  upstream fariam duas requisições correrem com o mesmo refresh token, e
+  provedor com rotação de família revoga tudo quando vê um token repetido.
+- **O refresh roda na supervisão, com antecedência.** Nenhuma operação de
+  upstream acontece no caminho da requisição de um cliente, e um token vencido
+  na hora do `tools/call` faria o cliente pagar a ida ao token endpoint.
+- **O que é gravado é o token que a `TokenSource` devolve**, nunca o corpo da
+  resposta HTTP: o `x/oauth2` já não sobrescreve `refresh_token` com valor
+  vazio, e parsear a resposta por conta própria seria a única forma de errar
+  isso.
+- **Refresh recusado com `invalid_grant`** — consentimento revogado ou expirado
+  — apaga o token gravado e leva o upstream a `sem_consentimento`.
+
+Em `sem_consentimento` a supervisão **para**: não há backoff, não há próxima
+tentativa agendada, e nenhuma requisição é enviada ao provedor. O que falta é
+uma pessoa autorizando, e reconectar só para tomar 401 não produz uma. O clique
+em **Autorizar** é que reagenda a conexão, na hora.
+
+### O que fica no banco
+
+Tudo em `upstream_oauth`, uma linha por upstream. `client_secret`, access token
+e refresh token vão cifrados com AES-256-GCM, com a **coluna dentro do dado
+autenticado** — um access token transplantado para a coluna de refresh não
+decifra nem com a chave certa. `client_id`, `issuer`, por qual caminho o
+cliente foi registrado, o prazo do token e a hora do último refresh ficam em
+claro: a tela precisa deles, nenhum é segredo, e assim ela continua abrindo
+depois de uma troca de chave mestra — que é justamente quando ela é mais
+necessária.
+
+Nenhum valor de token aparece em log, em tela ou em mensagem de erro.
+
+O `state` e o `code_verifier` do PKCE **não** têm tabela. O verifier vive dentro
+do handler do `go-sdk` e não é exposto; persistir o `state` sem ele daria uma
+linha inútil, e persistir os dois exigiria reimplementar a troca do código por
+token por fora da biblioteca — que é exatamente onde se reintroduz o bug que ela
+já não tem. Os dois têm o mesmo tempo de vida: a tentativa em curso.
+
+### Upstream SSE legado
+
+O tipo `sse` é o HTTP+SSE da revisão 2024-11-05 do MCP: um GET pendurado com os
+eventos do servidor e um POST por mensagem do cliente, no endereço que o
+primeiro evento anuncia. Ele entra na mesma máquina de estados dos outros dois
+transportes — mesmo watchdog, mesmo backoff, mesmo teto de abandonos, mesma
+tela — e aceita as mesmas credenciais, estáticas ou OAuth.
+
+Duas diferenças ficam contidas em `internal/upstream/sse.go`: o
+`SSEClientTransport` do go-sdk amarra o stream ao contexto da chamada de
+`Connect`, então o patchbay o desamarra antes de entregá-lo ao supervisor; e ele
+não tem campo `OAuthHandler`, então o token entra por `RoundTripper`.
+
 ## Desenvolver o front-end
 
 templ e o Tailwind CLI standalone. Nenhum Node, em nenhum momento — os dois são
@@ -298,16 +419,19 @@ Ela não tem flag de propósito: argumento de processo aparece em `ps` e no
 histórico do shell. E não tem arquivo de chave em disco nem entrada pela UI —
 a origem é essa variável e só ela.
 
-A URL pública é o que a UI mostra aos clientes e o que decide o atributo
-`Secure` do cookie de sessão: o TLS é terminado por um proxy reverso na frente
-do patchbay, então o processo não descobre o esquema externo olhando a
-requisição.
+A URL pública é o que a UI mostra aos clientes, o que decide o atributo `Secure`
+do cookie de sessão e o que monta o `redirect_uri` do OAuth de upstream: o TLS é
+terminado por um proxy reverso na frente do patchbay, então o processo não
+descobre o esquema externo olhando a requisição. **Mudá-la invalida o
+consentimento OAuth de todo upstream** — o `redirect_uri` registrado no provedor
+deixa de bater.
 
 ## Chave mestra
 
-O patchbay guarda duas coisas que precisam voltar em claro: as credenciais
-estáticas de upstream (bearer, headers) e, adiante, os tokens de OAuth. As duas
-são cifradas em repouso com uma chave derivada da **chave mestra**.
+O patchbay guarda três coisas que precisam voltar em claro: as credenciais
+estáticas de upstream (bearer, headers, variáveis de ambiente sensíveis do
+STDIO), o `client_secret` do cliente OAuth e os tokens de OAuth de upstream. As
+três são cifradas em repouso com uma chave derivada da **chave mestra**.
 
 ```sh
 patchbay chave-mestra gerar     # imprime 32 bytes em base64, uma única vez
