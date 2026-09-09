@@ -481,8 +481,8 @@ export PATCHBAY_PUBLIC_URL=https://patchbay.exemplo.com
 ```
 
 O TLS **não** é terminado pelo patchbay: coloque um proxy reverso na frente
-(Caddy, Nginx, Traefik) e aponte `PATCHBAY_PUBLIC_URL` para o esquema e host
-públicos — é o que a UI mostra ao cliente MCP e o que decide o atributo
+(Nginx, Traefik, um túnel) e aponte `PATCHBAY_PUBLIC_URL` para o esquema e
+host públicos — é o que a UI mostra ao cliente MCP e o que decide o atributo
 `Secure` do cookie de sessão de admin.
 
 ### Docker
@@ -505,17 +505,20 @@ para escrevê-lo. O Kubernetes ignora `HEALTHCHECK` de qualquer forma — a sond
 de vida/prontidão é HTTP direta contra o gateway; em Compose, veja o exemplo
 abaixo, que não depende de sonda alguma para subir.
 
-### Docker Compose (com TLS)
+### Docker Compose
 
-`docker-compose.yml` sobe o patchbay e um Caddy na frente, com TLS automático
-via ACME e o hardening de runtime que o Dockerfile sozinho não consegue
-impor: `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges`, rootfs
-gravável só no volume do data dir.
+`docker-compose.yml` sobe só o patchbay, com o hardening de runtime que o
+Dockerfile sozinho não consegue impor: `read_only: true`, `cap_drop: [ALL]`,
+`no-new-privileges`, rootfs gravável só no volume do data dir. A porta 8787
+sai publicada no loopback do host, para o proxy reverso que termina o TLS
+alcançar o container sem expor o gateway direto à internet — se o seu proxy
+for outro container, apague a publicação e ligue os dois por uma rede
+compartilhada.
 
 ```sh
 cp secrets.env.exemplo secrets.env
 docker compose run --rm patchbay chave-mestra gerar   # cole o resultado em secrets.env
-$EDITOR Caddyfile                                     # troque pelo seu domínio
+$EDITOR docker-compose.yml                            # troque PATCHBAY_PUBLIC_URL pelo seu domínio
 docker compose up -d
 ```
 

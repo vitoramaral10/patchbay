@@ -1,4 +1,7 @@
-# Exemplo de deploy do patchbay atrás de um proxy reverso com TLS (Caddy).
+# Exemplo de deploy do patchbay com o hardening de runtime que o Dockerfile
+# sozinho não consegue impor. O TLS não é terminado aqui: ponha na frente o
+# proxy reverso ou o túnel que você já usa e aponte `PATCHBAY_PUBLIC_URL` para
+# o host público.
 #
 # `PATCHBAY_MASTER_KEY` não vai em `environment:` de propósito — um valor
 # escrito aqui é um segredo versionado. Ela vem de `secrets.env`, um arquivo
@@ -17,8 +20,13 @@ services:
       PATCHBAY_DATA_DIR: /dados
       # Esquema https e o host público: é o que a UI mostra ao cliente MCP e
       # o que decide o atributo Secure do cookie de sessão. O TLS em si é
-      # terminado pelo Caddy, não pelo patchbay.
+      # terminado pelo proxy da sua frente, não pelo patchbay.
       PATCHBAY_PUBLIC_URL: https://patchbay.exemplo.com
+    # Só no loopback do host: quem atende a internet é o proxy reverso, que
+    # repassa para cá. Se o seu proxy for outro container, apague esta
+    # publicação e ligue os dois por uma rede compartilhada.
+    ports:
+      - "127.0.0.1:8787:8787"
     # Volume nomeado, e não bind mount, de propósito: a imagem carrega /dados
     # com dono 65532, e o Docker replica esse dono ao inicializar um volume
     # vazio. Num bind mount quem manda é o dono do diretório no host, então
@@ -39,28 +47,6 @@ services:
       - no-new-privileges:true
     pids_limit: 200
     mem_limit: 512m
-    # Só a rede interna: quem fala com o patchbay de fora é o Caddy, na porta
-    # 8787 não publicada aqui.
-    networks:
-      - interno
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: patchbay-proxy
-    restart: unless-stopped
-    ports:
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-dados:/data
-    depends_on:
-      - patchbay
-    networks:
-      - interno
-
-networks:
-  interno:
 
 volumes:
   patchbay-dados:
-  caddy-dados:
