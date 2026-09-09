@@ -11,6 +11,9 @@ const (
 	RotaPainel = "/admin/"
 	// RotaUpstreams é a lista de upstreams.
 	RotaUpstreams = "/admin/upstreams"
+	// RotaBiblioteca é o catálogo de servidores MCP conhecidos, de onde um
+	// upstream nasce já preenchido.
+	RotaBiblioteca = "/admin/biblioteca"
 	// RotaEndpoints é a lista de endpoints.
 	RotaEndpoints = "/admin/endpoints"
 	// RotaChaves é a lista de chaves de API.
@@ -60,9 +63,11 @@ const (
 const (
 	SecaoPainel    = "painel"
 	SecaoUpstreams = "upstreams"
-	SecaoEndpoints = "endpoints"
-	SecaoChaves    = "chaves"
-	SecaoOAuth     = "oauth"
+	// SecaoBiblioteca é o catálogo de servidores MCP conhecidos.
+	SecaoBiblioteca = "biblioteca"
+	SecaoEndpoints  = "endpoints"
+	SecaoChaves     = "chaves"
+	SecaoOAuth      = "oauth"
 	// SecaoConfiguracao é o export/import de YAML.
 	SecaoConfiguracao = "configuracao"
 	SecaoTrilha       = "trilha"
@@ -78,6 +83,7 @@ type itemNav struct {
 var navegacao = []itemNav{
 	{Rota: RotaPainel, Rotulo: "Painel", Secao: SecaoPainel},
 	{Rota: RotaUpstreams, Rotulo: "Upstreams", Secao: SecaoUpstreams},
+	{Rota: RotaBiblioteca, Rotulo: "Biblioteca", Secao: SecaoBiblioteca},
 	{Rota: RotaEndpoints, Rotulo: "Endpoints", Secao: SecaoEndpoints},
 	{Rota: RotaChaves, Rotulo: "Chaves de API", Secao: SecaoChaves},
 	{Rota: RotaClientesOAuth, Rotulo: "Clientes OAuth", Secao: SecaoOAuth},

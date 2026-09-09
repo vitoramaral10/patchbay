@@ -13,6 +13,7 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/admin"
 	"github.com/vitoramaral10/patchbay/internal/apikey"
 	"github.com/vitoramaral10/patchbay/internal/authsrv"
+	"github.com/vitoramaral10/patchbay/internal/biblioteca"
 	"github.com/vitoramaral10/patchbay/internal/catalogo"
 	"github.com/vitoramaral10/patchbay/internal/configuracao"
 	"github.com/vitoramaral10/patchbay/internal/endpoint"
@@ -67,6 +68,7 @@ type Aplicacao struct {
 	admHTTP     *admin.HTTP
 	oauthHTTP   *authsrv.HTTP
 	adminUp     *upstream.Admin
+	adminBib    *biblioteca.Admin
 	adminEnd    *endpoint.Admin
 	adminChave  *apikey.Admin
 	adminOAuth  *authsrv.Admin
@@ -231,6 +233,19 @@ func montar(
 		a.endpoints.Sincronizar, nomeExpostoDe,
 		log.With("componente", "admin_upstream"),
 	)
+	// A biblioteca é só leitura de um instantâneo embutido, então ela nasce
+	// aqui sem repositório e sem gerente.
+	//
+	// Catálogo ilegível não derruba o gateway: a tela fica vazia e o erro vai
+	// para o log. Um instantâneo corrompido é erro de build, e quem o pega é o
+	// teste do pacote — deixar o processo inteiro recusar subir por causa de uma
+	// tela de conveniência seria trocar um defeito pequeno por uma indisponibilidade.
+	bib, err := biblioteca.Embutido()
+	if err != nil {
+		log.Error("catálogo da biblioteca ilegível; a tela vai ficar vazia", "erro", err)
+		bib = biblioteca.Vazio()
+	}
+	a.adminBib = biblioteca.NovoAdmin(bib, log.With("componente", "admin_biblioteca"))
 	a.adminEnd = endpoint.NovoAdmin(
 		a.repoEndpoint, a.endpoints,
 		upstreamsParaEndpoint{repo: a.repoUpstream, gerente: a.gerente},
@@ -427,6 +442,7 @@ func (a *Aplicacao) Handler() http.Handler {
 	protegido := http.NewServeMux()
 	protegido.HandleFunc("GET "+webui.RotaPainel, a.painel)
 	a.adminUp.Rotas(protegido)
+	a.adminBib.Rotas(protegido)
 	a.adminEnd.Rotas(protegido)
 	a.adminChave.Rotas(protegido)
 	a.adminOAuth.Rotas(protegido)
