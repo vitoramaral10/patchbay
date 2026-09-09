@@ -35,6 +35,10 @@ type uiDeTeste struct {
 	cliente     *http.Client
 	app         *Aplicacao
 	sincronizou <-chan struct{}
+	// bibliotecaSincronizou avisa que uma varredura do catálogo de servidores
+	// MCP terminou. Registrado antes de Iniciar, porque é lá que a primeira
+	// varredura começa.
+	bibliotecaSincronizou <-chan struct{}
 }
 
 func subirUI(t *testing.T, opcoes ...OpcaoApp) uiDeTeste {
@@ -55,6 +59,16 @@ func subirUI(t *testing.T, opcoes ...OpcaoApp) uiDeTeste {
 	ctx, cancelar := context.WithCancel(context.Background())
 	t.Cleanup(cancelar)
 
+	// A biblioteca varre o registry no boot quando o catálogo local está vazio —
+	// e num t.TempDir() ele está sempre. Sem um padrão aqui, cada teste de UI
+	// dispararia trezentas requisições ao registry de verdade só por subir o
+	// patchbay. O padrão vem antes das opções do chamador, então quem precisa de
+	// um catálogo específico continua trocando a origem.
+	opcoes = append([]OpcaoApp{
+		ComOrigemDaBiblioteca(registryMudo(t)),
+		ComCuradoriaDaBiblioteca(curadoriaMudaDeTeste(t)),
+	}, opcoes...)
+
 	app, err := montar(ctx, cfg, cofreDeTeste(t), slog.New(slog.DiscardHandler), opcoes...)
 	if err != nil {
 		t.Fatalf("montar: erro = %v, quer nil", err)
@@ -68,6 +82,14 @@ func subirUI(t *testing.T, opcoes ...OpcaoApp) uiDeTeste {
 		default:
 		}
 	})
+	varreu := make(chan struct{}, 8)
+	app.sincBib.Observar(func() {
+		select {
+		case varreu <- struct{}{}:
+		default:
+		}
+	})
+
 	app.Iniciar(ctx)
 
 	ts.Config.Handler = app.Handler()
@@ -87,11 +109,54 @@ func subirUI(t *testing.T, opcoes ...OpcaoApp) uiDeTeste {
 		t.Fatalf("cookie jar: erro = %v, quer nil", err)
 	}
 	return uiDeTeste{
-		url:         ts.URL,
-		cliente:     &http.Client{Jar: jarro},
-		app:         app,
-		sincronizou: sincronizou,
+		url:                   ts.URL,
+		cliente:               &http.Client{Jar: jarro},
+		app:                   app,
+		sincronizou:           sincronizou,
+		bibliotecaSincronizou: varreu,
 	}
+}
+
+// registryMudo é uma origem que existe e não publica nada.
+//
+// Devolve página vazia: o sincronizador a recusa como catálogo (varredura vazia
+// nunca apaga nada) e registra a falha, que é exatamente o estado de "o catálogo
+// ainda não chegou" — o mesmo que o teste veria com a internet fora, e sem sair
+// da máquina.
+func registryMudo(t *testing.T) string {
+	t.Helper()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"servers":[],"metadata":{}}`))
+	}))
+	t.Cleanup(ts.Close)
+	return ts.URL
+}
+
+// curadoriaMudaDeTeste é a segunda origem da biblioteca, local e mínima.
+//
+// Mínima e não vazia: a varredura recusa uma curadoria que não trouxe nada — é
+// como ela distingue "o site mudou" de "não há servidor curado" —, então um
+// servidor só é o que a mantém acima do piso sem interferir em nada.
+func curadoriaMudaDeTeste(t *testing.T) string {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /pt-BR/remote-mcp-servers", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html><body><main>` +
+			`<a href="/pt-BR/remote-mcp-servers/exemplo">` +
+			`<div class="truncate">Exemplo</div></a></main></body></html>`))
+	})
+	mux.HandleFunc("GET /pt-BR/remote-mcp-servers/exemplo", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html><body><h1>Exemplo</h1><p>servidor de teste</p>` +
+			`<h2>Detalhes da conexão</h2><code>https://exemplo.invalido/mcp</code>` +
+			`<dl><dt>Transporte</dt><dd>Streamable HTTP</dd>` +
+			`<dt>Autenticação</dt><dd>Aberto — sem autenticação</dd></dl></body></html>`))
+	})
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	return ts.URL + "/pt-BR"
 }
 
 // --- navegador de mentira ---

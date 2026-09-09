@@ -155,6 +155,19 @@ func preencherDaQuery(form *Form, q url.Values) {
 		form.Nome = nome
 	}
 	if form.STDIO() {
+		// No STDIO o que preenche é a execução, e ela vem em dois parâmetros
+		// porque argumento com espaço não sobrevive a uma string só: "arg"
+		// repete, e cada repetição é um argumento, na ordem em que veio.
+		//
+		// URL não entra aqui: preenchê-la num formulário STDIO deixaria na tela
+		// um campo que aquele transporte ignora, e o admin leria isso como
+		// configuração em vigor.
+		if comando := cortar(q.Get("comando")); comando != "" {
+			form.Comando = comando
+		}
+		if args := argsDaQuery(q); len(args) > 0 {
+			form.ArgsTexto = TextoDeArgs(args)
+		}
 		return
 	}
 	if bruta := cortar(q.Get("url")); bruta != "" {
@@ -163,6 +176,31 @@ func preencherDaQuery(form *Form, q url.Values) {
 	if q.Get("modo") == ModoOAuth {
 		form.Modo = ModoOAuth
 	}
+}
+
+// limiteDeArgs corta quantos argumentos a query pode preencher.
+//
+// Mesma razão de limiteDePreenchimento: quem monta o link escreve isto, e uma
+// lista sem fim viraria uma caixa de texto sem fim servida a partir de uma URL.
+const limiteDeArgs = 32
+
+// argsDaQuery lê os argumentos repetidos, apara cada um e descarta o que não
+// pode virar argumento — vazio, ou com quebra de linha, que partiria a caixa de
+// texto onde um argumento é uma linha.
+func argsDaQuery(q url.Values) []string {
+	brutos := q["arg"]
+	if len(brutos) > limiteDeArgs {
+		brutos = brutos[:limiteDeArgs]
+	}
+	args := make([]string, 0, len(brutos))
+	for _, a := range brutos {
+		a = cortar(a)
+		if a == "" || strings.ContainsAny(a, "\x00\n\r") {
+			continue
+		}
+		args = append(args, a)
+	}
+	return args
 }
 
 // cortar apara e limita, contando runas e não bytes: cortar no byte partiria um
@@ -214,6 +252,11 @@ func (a *Admin) completarForm(ctx context.Context, form *Form) error {
 	// sabe disso — o banco não guarda o tools/list.
 	form.AvisoSondaFerramenta = avisoFerramentaForaDoCatalogo(
 		form.SondaFerramenta, a.gerente.FerramentasDescobertas(form.ID))
+	// O mesmo tipo de aviso, para o transporte que executa um programa: o
+	// comando pode simplesmente não existir aqui.
+	if form.STDIO() {
+		form.AvisoComando = avisoComandoForaDoPath(form.Comando)
+	}
 	return nil
 }
 

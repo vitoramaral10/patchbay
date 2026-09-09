@@ -730,6 +730,16 @@ templ TelaForm(f Form) {
 							Monoespacado: true,
 							Placeholder:  "npx",
 						})
+						if f.Erros["comando"] == "" && f.AvisoComando != "" {
+							// Não bloqueante, e por isso fora de DadosCampo.Erro: o
+							// PATH pode mudar sem o upstream mudar, e travar o
+							// salvamento impediria cadastrar hoje o que só vai
+							// existir no próximo deploy.
+							<p class="flex items-start gap-2 text-sm text-conteudo-suave">
+								@webui.Selo(webui.TomAlerta, "fora do PATH")
+								{ f.AvisoComando }
+							</p>
+						}
 						@webui.CampoTexto(webui.DadosCampo{
 							Nome:        "args",
 							Rotulo:      "Argumentos",

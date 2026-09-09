@@ -1,61 +1,96 @@
-// Package biblioteca é a tela que lê o catálogo de servidores MCP remotos do
-// mcpservers.org e transforma um deles num upstream preenchido.
+// Package biblioteca é a tela que lê o catálogo oficial de servidores MCP e
+// transforma um deles num upstream preenchido.
 //
 // Existe porque cadastrar um upstream à mão é acertar URL, transporte e modo de
 // credencial na primeira tentativa — três campos em que errar não dá erro de
 // formulário, dá um upstream degradado horas depois. A biblioteca troca isso por
 // escolher um nome de uma lista.
 //
-// # Nada é guardado
+// # Duas origens, e por quê
 //
-// Não há catálogo embutido no binário nem tabela no banco: toda vez que a tela
-// abre, ela busca a lista na origem. É decisão do dono (2026-09-09), e o que se
-// ganha com ela é que a biblioteca nunca mostra um servidor que saiu do ar nem
-// esconde um que entrou — não existe versão velha para ficar velha.
+// A biblioteca lê **duas** fontes e as mescla. Cada uma ganha no que a outra
+// perde, e isso foi medido, não suposto (2026-09-09):
 //
-// O preço, explícito: **sem rede para o mcpservers.org, a tela não funciona**.
-// Ela diz isso com todas as letras e aponta para o cadastro à mão, em vez de
-// mostrar uma lista vazia que parece defeito. O resto do patchbay não depende
-// disto: o gateway sobe, serve e roteia igual com a origem fora do ar.
+// O **registry oficial** (registry.modelcontextprotocol.io) dá alcance: 29.843
+// servidores, dos quais 11.769 só existem como pacote instalável — é dele que
+// vem todo servidor de processo local. Mas o esquema dele **não tem campo de
+// autenticação**: com.notion/mcp, que exige OAuth, chega sem nenhum sinal disso.
+// E dois terços do que há lá são namespaces io.github.*, ou seja, conta de
+// GitHub, não domínio de fornecedor.
 //
-// # Por que a busca é filtrada aqui e não delegada
+// O **mcpservers.org** dá curadoria: 293 servidores remotos escolhidos a dedo.
+// Numa amostra de 25 deles, 25 declaram a forma de autenticação (22 são OAuth),
+// o resumo vem em português, e — o que decidiu a questão — **só 3 dos 25 existem
+// no registry**. Neon, MDN, Pendo, Blackbaud, Candid e Unthread são remotos
+// conhecidos que simplesmente não estão lá.
 //
-// A origem tem busca própria (/search?query=), e ela é renderizada no servidor.
-// Só que ela casa **apenas pelo nome** do servidor remoto: medido em 2026-09-09,
-// "jira" devolve zero remotos — não acha o Atlassian, cujo resumo é literalmente
-// "Jira, Confluence, Compass" —, e "database" e "kubernetes" também devolvem
-// zero. Delegar a busca deixaria a tela pior do que ela precisa ser.
+// A chave de junção é a **URL do endpoint**: as duas publicam o mesmo endereço
+// para o mesmo servidor, e casar por ele é exato — casar por nome não seria,
+// porque "Notion" de um lado é "com.notion/mcp" do outro. Quem casa fica com a
+// identidade técnica do registry e com o texto e a autenticação da curadoria;
+// ver mesclar, em sincronizador.go.
 //
-// Então a tela pede a lista de remotos da origem (uma requisição) e filtra o que
-// veio, sobre nome e resumo. Os dados continuam sendo, byte a byte, o que a
-// origem respondeu naquele momento — o que muda é só onde a comparação de texto
-// roda.
+// A primeira versão desta tela lia só o mcpservers.org, a segunda só o registry.
+// Nenhuma das duas bastava.
 //
-// # A tradução do HTML
+// # O catálogo é copiado, não lido ao vivo
 //
-// A origem não tem API: o robots.txt bloqueia /api/, e o que sobra é o HTML das
-// páginas públicas. Ler HTML de terceiro é frágil por natureza, e o pacote assume
-// isso em vez de fingir o contrário — ver origem.go, onde cada expressão está
-// amarrada a um pedaço da página e a falha de extração vira erro visível, nunca
-// um item pela metade.
+// A primeira versão desta tela ia à origem a cada abertura e a cada tecla
+// digitada, sem guardar nada. Isso caiu em 2026-09-09, contra a medição: são
+// 29.610 servidores em páginas de 100, a varredura inteira leva ~16 minutos, e
+// requisições avulsas ao registry chegaram a passar de 40 segundos sem
+// responder. A tela herdava a latência e a instabilidade de um terceiro.
+//
+// Agora existe cópia local em SQLite, refeita de tempos em tempos pelo
+// Sincronizador — a única parte deste pacote que fala com a rede. A tela lê o
+// banco: medido com 30 mil linhas, uma busca leva de 30 a 96 ms, contra os
+// segundos (e os 40 que estouravam) da leitura ao vivo. E continua funcionando
+// com a internet fora.
+//
+// O que se paga por isso, e está escrito na tela: **o catálogo tem idade**. Um
+// servidor publicado hoje não aparece até a próxima varredura. A idade fica
+// visível acima da lista, junto com o botão que refaz a varredura na hora —
+// esconder a idade é o que faria o admin procurar um servidor que existe e
+// concluir que o patchbay está quebrado.
+//
+// Varredura que volta vazia não apaga o que existe, e varredura que falha no
+// meio não toca no catálogo: a cópia anterior continua servindo, com a idade
+// dizendo o que ela é.
+//
+// # O modo de credencial só vai quando alguém declarou
+//
+// O link que abre o formulário de upstream leva modo=oauth **só** quando a
+// curadoria declarou a autenticação daquele servidor. Para quem vem só do
+// registry, o campo não existe em lugar nenhum, e o formulário fica no padrão
+// dele: adivinhar OAuth a partir do nada produziria um fluxo de consentimento
+// que não fecha, e adivinhar estática produziria um upstream que nasce com 401.
+//
+// Quando o registry declara headers obrigatórios num remote, a tela diz que o
+// servidor pede credencial — é o único sinal que ele dá, e ele é dito como
+// aviso, não convertido em configuração.
 package biblioteca
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 // Transportes possíveis. São os mesmos rótulos que o formulário de upstream usa
 // em ?tipo=, de propósito: o valor viaja daqui para lá sem tradução, e uma
 // tabela de conversão no meio é onde os dois lados divergem.
 const (
-	TransporteHTTP = "http"
-	TransporteSSE  = "sse"
+	TransporteHTTP  = "http"
+	TransporteSSE   = "sse"
+	TransporteSTDIO = "stdio"
 )
 
-// Formas de autenticação que a origem declara.
+// Formas de autenticação que a curadoria declara.
 //
-// Não é o modo de credencial do upstream — é o que o servidor exige. A tradução
-// para o modo está em ModoDeCredencial, e é de mão única: oauth vira oauth, todo
-// o resto vira estática. Estática com bearer em branco é um formulário que o
-// admin completa; oauth errado é um fluxo de consentimento que não fecha.
+// Não é o modo de credencial do upstream — é o que o servidor exige. Só o
+// mcpservers.org publica isto: o esquema do registry oficial não tem campo de
+// autenticação, e por isso um servidor que vem só de lá chega com Autenticacao
+// vazia e o formulário fica no padrão dele.
 const (
 	// AutOAuth é consentimento por navegador.
 	AutOAuth = "oauth"
@@ -67,53 +102,130 @@ const (
 
 // Erros sentinela do pacote.
 var (
-	// ErrOrigemIndisponivel é rede fora, tempo esgotado, ou a origem
-	// respondendo com desafio de bot. É o erro que a tela traduz em "não
-	// consegui falar com o mcpservers.org".
+	// ErrOrigemIndisponivel é rede fora, tempo esgotado ou a origem respondendo
+	// o que não devia. É o erro que a tela traduz em "não consegui falar com o
+	// registry".
 	ErrOrigemIndisponivel = errors.New("biblioteca: origem indisponível")
-	// ErrFormatoDaOrigem é a página tendo chegado, e o que estava nela não ser
-	// o que este pacote sabe ler — quase sempre o site mudou de marcação. É
-	// separado de ErrOrigemIndisponivel porque a ação é outra: um pede para
-	// tentar de novo, o outro pede um commit aqui.
+	// ErrFormatoDaOrigem é a resposta tendo chegado e não ser o que este pacote
+	// sabe ler — o esquema do registry mudou. É separado de
+	// ErrOrigemIndisponivel porque a ação é outra: um pede para tentar de novo,
+	// o outro pede um commit aqui.
 	ErrFormatoDaOrigem = errors.New("biblioteca: formato da origem mudou")
-	// ErrNaoEncontrado é o slug não existir mais na origem.
+	// ErrTaxaExcedida é a origem ter respondido 429.
+	//
+	// Separado de ErrOrigemIndisponivel porque a ação é outra: aqui esperar
+	// resolve, e a varredura insiste na mesma página em vez de descartá-la. É
+	// ErrOrigemIndisponivel para quem só quer saber se deu ou não deu.
+	ErrTaxaExcedida = fmt.Errorf("%w: taxa excedida", ErrOrigemIndisponivel)
+	// ErrNaoEncontrado é o servidor não existir mais na origem.
 	ErrNaoEncontrado = errors.New("biblioteca: servidor não está mais no catálogo")
 )
 
-// Item é a linha da lista: o que a página índice da origem sabe dizer.
+// Item é um servidor do catálogo, já traduzido no que o cadastro precisa.
 //
-// Não tem URL nem transporte de propósito — a página índice não os traz, e
-// inventá-los aqui seria um botão "adicionar" que leva a um formulário errado.
-// Eles vêm do Detalhe, buscado quando o admin escolhe um servidor.
+// Diferente da versão que lia HTML, aqui não há segunda requisição para
+// descobrir endpoint e transporte: a listagem do registry já traz remotes[] e
+// packages[], então o que a tela mostra e o que o formulário recebe saem da
+// mesma resposta. Um item sem forma de conexão utilizável nunca é montado — ver
+// itemDe, em origem.go.
 type Item struct {
-	// Slug identifica o servidor na origem.
-	Slug string
-	// Nome é como o servidor se chama.
+	// Nome é o identificador no registry, em DNS invertido: "com.notion/mcp".
+	// É ele que volta pela URL quando o admin clica em adicionar.
 	Nome string
-	// Resumo é a linha curta, já no idioma da origem que pedimos (pt-BR).
-	Resumo string
-}
-
-// Detalhe é a página de um servidor: o que o cadastro precisa.
-type Detalhe struct {
-	Item
-	// Descricao é o parágrafo "Sobre".
+	// Titulo é o nome de exibição. Cai para Nome quando a origem não declara um.
+	Titulo string
+	// Descricao é a linha do catálogo.
 	Descricao string
-	// URL é o endpoint MCP.
-	URL string
-	// Transporte é http ou sse.
+	// Versao é a versão publicada, mostrada para o admin saber o que está vendo.
+	Versao string
+
+	// Transporte é http, sse ou stdio.
 	Transporte string
-	// Autenticacao é oauth, token ou aberta.
+	// URL é o endpoint, nos transportes remotos. Vazio no stdio.
+	URL string
+	// Comando e Args são a execução, no stdio. Vazios nos remotos.
+	Comando string
+	Args    []string
+
+	// Autenticacao é o que o servidor exige: AutOAuth, AutToken ou AutAberta.
+	// Vazia quando ninguém declarou — o registry não tem esse campo, e só a
+	// curadoria do mcpservers.org o publica.
 	Autenticacao string
-	// Docs é a documentação oficial do servidor, quando a origem a declara.
-	Docs string
+	// PedeCredencial é alguém ter declarado que o servidor exige credencial:
+	// header obrigatório no remote do registry, ou autenticação não-aberta na
+	// curadoria.
+	PedeCredencial bool
+	// Curado é o servidor estar na lista de remotos do mcpservers.org, que é
+	// escolhida a dedo. É o sinal de confiança mais forte que a biblioteca tem:
+	// o registry aceita quem provar o namespace, e dois terços do que há lá são
+	// contas de GitHub.
+	Curado bool
+	// Site é o repositório ou a página do servidor, quando a origem declara um.
+	// É o "ver na origem" da tela, e pode ser vazio.
+	Site string
 }
 
 // ModoDeCredencial traduz a autenticação declarada no modo que o formulário de
 // upstream entende.
-func (d Detalhe) ModoDeCredencial() string {
-	if d.Autenticacao == AutOAuth {
+//
+// De mão única e conservadora: só oauth vira oauth. Estática com bearer em
+// branco é um formulário que o admin completa; oauth errado é um fluxo de
+// consentimento que não fecha. Vazio significa "ninguém declarou" e devolve
+// vazio, para o link não carregar palpite nenhum.
+func (i Item) ModoDeCredencial() string {
+	if i.Autenticacao == AutOAuth {
 		return "oauth"
 	}
-	return "estatica"
+	return ""
+}
+
+// Remoto diz se o item vira upstream de rede, em vez de processo local.
+func (i Item) Remoto() bool { return i.Transporte != TransporteSTDIO }
+
+// Namespace é a parte do nome antes da barra: "com.notion", "io.github.fulano".
+func (i Item) Namespace() string {
+	if barra := strings.IndexByte(i.Nome, '/'); barra > 0 {
+		return i.Nome[:barra]
+	}
+	return i.Nome
+}
+
+// DominioVerificado diz se o servidor foi publicado sob o domínio de quem o faz.
+//
+// É o mais perto de "oficial" que o registry permite afirmar, e é afirmação de
+// fato, não julgamento: a documentação do registry exige que "para publicar em
+// com.example/server, o publicador prove que é dono do domínio example.com".
+// Então com.notion/mcp existe porque alguém provou controlar notion.com.
+//
+// Os namespaces de foundry — io.github.*, io.gitlab.* — provam a conta no
+// serviço, não o domínio do fornecedor. Isso deixa de fora o servidor que uma
+// empresa publica pela própria organização no GitHub, e o filtro da tela diz
+// isso com todas as letras: esconder sem explicar seria pior do que não filtrar.
+func (i Item) DominioVerificado() bool {
+	ns := i.Namespace()
+	for _, foundry := range namespacesDeFoundry {
+		if strings.HasPrefix(ns, foundry) {
+			return false
+		}
+	}
+	return strings.Contains(ns, ".")
+}
+
+// namespacesDeFoundry são os prefixos em que o registry verifica a conta num
+// serviço de hospedagem, e não o domínio de quem publica.
+//
+// Vive aqui e na consulta do repositório (ver filtroDe): são os dois lugares
+// onde a mesma regra precisa valer, um para desenhar o selo e outro para
+// filtrar no banco. Mudou aqui, muda lá — o teste
+// TestFiltroDeOficiaisCasaComOSelo é quem cobra isso.
+var namespacesDeFoundry = []string{"io.github.", "io.gitlab.", "io.modelcontextprotocol.anonymous"}
+
+// Resultado é uma página do catálogo.
+//
+// O cursor é opaco de propósito: ele é o que a origem devolveu em
+// metadata.nextCursor, e o patchbay não o interpreta — só o devolve na próxima
+// requisição. Vazio significa que esta é a última página.
+type Resultado struct {
+	Itens         []Item
+	ProximoCursor string
 }
