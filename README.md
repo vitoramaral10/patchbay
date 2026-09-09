@@ -46,9 +46,9 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
   MCP no meio. `(*os.Process).Kill` mata só o filho direto e deixa o **neto**
   vivo — `npx` lança `node`, `uvx` lança `python` —, e é esse neto que vazava um
   processo por reconexão até esgotar os PIDs da máquina no gateway anterior.
-- `internal/biblioteca` — o catálogo embutido de servidores MCP remotos conhecidos,
-  e a tela que transforma um deles num upstream preenchido. Só leitura: o
-  instantâneo vem no binário, e quem o regenera é `cmd/patchbay-biblioteca`.
+- `internal/biblioteca` — a tela que lê o catálogo de servidores MCP remotos do
+  mcpservers.org **a cada uso** e transforma um deles num upstream preenchido. Sem
+  catálogo embutido e sem tabela: o que aparece é o que a origem respondeu agora.
 - `internal/upstream` — uma sessão MCP por servidor configurado, conectada
   em goroutine de supervisão. Nenhuma operação de upstream no caminho da
   requisição do cliente. **Adicionar, reconfigurar e remover upstream valem em
@@ -117,7 +117,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
 | `/admin/login` · `/admin/sair` | Entrada e saída |
 | `/admin/` | Painel: upstreams por estado, endpoints, ferramentas, chaves |
 | `/admin/upstreams` | CRUD de upstream HTTP e SSE (bearer e headers estáticos, ou OAuth) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora, e botão **Autorizar** no modo OAuth |
-| `/admin/biblioteca` | Catálogo embutido de **293 servidores MCP remotos** conhecidos, com busca por nome, resumo e descrição. **Adicionar** abre o formulário de upstream já preenchido com endpoint, transporte e modo de credencial — o cadastro em si continua sendo o do `/admin/upstreams` |
+| `/admin/biblioteca` | Catálogo de servidores MCP remotos **lido do mcpservers.org na hora**, com busca por nome e resumo. **Adicionar** busca o endpoint e a forma de autenticação naquele servidor e abre o formulário de upstream preenchido. Nada é guardado: sem saída para a internet, a tela explica e aponta para o cadastro à mão |
 | `/admin/endpoints` | CRUD de endpoint com composição fina — quais upstreams entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada upstream dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
 | `/admin/oauth` | Clientes do authorization server: cadastro à mão, e as linhas que aparecem sozinhas por **CIMD** ou **DCR** — a coluna Origem diz qual é qual. Detalhe com a allowlist de redirect, o escopo, as sessões vivas e a revogação de cliente ou de sessão |
@@ -153,64 +153,78 @@ na primeira tentativa — três campos em que errar não dá erro de formulário
 um upstream degradado horas depois. A biblioteca troca isso por escolher um nome
 de uma lista.
 
-`/admin/biblioteca` lista **servidores MCP remotos** conhecidos (Notion, Linear,
-Atlassian, GitHub, Cloudflare, Figma, Stripe…), com busca por nome, resumo e
-descrição — vários termos exigem todos, em qualquer ordem. Cada cartão diz o
-transporte e o que o servidor vai exigir na conexão (consentimento OAuth, token
-colado, ou nada), porque é essa informação que decide se adicionar agora resolve
-ou se ainda falta buscar uma chave em outro lugar.
+`/admin/biblioteca` lista os **servidores MCP remotos** que o
+[mcpservers.org](https://mcpservers.org/pt-BR/remote-mcp-servers) publica —
+Notion, Linear, Atlassian, GitHub, Cloudflare, Figma, Stripe… — com busca por
+nome e resumo, vários termos exigindo todos, em qualquer ordem.
 
-**Adicionar não cadastra nada.** O botão abre `/admin/upstreams/novo` com nome,
-URL, transporte e modo de credencial preenchidos, e o admin revisa e salva. É
-deliberado em dois níveis: a URL vem de um catálogo de terceiro e ninguém
-deveria cadastrá-la sem olhar, e o formulário preenchido é o único contrato
-possível entre duas features que a regra de arquitetura proíbe de se importarem.
-Quem guarda esse contrato é um teste de integração em `cmd/patchbay`, que segue
-o link e confere que o formulário volta preenchido. Nenhum campo de credencial
+**Adicionar não cadastra nada.** Ele busca a página daquele servidor na origem,
+lê endpoint, transporte e forma de autenticação, e redireciona para
+`/admin/upstreams/novo` com os campos preenchidos. O admin revisa e salva. É
+deliberado em dois níveis: a URL vem de um site de terceiro e ninguém deveria
+cadastrá-la sem olhar, e o formulário preenchido é o único contrato possível
+entre duas features que a regra de arquitetura proíbe de se importarem — quem
+guarda esse contrato é um teste de integração em `cmd/patchbay`, que segue o
+botão e confere que o formulário volta preenchido. Nenhum campo de credencial
 viaja nessa URL: query entra em histórico do navegador, log de proxy e `Referer`.
 
-### O catálogo é um instantâneo, não uma busca ao vivo
+### Nada é guardado, e o que isso custa
 
-`internal/biblioteca/catalogo.json` é embutido no binário. Três razões, na
-ordem:
+Não há catálogo embutido no binário nem tabela no banco. Toda vez que a tela
+abre, ela busca a lista na origem, e o que ela mostra é o que o site publica
+naquele momento — nunca um servidor que já saiu do ar, nunca a ausência de um
+que acabou de entrar. Não existe versão velha para ficar velha, e não existe
+`task` para rodar nem release para esperar.
 
-1. O patchbay é entregue como binário único e roda em rede fechada. Uma tela que
-   só funciona com saída para a internet não é binário único — é o mesmo
-   argumento que vendoriza o htmx em vez de puxá-lo de CDN.
-2. A origem fica atrás de desafio de bot. Busca ao vivo falharia de forma
-   intermitente e sem causa visível para o admin.
-3. Instantâneo é auditável: o que a tela oferece está no diff de quem atualizou
-   o catálogo, não no que o site respondeu naquele segundo.
+O preço é explícito: **sem rede para o mcpservers.org, a tela não funciona.**
+Ela diz isso com todas as letras e aponta para o cadastro à mão, em vez de
+mostrar uma lista vazia que parece defeito. E ela distingue dois casos, porque
+a ação é diferente em cada um: *origem indisponível* (rede, tempo esgotado ou
+desafio de bot — tentar de novo pode resolver) e *formato mudou* (a página
+chegou e a marcação não é mais a que o patchbay sabe ler — tentar de novo não
+resolve, e o log tem o detalhe).
 
-Catálogo ilegível **não derruba o gateway**: a tela fica vazia e o erro vai para
-o log. Um instantâneo corrompido é erro de build, e quem o pega é o teste do
-pacote — a degradação existe para o que não deveria acontecer.
+O resto do patchbay não depende disto. O gateway sobe, serve e roteia igual com
+a origem fora do ar; a biblioteca é a única tela que sai para a internet, e ela
+sai só quando alguém a abre.
 
-### Atualizar o catálogo
+Entre duas idas à origem há um intervalo mínimo de um minuto. Não é estoque: é
+o que impede uma pessoa digitando "notion" de mandar uma rajada ao site — que é
+justamente o que faz o Cloudflare de lá responder com desafio de bot. Lista
+vencida nunca é servida: se a origem cair, a tela dá erro, e não a lista de um
+minuto atrás mostrada calada como se fosse de agora.
 
-```bash
-task biblioteca
-```
+### Por que a busca é filtrada aqui, e não delegada
 
-A origem é o sitemap de servidores remotos do
-[mcpservers.org](https://mcpservers.org/remote-mcp-servers), lido por
-`cmd/patchbay-biblioteca`. O recorte são os servidores **remotos** de propósito:
-aquelas páginas declaram endpoint, transporte e autenticação em campos próprios,
-que é exatamente o que o formulário de upstream precisa. As páginas de servidor
+A origem tem busca própria (`/search?query=`), renderizada no servidor. Só que
+ela casa **apenas pelo nome** do servidor remoto: medido em 2026-09-09, `jira`
+devolve zero remotos — não acha o Atlassian, cujo resumo é literalmente "Jira,
+Confluence, Compass" —, e `database` e `kubernetes` também devolvem zero.
+
+Então a tela pede a lista de remotos (uma requisição) e filtra o que veio, sobre
+nome e resumo. Os dados continuam sendo, byte a byte, o que a origem respondeu
+naquele momento; o que muda é só onde a comparação de texto roda.
+
+### Só remotos, e por quê
+
+A origem também lista milhares de servidores **locais**, e eles ficam de fora. As
+páginas de servidor remoto declaram endpoint, transporte e autenticação em campos
+próprios — exatamente o que o formulário de upstream precisa. As de servidor
 local são prosa de README, de onde um comando executável só sairia por
-adivinhação — e comando adivinhado vira processo filho que não sobe. Para
-STDIO, o cadastro continua sendo à mão.
+adivinhação, e comando adivinhado vira processo filho que não sobe. Para STDIO,
+o cadastro continua sendo à mão.
 
-O comando é serial, com pausa que dobra a cada recusa, e guarda cada página em
-`.cache-biblioteca/`: a origem responde com desafio de bot sob rajada, então
-**rodar duas ou três vezes até não faltar nenhuma é o fluxo normal**. Falha
-parcial não grava — um catálogo menor apagaria itens bons do arquivo
-versionado. Só entra no catálogo URL `https`: um endpoint em texto claro
-carregaria o bearer do upstream sem cifra, e a biblioteca não é lugar de
-oferecer isso com um clique.
+### Ler HTML de terceiro
 
-Depois de rodar, confira o diff: o catálogo é dado de terceiro entrando no
-binário, e o diff é a revisão.
+A origem não tem API: o `robots.txt` bloqueia `/api/`, e o que sobra são as
+páginas públicas. `internal/biblioteca/origem.go` é onde essa tradução mora, e
+ela assume a própria fragilidade: cada expressão está amarrada a um pedaço
+nomeado da página, e quando uma delas para de casar o pacote devolve erro de
+formato — **nunca um item pela metade**, que viraria um botão levando a um
+formulário errado. As amostras em `internal/biblioteca/testdata/` são páginas de
+verdade do site, e são elas que dizem, no `go test`, que a marcação ainda é a
+que o código espera. Só URL `https` é aceita: um endpoint em texto claro
+carregaria o bearer do upstream sem cifra.
 
 ## Composição do endpoint
 
@@ -1186,10 +1200,6 @@ features. Cada `internal/<feature>` declara a interface mínima do que consome e
 não importa outra feature; `internal/platform/*` é infraestrutura e não conhece
 feature nenhuma. Um teste em `internal/arquitetura` quebra o build se isso
 mudar.
-
-`cmd/patchbay-biblioteca` é a única outra entrada em `cmd/`. Não é distribuída:
-é a ferramenta que regenera o catálogo embutido da biblioteca, e o artefato dela
-é um arquivo versionado.
 
 As telas de administração moram na feature que elas administram
 (`internal/upstream/admin.templ`, `internal/endpoint/admin_http.go`, …) e não num
