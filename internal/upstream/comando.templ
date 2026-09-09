@@ -1,0 +1,170 @@
+package upstream
+
+import (
+	"strconv"
+	"strings"
+
+	"github.com/vitoramaral10/patchbay/internal/platform/webui"
+)
+
+// As telas de "colar o comando de instalação".
+//
+// Ficam em arquivo próprio, e não em admin.templ, porque são um fluxo à parte:
+// a tela de conferência não é um formulário de upstream com valores
+// preenchidos, é um resumo do que seria criado. Misturá-las faria parecer que o
+// comando colado pode ser editado campo a campo ali — e ele não pode: o que
+// grava é o texto, reanalisado no submit.
+
+// rotaImportar e rotaImportarAplicar são as duas rotas do fluxo.
+func rotaImportar() string        { return webui.RotaUpstreams + "/importar" }
+func rotaImportarAplicar() string { return webui.RotaUpstreams + "/importar/aplicar" }
+
+// TelaImportar é a caixa onde o comando é colado.
+templ TelaImportar(d DadosImportar) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo: "Adicionar MCP por comando",
+		Subtitulo: "Cole a linha de instalação que a documentação do servidor publica. " +
+			"O patchbay lê o transporte, a URL ou o processo, os headers e o token, e mostra " +
+			"o que seria criado antes de criar.",
+		Secao:   webui.SecaoUpstreams,
+		Usuario: webui.UsuarioDoContexto(ctx),
+	}) {
+		if d.Erro != "" {
+			@webui.AlertaCaixa(webui.Alerta{
+				Tom:    webui.TomPerigo,
+				Titulo: "Não deu para usar este comando.",
+				Texto:  d.Erro,
+			})
+		}
+		<form method="post" action={ templ.SafeURL(rotaImportar()) } class="flex max-w-2xl flex-col gap-8">
+			@webui.Cartao("Comando de instalação") {
+				<div class="flex flex-col gap-6 px-4 py-5">
+					@webui.CampoTexto(webui.DadosCampo{
+						Nome:   "comando",
+						Rotulo: "Comando",
+						Valor:  d.Texto,
+						Ajuda: "Uma linha de claude mcp add, com ou sem o executável na frente. " +
+							"Pode vir quebrada em várias linhas, como na documentação.",
+						Placeholder: "claude mcp add --transport http exemplo https://exemplo.com/mcp " +
+							"--header \"Authorization: Bearer o-seu-token\"",
+					})
+					<p class="max-w-[65ch] text-sm text-conteudo-suave">
+						O token vai cifrado para o banco e não volta para esta tela. Se o comando
+						ainda tiver o exemplo da documentação no lugar do token — algo como
+						<code class="font-mono">[your API token]</code> —, troque-o antes: gravado
+						assim, o erro só apareceria como 401 dias depois.
+					</p>
+				</div>
+			}
+			<div class="flex items-center gap-3">
+				<button type="submit" class="pb-botao pb-botao-primario">Ler o comando</button>
+				<a href={ templ.SafeURL(webui.RotaUpstreams) } class="pb-botao pb-botao-secundario">Cancelar</a>
+			</div>
+		</form>
+	}
+}
+
+// TelaConferirComando mostra o que o comando descreve, antes de gravar.
+//
+// Nada do comando volta para o navegador: o texto ficou guardado no processo, e
+// o que viaja daqui é só o identificador opaco da conferência. É o que permite
+// mostrar esta tela sem pôr o token do `--header` dentro de um HTML.
+//
+// Por isso a tela também não devolve os campos prontos: quem grava reanalisa o
+// texto guardado. Um resumo vindo do navegador seria uma segunda fonte da
+// verdade, e a diferença entre as duas apareceria como MCP cadastrado diferente
+// do que a conferência mostrou.
+templ TelaConferirComando(imp Importacao, pendencia string) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo: "Confira antes de criar",
+		Subtitulo: "Nada foi gravado ainda. Este é o cadastro que o comando descreve, " +
+			"como o patchbay o entendeu.",
+		Secao:   webui.SecaoUpstreams,
+		Usuario: webui.UsuarioDoContexto(ctx),
+	}) {
+		if imp.Form.STDIO() {
+			@webui.AlertaCaixa(webui.Alerta{
+				Tom:    webui.TomAlerta,
+				Titulo: "Este comando lança um processo na máquina do patchbay.",
+				Texto: "Confira a linha de comando abaixo antes de criar: ela vai ser executada " +
+					"aqui, com o usuário do patchbay, e reiniciada pela supervisão sempre que cair.",
+			})
+		}
+		<div class="flex max-w-2xl flex-col gap-8">
+			@webui.Cartao("O que seria criado") {
+				<dl class="grid gap-5 px-4 py-5 sm:grid-cols-2">
+					@dado("Nome") {
+						{ imp.Form.Nome }
+					}
+					@dado("Transporte") {
+						@webui.Selo(webui.TomNeutro, rotuloDoTipo(imp.Form.TipoEfetivo()))
+					}
+					if imp.Form.STDIO() {
+						@dado("Linha de comando") {
+							<span class="font-mono text-sm break-all">
+								{ LinhaDeComando(imp.Form.Comando, linhas(imp.Form.ArgsTexto)) }
+							</span>
+						}
+					} else {
+						@dado("URL") {
+							<span class="font-mono text-sm break-all">{ imp.Form.URL }</span>
+						}
+					}
+					@dado("Timeout") {
+						{ strconv.FormatInt(imp.Form.TimeoutMS, 10) } ms
+					}
+					@dado("Credenciais") {
+						{ resumoDasCredenciais(imp.Form) }
+					}
+					@dado("Sonda funcional") {
+						Desligada — ligue-a depois, na edição.
+					}
+				</dl>
+			}
+			if len(imp.Avisos) > 0 {
+				@webui.Cartao("O que muda em relação ao comando") {
+					<ul class="flex list-disc flex-col gap-2 py-5 pr-4 pl-9 text-conteudo-suave">
+						for _, aviso := range imp.Avisos {
+							<li class="max-w-[65ch]">{ aviso }</li>
+						}
+					</ul>
+				}
+			}
+			<div class="flex flex-wrap items-center gap-3">
+				<form method="post" action={ templ.SafeURL(rotaImportarAplicar()) }>
+					<input type="hidden" name="pendencia" value={ pendencia }/>
+					<button type="submit" class="pb-botao pb-botao-primario">Criar MCP</button>
+				</form>
+				<form method="post" action={ templ.SafeURL(rotaImportar()) }>
+					<input type="hidden" name="pendencia" value={ pendencia }/>
+					<input type="hidden" name="editar" value="1"/>
+					<button type="submit" class="pb-botao pb-botao-secundario">Voltar e editar o comando</button>
+				</form>
+			</div>
+		</div>
+	}
+}
+
+// resumoDasCredenciais descreve, sem revelar nada, o que o comando trouxe de
+// credencial. Nomes e contagem: é o que permite conferir que o header certo foi
+// entendido sem colocar o valor dele numa página.
+func resumoDasCredenciais(f Form) string {
+	var partes []string
+	if !f.Bearer.Vazio() {
+		partes = append(partes, "bearer (do Authorization do comando)")
+	}
+	for _, h := range f.Headers {
+		if h.Nome != "" {
+			partes = append(partes, "header "+h.Nome)
+		}
+	}
+	for _, e := range f.EnvSecretos {
+		if e.Nome != "" {
+			partes = append(partes, "variável "+e.Nome)
+		}
+	}
+	if len(partes) == 0 {
+		return "Nenhuma — o comando não trazia credencial."
+	}
+	return strings.Join(partes, ", ") + ". Os valores vão cifrados e não aparecem mais nesta tela."
+}

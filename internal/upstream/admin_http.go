@@ -24,6 +24,10 @@ type Admin struct {
 	rematerializar Rematerializar
 	nomeExposto    NomeExpostoDe
 	log            *slog.Logger
+	// comandos guarda o comando de instalação colado entre a tela de
+	// conferência e o clique que cria. Vive em memória porque é estado de tela
+	// com credencial em claro dentro (comando_http.go).
+	comandos *guardaDeComandos
 }
 
 // NovoAdmin monta o CRUD de upstream.
@@ -42,6 +46,7 @@ func NovoAdmin(
 		rematerializar: rematerializar,
 		nomeExposto:    nomeExposto,
 		log:            log,
+		comandos:       novaGuardaDeComandos(),
 	}
 }
 
@@ -50,6 +55,11 @@ func (a *Admin) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+webui.RotaUpstreams, a.listar)
 	mux.HandleFunc("GET "+webui.RotaUpstreams+"/novo", a.formNovo)
 	mux.HandleFunc("POST "+webui.RotaUpstreams, a.criar)
+	// Segmento literal, então não compete com o /{id} logo abaixo: o ServeMux
+	// resolve os dois sem ambiguidade, como já faz com /novo.
+	mux.HandleFunc("GET "+webui.RotaUpstreams+"/importar", a.formImportar)
+	mux.HandleFunc("POST "+webui.RotaUpstreams+"/importar", a.lerComando)
+	mux.HandleFunc("POST "+webui.RotaUpstreams+"/importar/aplicar", a.importar)
 	mux.HandleFunc("GET "+webui.RotaUpstreams+"/{id}", a.detalhe)
 	mux.HandleFunc("GET "+webui.RotaUpstreams+"/{id}/editar", a.formEditar)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}", a.atualizar)
@@ -691,7 +701,13 @@ func lerHeaders(campos url.Values) []CampoHeader {
 }
 
 var avisos = map[string]webui.Alerta{
-	"criado":       {Tom: webui.TomSucesso, Titulo: "MCP criado.", Texto: "A conexão já está sendo tentada; o estado abaixo se atualiza a cada recarga."},
+	"criado": {Tom: webui.TomSucesso, Titulo: "MCP criado.", Texto: "A conexão já está sendo tentada; o estado abaixo se atualiza a cada recarga."},
+	"importado": {
+		Tom:    webui.TomSucesso,
+		Titulo: "MCP criado a partir do comando.",
+		Texto: "As credenciais do comando foram gravadas cifradas e não voltam à tela. " +
+			"A conexão já está sendo tentada; o estado abaixo se atualiza a cada recarga.",
+	},
 	"salvo":        {Tom: webui.TomSucesso, Titulo: "MCP salvo.", Texto: "A sessão antiga foi fechada e uma nova está sendo aberta com a configuração nova."},
 	"removido":     {Tom: webui.TomInfo, Titulo: "MCP removido.", Texto: "A sessão e a goroutine de supervisão foram encerradas, e os endpoints já refletem a remoção."},
 	"reconectando": {Tom: webui.TomInfo, Titulo: "Reconexão pedida.", Texto: "A sessão antiga foi descartada, o backoff voltou ao começo e o contador de abandonos zerou."},
