@@ -43,6 +43,8 @@ type Gerente struct {
 	aoMudar       func(context.Context)
 	credenciais   LerCredenciais
 	oauth         *BrokerOAuth
+	obsSonda      ObservadorDeSonda
+	redator       func(string) string
 	margemRenovar time.Duration
 	tiqueRenovar  time.Duration
 
@@ -71,6 +73,27 @@ type servidor struct {
 	// apaga) e é o resíduo acumulado que a tela mostra por trás dele.
 	abandonos       int
 	abandonosTotais int
+
+	// O estado da sonda funcional, todo em memória. Nada disto vai ao banco:
+	// o único estado persistido de um upstream é habilitado, e sonda_falhou
+	// segue a mesma regra de degradado — todo boot recomeça em novo.
+	sondaEm       time.Time
+	sondaOKEm     time.Time
+	sondaFalhas   int
+	sondaErro     string
+	sondaPedido   string
+	sondaResposta string
+	// sondas é por onde a tela pede uma sondagem agora. Sem buffer de
+	// propósito: o envio só é aceito quando a supervisão está no select da
+	// sessão viva, que é o único lugar de onde a sondagem pode sair. O canal
+	// nasce com o servidor e sobrevive a reconfiguração — quem espera resposta
+	// nele não pode ficar órfão por um Aplicar.
+	sondas chan pedidoSonda
+}
+
+// novoServidor monta a entrada do mapa de supervisão.
+func novoServidor(cfg Config) *servidor {
+	return &servidor{cfg: cfg, estado: EstadoNovo, sondas: make(chan pedidoSonda)}
 }
 
 // comando é uma mudança de ciclo de vida pedida de fora.
@@ -167,12 +190,35 @@ func NovoGerente(log *slog.Logger, cfgs []Config, opcoes ...Opcao) *Gerente {
 	for _, o := range opcoes {
 		o(g)
 	}
+	if g.redator == nil {
+		// Sem redator injetado, a evidência da sonda vai para a tela do jeito
+		// que o upstream respondeu. É o caso de quem monta um Gerente fora de
+		// cmd/patchbay (teste, uso direto do pacote): sem identidade explícita
+		// aqui, g.redator(x) explodiria com nil em toda sondagem.
+		g.redator = func(s string) string { return s }
+	}
 	for _, cfg := range cfgs {
 		if err := cfg.Validar(); err != nil {
+			// Uma Sonda inválida sozinha não pode descartar o upstream
+			// inteiro: ela é a única parte de Config que a fatia 9
+			// acrescentou, e o registro chegou aqui porque um dia passou por
+			// Form.Validar — uma regra de sonda que mudou depois não pode
+			// apagar conexão, URL e credenciais de um upstream que a
+			// supervisão continua sabendo abrir. Confere zerando Sonda e
+			// revalidando: só quando isso também falha é que o problema é de
+			// fato de outro campo, e aí o upstream fica fora mesmo.
+			semSonda := cfg
+			semSonda.Sonda = Sonda{}
+			if errSemSonda := semSonda.Validar(); errSemSonda == nil {
+				log.Error("sonda de upstream inválida, upstream sob supervisão sem sonda",
+					"upstream", cfg.Nome, "erro", err)
+				g.servidores[cfg.ID] = novoServidor(semSonda)
+				continue
+			}
 			log.Error("upstream fora da supervisão", "upstream", cfg.Nome, "erro", err)
 			continue
 		}
-		g.servidores[cfg.ID] = &servidor{cfg: cfg, estado: EstadoNovo}
+		g.servidores[cfg.ID] = novoServidor(cfg)
 	}
 	return g
 }
@@ -469,11 +515,21 @@ func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) (chegouPront
 	fim := make(chan error, 1)
 	go func() { fim <- sessao.Wait() }()
 
+	// A primeira sondagem sai já, e não daqui a um intervalo: com a sonda
+	// ligada, "pronto" só é verdade depois de uma chamada de verdade ter
+	// funcionado, e esperar quinze minutos para descobrir isso seria exibir o
+	// verde que significa "não sei" que a seção 11 proíbe. No-op quando a sonda
+	// está desligada, que é o padrão.
+	g.sondarSeLigada(ctx, id, sessao)
+
 	// Renovação proativa do token OAuth. Ela mora aqui, na supervisão, e não no
 	// caminho da requisição do cliente: o transporte pede o token a cada
 	// requisição de saída, e um token vencido nessa hora faria o tools/call do
 	// cliente pagar a ida ao token endpoint. Nulo para upstream sem OAuth.
 	renovar := g.relogioDeRenovacao(cfg)
+	// O tique da sonda funcional. Nulo quando ela está desligada, e um canal
+	// nulo num select bloqueia para sempre — que é o comportamento certo.
+	sondar := g.relogioDeSonda(id)
 	for {
 		select {
 		case <-ctx.Done():
@@ -483,6 +539,18 @@ func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) (chegouPront
 				return true, fmt.Errorf("upstream %s: sessão encerrada: %w", cfg.Nome, err)
 			}
 			return true, fmt.Errorf("upstream %s: sessão encerrada pelo servidor", cfg.Nome)
+		case <-sondar:
+			// A sondagem nunca derruba a sessão: falhar leva o upstream a
+			// sonda_falhou e tira as ferramentas do catálogo, mas o transporte
+			// continua de pé — é por ele que a sondagem seguinte descobre que o
+			// servidor voltou, sem gastar uma reconexão.
+			g.sondarSeLigada(ctx, id, sessao)
+			sondar = g.relogioDeSonda(id)
+		case p := <-g.pedidosDeSonda(id):
+			// "Sondar agora", da tela. Reagendar o tique aqui evita que um
+			// clique seja seguido de uma sondagem periódica logo em seguida.
+			p.pronto <- g.sondar(ctx, id, sessao)
+			sondar = g.relogioDeSonda(id)
 		case <-renovar:
 			//nolint:contextcheck // a renovação não pode herdar contexto de
 			// requisição: o x/oauth2 guarda o contexto que recebe e o reusa em
@@ -731,6 +799,14 @@ func (g *Gerente) descobrir(ctx context.Context, id int64, cfg Config, sessao *m
 		s.falhas = 0
 		s.abandonos = 0
 		s.proximaEm = time.Time{}
+		// Sessão nova zera o julgamento da sonda: as falhas contadas eram sobre
+		// um transporte que já morreu, e carregá-las adiante faria a primeira
+		// sondagem desta sessão derrubar o catálogo por causa da anterior.
+		// sondaOKEm fica: ela é histórico, não julgamento.
+		s.sondaFalhas = 0
+		s.sondaErro = ""
+		s.sondaPedido = ""
+		s.sondaResposta = ""
 	}
 	g.mu.Unlock()
 	if !ok {
@@ -776,13 +852,24 @@ func (g *Gerente) Chamar(ctx context.Context, upstreamID int64, nome string, arg
 	return res, nil
 }
 
-// Ferramentas devolve o último tools/list bem-sucedido do upstream. Nunca fala
-// com o upstream: é leitura de snapshot.
+// Ferramentas devolve o que este upstream contribui para o catálogo dos
+// endpoints. Nunca fala com o upstream: é leitura de snapshot.
+//
+// Só em pronto ela devolve alguma coisa, e é esse portão que a sonda funcional
+// usa para remover o upstream do catálogo sem nenhum mecanismo novo: em
+// sonda_falhou o último tools/list continua guardado — é dele que a recuperação
+// rematerializa —, e o que a materialização vê é uma lista vazia, que os
+// endpoints traduzem em lápide como qualquer outra remoção.
+//
+// Nos demais estados o portão é redundante e de propósito: marcarDegradado,
+// autoDesabilitar e definir já esvaziam o snapshot, e ter as duas defesas
+// significa que esquecer uma delas num estado novo não vaza ferramenta de sessão
+// morta para dentro do tools/list de um cliente.
 func (g *Gerente) Ferramentas(upstreamID int64) []*mcp.Tool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	s, ok := g.servidores[upstreamID]
-	if !ok {
+	if !ok || s.estado != EstadoPronto {
 		return nil
 	}
 	// Cópia da fatia para que quem materializa não veja o slice mudar embaixo.
@@ -831,12 +918,37 @@ func (g *Gerente) Situacao(upstreamID int64) (Situacao, bool) {
 	return s.situacao(), true
 }
 
+// FerramentasDescobertas devolve o último tools/list bem-sucedido, mesmo quando
+// ele não está no catálogo.
+//
+// Existe para a tela do upstream, e é a diferença que importa em sonda_falhou: o
+// admin precisa ver exatamente quais ferramentas saíram dos endpoints por causa
+// da sonda. Materialização nenhuma passa por aqui — quem alimenta o catálogo é
+// Ferramentas, com o portão de estado.
+func (g *Gerente) FerramentasDescobertas(upstreamID int64) []*mcp.Tool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	s, ok := g.servidores[upstreamID]
+	if !ok {
+		return nil
+	}
+	out := make([]*mcp.Tool, len(s.ferramentas))
+	copy(out, s.ferramentas)
+	return out
+}
+
 func (s *servidor) situacao() Situacao {
+	noCatalogo := 0
+	if s.estado == EstadoPronto {
+		noCatalogo = len(s.ferramentas)
+	}
 	return Situacao{
 		Config:          s.cfg,
 		Estado:          s.estado,
 		UltimoErro:      s.ultimoErro,
 		Ferramentas:     len(s.ferramentas),
+		NoCatalogo:      noCatalogo,
+		Sonda:           s.situacaoDaSonda(),
 		TentativaEm:     s.tentativaEm,
 		ProximaEm:       s.proximaEm,
 		Falhas:          s.falhas,
@@ -866,7 +978,7 @@ func (g *Gerente) definir(cfg Config) {
 	defer g.mu.Unlock()
 	s, ok := g.servidores[cfg.ID]
 	if !ok {
-		g.servidores[cfg.ID] = &servidor{cfg: cfg, estado: EstadoNovo}
+		g.servidores[cfg.ID] = novoServidor(cfg)
 		return
 	}
 	s.cfg = cfg
@@ -885,6 +997,15 @@ func (g *Gerente) definir(cfg Config) {
 	// mais um teto e ver o total acumulado recomeçar do zero.
 	s.abandonos = 0
 	s.abandonosTotais = 0
+	// A sonda recomeça junto: a configuração que acabou de chegar pode ser
+	// outra ferramenta, e manter o veredito da anterior faria um upstream ficar
+	// em sonda_falhou por causa de uma sonda que já não existe.
+	s.sondaEm = time.Time{}
+	s.sondaOKEm = time.Time{}
+	s.sondaFalhas = 0
+	s.sondaErro = ""
+	s.sondaPedido = ""
+	s.sondaResposta = ""
 }
 
 // esquecer tira o upstream do mapa e devolve o nome que ele tinha, para o log.

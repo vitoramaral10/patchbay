@@ -10,8 +10,12 @@
 // A máquina de estados é a da seção 05: nenhum estado de erro é persistido, e
 // voltar de degradado passa obrigatoriamente por uma sessão nova. O backoff com
 // jitter e teto, o watchdog de conexão com contador de abandonos e a
-// desabilitação automática ao passar do teto estão aqui; sonda_falhou é estado
-// declarado que só a fatia 9 sabe entrar.
+// desabilitação automática ao passar do teto estão aqui.
+//
+// sonda_falhou é da sonda de saúde funcional (fatia 9, em sonda*.go): um
+// tools/call de verdade, opt-in por servidor, que separa "o servidor conversa"
+// de "a chamada funciona". Ele é o único estado que sai do catálogo sem a sessão
+// cair — e é essa diferença que degradado não consegue expressar.
 //
 // sem_consentimento é do OAuth de upstream (fatias 7 e 8, em oauth*.go): um
 // upstream que se autentica por consentimento e não tem token utilizável para
@@ -60,11 +64,10 @@ type Estado string
 
 // Os sete estados da seção 05.
 //
-// Cinco são dirigidos por este pacote. EstadoSondaFalhou e
-// EstadoSemConsentimento estão declarados porque o vocabulário é contrato — a
-// UI, o log e o export falam dele —, mas quem os alcança são a sonda funcional
-// (fatia 9) e o consentimento OAuth de upstream (fatia 7). Declará-los agora
-// evita que os dois inventem um nome diferente para o mesmo estado depois.
+// Todos são dirigidos por este pacote, em três frentes: o laço de supervisão
+// alcança novo, conectando, pronto, degradado e desabilitado; o broker de OAuth
+// alcança sem_consentimento (fatia 7); e a sonda funcional alcança sonda_falhou
+// (fatia 9).
 const (
 	// EstadoNovo é onde todo upstream habilitado começa, em todo boot.
 	EstadoNovo Estado = "novo"
@@ -80,7 +83,9 @@ const (
 	// ela tira o upstream da supervisão inteira.
 	EstadoDesabilitado Estado = "desabilitado"
 	// EstadoSondaFalhou é "falo com ele, ele lista ferramentas, e a chamada de
-	// verdade não funciona". Fatia 9.
+	// verdade não funciona". A sessão continua de pé — é por ela que a sondagem
+	// seguinte descobre que o servidor voltou —, mas as ferramentas saem do
+	// catálogo de todos os endpoints. Fatia 9.
 	EstadoSondaFalhou Estado = "sonda_falhou"
 	// EstadoSemConsentimento é refresh de OAuth recusado. Fatia 7.
 	EstadoSemConsentimento Estado = "sem_consentimento"
@@ -124,6 +129,12 @@ type Config struct {
 	// e o log, e segredo nenhum passa por ela — as credenciais são lidas cifradas
 	// do banco no momento de abrir a sessão.
 	Modo string
+
+	// Sonda é a sonda funcional deste upstream (fatia 9). Desligada por
+	// padrão: o zero value é uma sonda que não roda, e é isso que faz um
+	// upstream cadastrado antes da fatia continuar significando o que
+	// significava.
+	Sonda Sonda
 }
 
 // ModoEfetivo normaliza o modo de credencial. Vazio é estatica.
@@ -150,6 +161,9 @@ func (c Config) Validar() error {
 	if c.Timeout <= 0 {
 		return fmt.Errorf("upstream %s: timeout precisa ser positivo", c.Nome)
 	}
+	if err := c.Sonda.Validar(c.Nome); err != nil {
+		return err
+	}
 	switch c.Tipo {
 	case TipoHTTP, TipoSSE:
 		if c.URL == "" {
@@ -173,10 +187,18 @@ func (c Config) Validar() error {
 // MetaMCP, porque o estado passa a ser uma decisão gravada em vez da leitura de
 // uma tentativa.
 type Situacao struct {
-	Config      Config
-	Estado      Estado
-	UltimoErro  string
+	Config     Config
+	Estado     Estado
+	UltimoErro string
+	// Ferramentas é o tamanho do último tools/list bem-sucedido — o que o
+	// upstream tem a oferecer.
 	Ferramentas int
+	// NoCatalogo é quantas dessas ferramentas os endpoints estão servindo
+	// agora. Os dois números existem porque em sonda_falhou eles divergem: o
+	// snapshot continua em memória (é dele que a recuperação rematerializa) e o
+	// catálogo está vazio. Mostrar só um deles faria a tela dizer "3
+	// ferramentas" sobre um endpoint que serve zero.
+	NoCatalogo int
 	// TentativaEm é quando a tentativa em curso (ou a última) começou.
 	TentativaEm time.Time
 	// ProximaEm é quando o backoff libera a próxima tentativa. Zero quando não
@@ -208,4 +230,32 @@ type Situacao struct {
 	// está no ar: upstream que se desabilita em silêncio é indistinguível de
 	// upstream que alguém apagou.
 	Motivo string
+
+	// Sonda é a última sondagem funcional, e vive inteira em memória — o banco
+	// guarda a configuração da sonda, nunca o resultado dela.
+	Sonda SituacaoSonda
 }
+
+// SituacaoSonda é o que a tela mostra da sonda funcional de um upstream.
+type SituacaoSonda struct {
+	// Config é a configuração em vigor, já normalizada.
+	Config Sonda
+	// Em e OKEm são a última sondagem e a última bem-sucedida. Zero quando
+	// ainda não houve nenhuma neste boot.
+	Em   time.Time
+	OKEm time.Time
+	// Falhas é o número de sondagens seguidas que falharam. É o que a
+	// tolerância compara.
+	Falhas int
+	// Erro é o motivo da última falha.
+	Erro string
+	// Pedido e Resposta são a requisição e a resposta exatas da última
+	// sondagem, que a seção 11 exige na tela: sem elas o admin não distingue
+	// "minha sonda está mal configurada" de "o servidor está quebrado", e a
+	// saída mais fácil passa a ser desligar a sonda.
+	Pedido   string
+	Resposta string
+}
+
+// Ligada informa se a supervisão está sondando este upstream.
+func (s SituacaoSonda) Ligada() bool { return s.Config.Ativa() }
