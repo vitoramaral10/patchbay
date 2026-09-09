@@ -5,12 +5,12 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: fatias **1, 2, 3, 4, 5, 6 e 10** do épico entregues — catálogo e
+> Estado: fatias **1, 2, 3, 4, 5, 6, 10 e 13** do épico entregues — catálogo e
 > endpoint, resiliência de upstream, composição fina do endpoint, upstream
-> STDIO com supervisor de processo, segredos cifrados em repouso e o
-> authorization server essencial. OAuth de upstream (fatias 7-8), sonda
-> funcional (fatia 9) e CIMD/DCR/redirect URI de loopback (fatia 11) seguem
-> pendentes.
+> STDIO com supervisor de processo, segredos cifrados em repouso, o
+> authorization server essencial e o export/import da configuração em YAML.
+> OAuth de upstream (fatias 7-8), sonda funcional (fatia 9) e CIMD/DCR/redirect
+> URI de loopback (fatia 11) seguem pendentes.
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
@@ -66,6 +66,12 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
   por HKDF-SHA256 da chave mestra, nonce sorteado por valor, formato de
   armazenamento versionado e AAD com a linha de origem. Mais o canário que
   detecta chave mestra trocada no boot.
+- `internal/configuracao` — o **export e o import do YAML versionável**, com
+  `--dry-run`, trava otimista por item e mescla. O arquivo nunca é lido no boot:
+  aplicar é sempre uma operação explícita, e o plano aparece antes de qualquer
+  escrita. Segredo não sai no arquivo — o que sai é o nome da variável de
+  ambiente de onde o import lê cada credencial. Ver
+  [Export e import em YAML](#export-e-import-em-yaml).
 - `internal/platform/webui` — o layout da UI: tokens de cor semânticos em duas
   camadas, componentes de página, e htmx + extensão de SSE vendorizados dentro
   do binário.
@@ -82,6 +88,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário:
 | `/admin/upstreams` | CRUD de upstream HTTP (bearer e headers estáticos) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora |
 | `/admin/endpoints` | CRUD de endpoint com composição fina — quais upstreams entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada upstream dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
+| `/admin/configuracao` | Baixa o YAML da configuração e importa um colado, mostrando o plano item a item antes de aplicar |
 
 **Nada exige reiniciar o processo.** Criar, editar, desabilitar ou remover um
 upstream reconfigura a supervisão na mesma requisição; mudar a composição de um
@@ -292,7 +299,7 @@ E uma variável **obrigatória**, sem flag equivalente:
 
 | Variável | O quê |
 |---|---|
-| `PATCHBAY_MASTER_KEY` | Chave mestra de cifra, 32 bytes em base64. `serve` e `seed` não sobem sem ela |
+| `PATCHBAY_MASTER_KEY` | Chave mestra de cifra, 32 bytes em base64. `serve`, `seed`, `export` e `import` não sobem sem ela |
 
 Ela não tem flag de propósito: argumento de processo aparece em `ps` e no
 histórico do shell. E não tem arquivo de chave em disco nem entrada pela UI —
@@ -302,6 +309,174 @@ A URL pública é o que a UI mostra aos clientes e o que decide o atributo
 `Secure` do cookie de sessão: o TLS é terminado por um proxy reverso na frente
 do patchbay, então o processo não descobre o esquema externo olhando a
 requisição.
+
+## Export e import em YAML
+
+A configuração inteira — upstreams, endpoints e a composição de cada um — sai
+num YAML versionável, e volta dele. **O arquivo nunca é lido no boot.** Aplicar é
+sempre uma operação explícita, e é isso que elimina a pergunta "quem ganha, o
+arquivo ou a tela": não existe configuração em vigor que a UI não mostre.
+
+```sh
+patchbay export -o patchbay.yaml                 # ou para a saída padrão
+patchbay export -o patchbay.yaml --forcar        # sobrescreve se já existir
+patchbay import patchbay.yaml --dry-run          # mostra o plano, não escreve
+patchbay import patchbay.yaml                    # aplica
+patchbay import patchbay.yaml --remover-ausentes # e apaga o que não está no arquivo
+```
+
+Os mesmos dois passos estão em `/admin/configuracao`: um botão baixa o YAML,
+uma caixa recebe o colado, e o plano aparece antes de qualquer escrita.
+
+### O formato
+
+```yaml
+versao: 1
+revisao: sha256:00d727780552ae4b9da23ccb2c4b54fc
+upstreams:
+  - nome: notion
+    revisao: sha256:f3e85e266897d3a7ee85e68aebeba68a
+    tipo: http
+    url: https://mcp.notion.com/mcp
+    timeout_ms: 15000
+    habilitado: true
+    segredos:
+      - tipo: bearer
+        valor: ${PATCHBAY_SEGREDO_NOTION_BEARER}
+  - nome: arquivos
+    revisao: sha256:30c5379f13d923c143ccf955fbcbd4da
+    tipo: stdio
+    comando: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-filesystem"
+      - /dados
+    env:
+      NODE_ENV: production
+    timeout_ms: 20000
+    habilitado: true
+    segredos:
+      - tipo: env
+        nome: TOKEN
+        valor: ${PATCHBAY_SEGREDO_ARQUIVOS_ENV_TOKEN}
+endpoints:
+  - slug: pessoal
+    revisao: sha256:8ebc0778aaf10f786a9dc90b7259edbf
+    nome: Pessoal
+    descricao: o endpoint de todo dia
+    upstreams:
+      - nome: arquivos
+        prefixo: fs_
+        regras:
+          - acao: excluir
+            padrao: write_*
+          - acao: renomear
+            padrao: read_*
+            renome: ler_*
+      - nome: notion
+        prefixo: nt_
+chaves_api:
+  - nome: desenvolvimento
+    prefixo_visivel: pbk_aaaabbbb
+    endpoints:
+      - pessoal
+    revogada: false
+```
+
+Upstream é identificado pelo **nome** e endpoint pelo **slug** — não por id, que
+é interno e não sobrevive a uma reinstalação. O `tipo` de um upstream existente
+não se troca pelo import: mudar o transporte não é editar o upstream, é
+substituí-lo, e o arquivo é recusado com essa mensagem.
+
+`chaves_api` e `clientes_oauth` saem no arquivo como **registro** e o import não
+os aplica: os dois guardam a credencial por hash, e emitir uma chave a partir do
+YAML produziria um segredo que nenhum cliente tem. Eles aparecem no plano como
+`informativo`.
+
+### Segredo nunca sai no arquivo
+
+Cada credencial aparece como um **slot** com o nome da variável de ambiente de
+onde o import a lê. O valor não passa pelo arquivo em nenhuma direção, e um
+valor literal em `valor:` é recusado com mensagem — aceitá-lo transformaria o
+arquivo de configuração num cofre.
+
+| No arquivo | No import |
+|---|---|
+| slot presente, variável definida no ambiente | grava o valor novo |
+| slot presente, variável não definida | mantém o que está gravado, e o plano diz qual variável falta |
+| slot ausente | mantém o que está gravado — **ausência nunca apaga** |
+| `limpar: true` | apaga a credencial daquele slot |
+
+O nome da variável é previsível — `PATCHBAY_SEGREDO_<UPSTREAM>_<TIPO>[_<NOME>]` —
+para que quem importa noutra máquina saiba o que exportar sem abrir o arquivo
+item por item. Trocar a referência por outra (`valor: ${MEU_TOKEN}`) funciona e é
+respeitada.
+
+O consentimento de OAuth de upstream é o único resíduo que o arquivo não
+reconstrói: o refresh token não se recria a partir de configuração, e o upstream
+volta pedindo autorização.
+
+### A trava otimista, e por que ela mescla
+
+Todo item do export carrega uma `revisao`, que é o resumo daquele item no
+momento em que ele saiu. Quem edita o arquivo mexe nos campos e **não** na
+`revisao` — e é essa assimetria que permite decidir item a item:
+
+| Situação | O que o import faz |
+|---|---|
+| o item é idêntico dos dois lados | `sem-mudança` |
+| só o arquivo mudou desde o export | `atualizar` |
+| só o banco mudou desde o export | `sem-mudança`, e o banco fica |
+| os dois mudaram | `conflito`: nada é aplicado **neste item**, e o plano mostra os campos lado a lado |
+| o item não existe no banco | `criar` |
+| o item existe no banco e não no arquivo | `ausente` — vira `remover` só com `--remover-ausentes` |
+
+Conflito **não aborta o import**: os outros itens entram normalmente, e cada item
+é uma transação própria. Um arquivo escrito à mão, sem nenhuma linha de
+`revisao`, vale como intenção e é aplicado — a trava não é pedágio para quem
+nunca exportou.
+
+Remover um upstream que um endpoint ainda cita na composição do próprio arquivo
+é `erro`, não `remover`: a composição só é reescrita quando o endpoint em si é
+aplicado, e deixar o upstream sair mesmo assim apagaria o vínculo por baixo
+(`ON DELETE CASCADE`) sem o plano ter avisado que aquele endpoint seria afetado.
+Tire o vínculo do arquivo antes de remover o upstream.
+
+```
+$ patchbay import patchbay.yaml --dry-run
+plano de import (schema 1)
+
+o banco avançou desde o export deste arquivo
+  revisão no arquivo: sha256:2426bb6f49af8a772b4c846e6580c714
+  revisão no banco:   sha256:2abfc6e4771133212b678744aa71cd73
+o import mescla: aplica o que só o arquivo mudou, mantém o que só o banco mudou
+e reporta como conflito o que os dois mudaram.
+
+  conflito    upstream       exemplo
+              o arquivo e o banco mudaram desde o export; nada foi aplicado neste item
+              timeout_ms: arquivo "60000" / banco "50000"
+  criar       upstream       notion
+  sem-mudança endpoint       pessoal
+  informativo chave-api      desenvolvimento
+
+4 item(ns): 1 criar, 2 sem-mudança, 1 conflito
+```
+
+`import` devolve código de saída diferente de zero quando o plano tem item em
+`conflito` ou em `erro` — inclusive com `--dry-run` —, para uma esteira de CI
+recusar o merge sem precisar interpretar o texto do plano.
+
+O `export` e o `import` abrem o mesmo banco que o `serve` e passam pelo mesmo
+portão de chave mestra. Rodá-los com o gateway no ar escreve no banco, mas o
+processo em execução **não relê a configuração sozinho** — é o mesmo
+comportamento do `seed`. Para aplicar no ar, use `/admin/configuracao`: o import
+pela tela reconfigura a supervisão e rematerializa os endpoints na mesma
+requisição.
+
+`koanf` e `viper` ficaram de fora de propósito: eles resolvem precedência entre
+arquivo, ambiente e flag, que é a camada que a proposta 08.9 do estudo elimina.
+A serialização é `gopkg.in/yaml.v3`, que já estava no grafo de módulos do
+projeto — adotá-lo não acrescentou uma linha ao `go.sum`.
 
 ## Chave mestra
 
