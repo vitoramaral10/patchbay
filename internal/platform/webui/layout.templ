@@ -291,6 +291,23 @@ templ Vazio(titulo, texto string) {
 	</div>
 }
 
+// BotaoAcao é o botão de uma ação htmx. Enquanto a requisição está no ar o
+// rótulo troca para Pendente e o htmx desliga o botão, para que o clique não
+// suma no vazio numa chamada que sai para um MCP remoto.
+//
+// Classes é o que vem depois de pb-botao — a variante e, quando for o caso, o
+// tamanho: "pb-botao-perigo px-2.5 py-1.5 text-xs".
+//
+// Pendente é o mesmo verbo no gerúndio, e diz o que está acontecendo: "Sondar
+// agora" vira "Sondando…", "Remover" vira "Removendo…". Rótulo em texto, e não
+// spinner: a razão está no .pb-pendente do entrada.css.
+templ BotaoAcao(classes, rotulo, pendente string) {
+	<button type="submit" class={ "pb-botao", classes }>
+		<span class="pb-ocioso">{ rotulo }</span>
+		<span class="pb-pendente">{ pendente }</span>
+	</button>
+}
+
 // Cartao agrupa conteúdo com um título de seção.
 templ Cartao(titulo string) {
 	<section class="pb-cartao overflow-hidden">

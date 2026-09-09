@@ -655,7 +655,7 @@ templ acoesDoDetalhe(d Detalhe) {
 				hx-post={ rotaDo(d.ID) + "/sondar" }
 				hx-disabled-elt="find button"
 			>
-				<button type="submit" class="pb-botao pb-botao-secundario">Sondar agora</button>
+				@webui.BotaoAcao("pb-botao-secundario", "Sondar agora", "Sondando…")
 			</form>
 		}
 		if d.Habilitado {
@@ -665,7 +665,7 @@ templ acoesDoDetalhe(d Detalhe) {
 				hx-post={ rotaDo(d.ID) + "/reconectar" }
 				hx-disabled-elt="find button"
 			>
-				<button type="submit" class="pb-botao pb-botao-secundario">Reconectar</button>
+				@webui.BotaoAcao("pb-botao-secundario", "Reconectar", "Reconectando…")
 			</form>
 		}
 		<form
@@ -675,7 +675,7 @@ templ acoesDoDetalhe(d Detalhe) {
 			hx-confirm={ avisoDeRemocao(d) }
 			hx-disabled-elt="find button"
 		>
-			<button type="submit" class="pb-botao pb-botao-perigo">Remover</button>
+			@webui.BotaoAcao("pb-botao-perigo", "Remover", "Removendo…")
 		</form>
 		<a href={ templ.SafeURL(rotaDo(d.ID) + "/editar") } class="pb-botao pb-botao-primario">Editar</a>
 	</div>

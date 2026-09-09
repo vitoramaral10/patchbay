@@ -80,7 +80,7 @@ templ TelaLista(chaves []Chave, alerta *webui.Alerta) {
 												hx-confirm={ "Revogar a chave " + c.Nome + "? Todo cliente que a usa para " + strings.Join(c.Endpoints, ", ") + " para de funcionar na próxima chamada." }
 												hx-disabled-elt="find button"
 											>
-												<button type="submit" class="pb-botao pb-botao-perigo px-2.5 py-1.5 text-xs">Revogar</button>
+												@webui.BotaoAcao("pb-botao-perigo px-2.5 py-1.5 text-xs", "Revogar", "Revogando…")
 											</form>
 										}
 									</td>

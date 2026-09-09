@@ -240,6 +240,34 @@
     .pb-link:hover {
         @apply decoration-acento;
     }
+
+    /*
+     * Estado pendente das ações htmx.
+     *
+     * O `hx-disabled-elt` já desliga o botão enquanto a requisição está no ar,
+     * mas desligar não diz *está acontecendo* — e aqui a espera é real: sondar
+     * e reconectar saem para um MCP remoto e demoram segundos. Sem isso o
+     * clique some no vazio e o administrador clica de novo.
+     *
+     * O sinal é o rótulo, não um spinner, pela mesma razão que o selo tem
+     * texto e não só cor: texto sobrevive ao leitor de tela, ao alto contraste
+     * e ao `prefers-reduced-motion` — que zera a duração de toda animação
+     * daqui de baixo e deixaria um spinner parado no lugar, mentindo que
+     * travou.
+     *
+     * O htmx põe `.htmx-request` em quem dispara a requisição (aqui o <form>)
+     * e tira quando ela volta; os dois rótulos moram no botão, e só um aparece
+     * por vez.
+     */
+    .pb-pendente {
+        display: none;
+    }
+    .htmx-request .pb-pendente {
+        display: inline;
+    }
+    .htmx-request .pb-ocioso {
+        display: none;
+    }
 }
 
 /* Reduza a duração, não a mudança de estado. */

@@ -1147,12 +1147,20 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\" hx-disabled-elt=\"find button\"><button type=\"submit\" class=\"pb-botao pb-botao-perigo px-2.5 py-1.5 text-xs\">Revogar cliente</button></form></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\" hx-disabled-elt=\"find button\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = webui.BotaoAcao("pb-botao-perigo px-2.5 py-1.5 text-xs", "Revogar cliente", "Revogando…").Render(ctx, templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</form></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "<p class=\"border-t border-borda px-4 py-3 text-sm text-conteudo-suave\">Revogado em ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "<p class=\"border-t border-borda px-4 py-3 text-sm text-conteudo-suave\">Revogado em ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1165,7 +1173,7 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, ". Continua na lista para que o client_id não vire um mistério em três meses.</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, ". Continua na lista para que o client_id não vire um mistério em três meses.</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1189,17 +1197,17 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 				}
 				ctx = templ.InitializeContext(ctx)
 				if len(sessoes) == 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<p class=\"px-4 py-6 text-conteudo-suave\">Nenhum consentimento concedido ainda. A primeira sessão nasce quando o cliente pedir autorização e você aceitar.</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<p class=\"px-4 py-6 text-conteudo-suave\">Nenhum consentimento concedido ainda. A primeira sessão nasce quando o cliente pedir autorização e você aceitar.</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<div class=\"overflow-x-auto\"><table class=\"w-full text-left\"><thead class=\"border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave\"><tr><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Família</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Endpoint</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Estado</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Concedida</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Último uso</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\"><span class=\"sr-only\">Ações</span></th></tr></thead> <tbody class=\"divide-y divide-borda\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "<div class=\"overflow-x-auto\"><table class=\"w-full text-left\"><thead class=\"border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave\"><tr><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Família</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Endpoint</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Estado</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Concedida</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\">Último uso</th><th scope=\"col\" class=\"px-4 py-2.5 font-semibold\"><span class=\"sr-only\">Ações</span></th></tr></thead> <tbody class=\"divide-y divide-borda\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					for _, s := range sessoes {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "<tr class=\"transition-colors duration-150 ease-out hover:bg-superficie-alta\"><td class=\"px-4 py-3\"><code class=\"font-mono text-xs text-conteudo-suave\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "<tr class=\"transition-colors duration-150 ease-out hover:bg-superficie-alta\"><td class=\"px-4 py-3\"><code class=\"font-mono text-xs text-conteudo-suave\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -1212,7 +1220,7 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</code></td><td class=\"px-4 py-3\"><code class=\"font-mono text-xs text-conteudo-suave\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "</code></td><td class=\"px-4 py-3\"><code class=\"font-mono text-xs text-conteudo-suave\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -1225,7 +1233,7 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "</code></td><td class=\"px-4 py-3\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "</code></td><td class=\"px-4 py-3\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -1240,7 +1248,7 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 								return templ_7745c5c3_Err
 							}
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "</td><td class=\"px-4 py-3 text-conteudo-suave\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "</td><td class=\"px-4 py-3 text-conteudo-suave\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -1253,7 +1261,7 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "</td><td class=\"px-4 py-3 text-conteudo-suave\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "</td><td class=\"px-4 py-3 text-conteudo-suave\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -1266,12 +1274,12 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "</td><td class=\"px-4 py-3 text-right\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "</td><td class=\"px-4 py-3 text-right\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						if s.Ativa() {
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "<form method=\"post\" action=\"")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "<form method=\"post\" action=\"")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
@@ -1284,7 +1292,7 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "\" hx-post=\"")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "\" hx-post=\"")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
@@ -1297,7 +1305,7 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "\" hx-confirm=\"")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "\" hx-confirm=\"")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
@@ -1310,17 +1318,25 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "\" hx-disabled-elt=\"find button\"><button type=\"submit\" class=\"pb-botao pb-botao-perigo px-2.5 py-1.5 text-xs\">Revogar</button></form>")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "\" hx-disabled-elt=\"find button\">")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							templ_7745c5c3_Err = webui.BotaoAcao("pb-botao-perigo px-2.5 py-1.5 text-xs", "Revogar", "Revogando…").Render(ctx, templ_7745c5c3_Buffer)
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "</form>")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "</td></tr>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "</td></tr>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "</tbody></table></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "</tbody></table></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1331,7 +1347,7 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -391,7 +391,7 @@ templ TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.
 							hx-confirm={ "Revogar o cliente " + c.Nome + "? Todas as sessões dele caem junto e ele precisa ser cadastrado de novo." }
 							hx-disabled-elt="find button"
 						>
-							<button type="submit" class="pb-botao pb-botao-perigo px-2.5 py-1.5 text-xs">Revogar cliente</button>
+							@webui.BotaoAcao("pb-botao-perigo px-2.5 py-1.5 text-xs", "Revogar cliente", "Revogando…")
 						</form>
 					</div>
 				} else {
@@ -447,7 +447,7 @@ templ TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.
 													hx-confirm={ "Revogar esta sessão? O cliente para de acessar " + s.EndpointSlug + " na próxima chamada e precisa do consentimento de novo." }
 													hx-disabled-elt="find button"
 												>
-													<button type="submit" class="pb-botao pb-botao-perigo px-2.5 py-1.5 text-xs">Revogar</button>
+													@webui.BotaoAcao("pb-botao-perigo px-2.5 py-1.5 text-xs", "Revogar", "Revogando…")
 												</form>
 											}
 										</td>
