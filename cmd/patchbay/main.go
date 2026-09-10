@@ -67,6 +67,9 @@ func executar(args []string, saida *os.File) error {
 	case "import":
 		return comandoImport(ctx, args, saida)
 
+	case "biblioteca-semente":
+		return comandoBibliotecaSemente(ctx, args, saida)
+
 	case "chave-mestra":
 		return comandoChaveMestra(args, saida)
 
@@ -92,6 +95,7 @@ func imprimirAjuda(saida *os.File) {
 subcomandos:
   serve                sobe o gateway (padrão)
   seed                 cria endpoint, upstream HTTP e chave de API de desenvolvimento
+  biblioteca-semente   regrava o catálogo embutido varrendo as origens   [-o arquivo] [--so-curados]
   export               escreve a configuração versionável em YAML   [-o arquivo] [--forcar]
   import               aplica um YAML   arquivo [--dry-run] [--remover-ausentes]
   chave-mestra gerar   sorteia a chave de PATCHBAY_MASTER_KEY

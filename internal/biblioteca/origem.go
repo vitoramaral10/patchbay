@@ -379,7 +379,11 @@ func contem(lista []string, v string) bool {
 // padraoDoNome é a forma de um nome do registry: namespace em DNS invertido,
 // barra, nome. Maiúscula entra porque a origem publica assim
 // (io.github.MrRefactoring/...).
-const padraoDoNome = "^[A-Za-z0-9][A-Za-z0-9._-]{0,120}/[A-Za-z0-9][A-Za-z0-9._-]{0,120}$"
+// Dois ou três segmentos: "com.notion/mcp" do registry, e também
+// "mcpservers.org/AudienseCo/mcp-audiense-insights", porque o slug do acervo
+// /servers/ pode ter uma barra no meio e encurtá-lo criaria colisão entre dois
+// servidores da mesma organização.
+const padraoDoNome = "^[A-Za-z0-9][A-Za-z0-9._-]{0,120}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,120}){1,2}$"
 
 var reNome = regexp.MustCompile(padraoDoNome)
 

@@ -71,7 +71,10 @@ type Sincronizador struct {
 	espera    time.Duration
 	// esperaCurada é a pausa entre duas páginas de detalhe da curadoria.
 	esperaCurada time.Duration
-	emCurso      atomic.Bool
+	// semente é de onde sai o catálogo do primeiro boot. Trocável só pelo
+	// teste; em produção é sempre o arquivo embutido.
+	semente func() ([]Item, time.Time, error)
+	emCurso atomic.Bool
 
 	// mu protege os dois campos abaixo, escritos por Manter e por Observar e
 	// lidos por Disparar — ou seja, por goroutines diferentes.
@@ -121,6 +124,14 @@ func ComEsperaEntreTentativas(d time.Duration) OpcaoSincronizador {
 	}
 }
 
+// ComSemente troca o catálogo do primeiro boot. Só o teste usa: em produção a
+// semente é o arquivo embutido no binário.
+func ComSemente(itens []Item, geradoEm time.Time) OpcaoSincronizador {
+	return func(s *Sincronizador) {
+		s.semente = func() ([]Item, time.Time, error) { return itens, geradoEm, nil }
+	}
+}
+
 // NovoSincronizador monta a rotina sobre a origem e o repositório.
 func NovoSincronizador(
 	origem *Origem, curadoria *Curadoria, repo *RepositorioSQLite, log *slog.Logger,
@@ -134,6 +145,7 @@ func NovoSincronizador(
 		intervalo:    IntervaloDeSincronizacao,
 		espera:       esperaEntreTentativas,
 		esperaCurada: esperaEntreCuradas,
+		semente:      Semente,
 		fundo:        context.Background(),
 	}
 	for _, o := range opcoes {
@@ -153,7 +165,11 @@ func (s *Sincronizador) Manter(ctx context.Context) {
 	s.fundo = ctx
 	s.mu.Unlock()
 
-	if s.precisaAgora(ctx) {
+	// Semeou agora, varre agora — sem consultar a idade. A semente é parcial de
+	// propósito (só os curados) e pode ter sido gerada hoje, no corte da versão:
+	// deixá-la decidir pela idade faria a instalação nova passar doze horas com
+	// algumas centenas de servidores achando que o catálogo está completo.
+	if s.semear(ctx) || s.precisaAgora(ctx) {
 		s.tentar(ctx)
 	}
 	t := time.NewTicker(s.intervalo)
@@ -166,6 +182,38 @@ func (s *Sincronizador) Manter(ctx context.Context) {
 			s.tentar(ctx)
 		}
 	}
+}
+
+// semear grava o catálogo embutido quando o banco ainda não tem nenhum.
+//
+// Só na instalação nova: se alguma varredura já terminou, o que está no banco é
+// mais novo que a semente por definição, e sobrescrevê-lo seria andar para trás.
+//
+// A data gravada é a da geração da semente, não a de agora. É o que faz a tela
+// dizer a idade de verdade e o que faz precisaAgora mandar varrer em seguida —
+// gravar "agora" deixaria a instalação nova doze horas com um catálogo do dia do
+// release, achando que está fresco.
+// Devolve true quando semeou, e quem chama usa isso para varrer em seguida.
+func (s *Sincronizador) semear(ctx context.Context) bool {
+	estado, err := s.repo.Sincronizacao(ctx)
+	if err != nil || !estado.Nunca() {
+		return false
+	}
+	itens, geradoEm, err := s.semente()
+	if err != nil {
+		s.log.Warn("semente da biblioteca ilegível", "erro", err)
+		return false
+	}
+	if len(itens) == 0 {
+		return false
+	}
+	if err := s.repo.Substituir(ctx, itens, geradoEm); err != nil {
+		s.log.Warn("não foi possível gravar a semente da biblioteca", "erro", err)
+		return false
+	}
+	s.log.Info("biblioteca semeada a partir do catálogo embutido",
+		"servidores", len(itens), "gerado_em", geradoEm)
+	return true
 }
 
 // precisaAgora decide se o catálogo no banco já não serve.
@@ -285,6 +333,17 @@ func (s *Sincronizador) tentar(ctx context.Context) {
 	s.log.Info("biblioteca sincronizada", "duracao", time.Since(inicio))
 }
 
+// Varrer lê as origens e devolve o catálogo mesclado, sem gravar nada.
+//
+// Exportada para o subcomando que regenera a semente embutida. Não toca no
+// repositório — é a única operação do sincronizador que não toca —, então um
+// Sincronizador construído só para isto pode receber repo nulo.
+func (s *Sincronizador) Varrer(ctx context.Context) ([]Item, error) {
+	ctxVarredura, cancelar := context.WithTimeout(ctx, PrazoDaVarredura)
+	defer cancelar()
+	return s.varrer(ctxVarredura)
+}
+
 // varrer lê as duas origens e devolve o catálogo mesclado.
 //
 // O registry é a base — é dele que vêm o alcance e os servidores de processo
@@ -305,7 +364,74 @@ func (s *Sincronizador) varrer(ctx context.Context) ([]Item, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mesclar(doRegistry, curados), nil
+	oficiais, err := s.varrerOficiais(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return mesclar(doRegistry, curados, oficiais), nil
+}
+
+// varrerOficiais lê a lista /official do mcpservers.org: 647 servidores em 22
+// páginas de índice, mais uma página de detalhe cada.
+//
+// Tolerante por natureza, e não por acidente: a maioria das páginas **não** tem
+// comando aproveitável (numa amostra de 14, só 4 tinham), então página recusada
+// é o caso comum e não pode contar como falha. O que derruba a varredura aqui é
+// o índice não vir — sem ele não há o que ler.
+func (s *Sincronizador) varrerOficiais(ctx context.Context) ([]Item, error) {
+	slugs, err := s.curadoria.SlugsOficiais(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("oficiais: %w", err)
+	}
+	itens := make([]Item, 0, len(slugs)/3)
+	var semComando, indisponiveis int
+	for i, slug := range slugs {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(s.esperaCurada):
+			}
+		}
+		item, err := s.oficialComTentativas(ctx, slug)
+		switch {
+		case err == nil:
+			itens = append(itens, item)
+		case ctx.Err() != nil:
+			return nil, ctx.Err()
+		case errors.Is(err, ErrFormatoDaOrigem):
+			// Sem comando aproveitável: o normal.
+			semComando++
+		default:
+			indisponiveis++
+		}
+	}
+	s.log.Info("oficiais lidos",
+		"aproveitados", len(itens), "sem_comando", semComando,
+		"indisponiveis", indisponiveis, "total", len(slugs))
+	return itens, nil
+}
+
+func (s *Sincronizador) oficialComTentativas(ctx context.Context, slug string) (Item, error) {
+	var ultimo error
+	for tentativa := range tentativasPorPagina {
+		if tentativa > 0 {
+			select {
+			case <-ctx.Done():
+				return Item{}, ctx.Err()
+			case <-time.After(s.esperaCurada * time.Duration(1<<tentativa)):
+			}
+		}
+		item, err := s.curadoria.Oficial(ctx, slug)
+		if err == nil {
+			return item, nil
+		}
+		if !errors.Is(err, ErrTaxaExcedida) || ctx.Err() != nil {
+			return Item{}, err
+		}
+		ultimo = err
+	}
+	return Item{}, ultimo
 }
 
 // varrerCuradoria lê a lista de remotos do mcpservers.org, uma página de detalhe
@@ -457,9 +583,14 @@ func (s *Sincronizador) curadaComTentativas(ctx context.Context, slug string) (I
 //     lá. O transporte também, porque a página de lá descreve exatamente aquele
 //     endereço.
 //
+// Os oficiais entram por último e por outro caminho: eles são processo local e
+// não têm URL, então casam pela **linha de comando**, com a versão do pacote
+// ignorada — o registry pina (@1.2.3) e o mcpservers.org não, e sem normalizar
+// isso o mesmo servidor viraria dois cartões.
+//
 // Servidor que só a curadoria tem entra inteiro, com identidade própria — ver
 // lerCurado. Servidor que só o registry tem passa intacto, sem marca de curado.
-func mesclar(doRegistry, curados []Item) []Item {
+func mesclar(doRegistry, curados, oficiais []Item) []Item {
 	porURL := make(map[string]int, len(doRegistry))
 	for i, it := range doRegistry {
 		if it.Remoto() && it.URL != "" {
@@ -503,7 +634,53 @@ func mesclar(doRegistry, curados []Item) []Item {
 		}
 		saida[i] = base
 	}
+
+	// Os oficiais são stdio: casam pela execução, não pela URL.
+	porExecucao := make(map[string]int, len(saida))
+	for i, it := range saida {
+		if !it.Remoto() {
+			porExecucao[chaveDeExecucao(it)] = i
+		}
+	}
+	for _, o := range oficiais {
+		if i, achou := porExecucao[chaveDeExecucao(o)]; achou {
+			// Já existe pelo registry, com identificador e argumentos
+			// declarados — que são melhores que o trecho de README de onde
+			// estes saem. O que o oficial acrescenta é só a marca.
+			saida[i].Curado = true
+			continue
+		}
+		if nomes[o.Nome] {
+			continue
+		}
+		nomes[o.Nome] = true
+		saida = append(saida, o)
+	}
 	return saida
+}
+
+// chaveDeExecucao normaliza a linha de comando de um servidor de processo local
+// para a comparação.
+//
+// A versão do pacote sai fora: o registry pina (@modelcontextprotocol/x@1.2.3) e
+// o mcpservers.org publica sem versão, e tratar os dois como servidores
+// diferentes duplicaria o cartão na tela.
+func chaveDeExecucao(i Item) string {
+	partes := make([]string, 0, len(i.Args)+1)
+	partes = append(partes, strings.ToLower(i.Comando))
+	for _, a := range i.Args {
+		partes = append(partes, strings.ToLower(semVersao(a)))
+	}
+	return strings.Join(partes, " ")
+}
+
+// semVersao tira o sufixo @versão de um identificador de pacote, preservando o
+// @ inicial do escopo npm (@org/pacote).
+func semVersao(arg string) string {
+	if i := strings.LastIndexByte(arg, '@'); i > 0 {
+		return arg[:i]
+	}
+	return arg
 }
 
 // chaveDeEndpoint normaliza uma URL para a comparação.

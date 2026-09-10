@@ -84,38 +84,36 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 			}
 		} else {
 			@webui.Cartao("") {
-				<div class="overflow-x-auto">
-					<table class="w-full text-left">
-						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
-							<tr>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Endpoint</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">URL</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>MCPs</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Ferramentas</th>
+				@webui.Tabela("Endpoints publicados, com os MCPs que cada um compõe") {
+					<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+						<tr>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Endpoint</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">URL</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>MCPs</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Ferramentas</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-borda">
+						for _, l := range linhas {
+							<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
+								<td class="px-4 py-3">
+									<a href={ templ.SafeURL(rotaDo(l.ID)) } class="pb-link font-medium">{ l.Titulo() }</a>
+									<p class="text-xs text-conteudo-tenue">{ l.Slug }</p>
+								</td>
+								<td class="px-4 py-3">
+									<code class="font-mono text-xs text-conteudo-suave">{ l.URL }</code>
+								</td>
+								<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Upstreams) }</td>
+								<td class="px-4 py-3" data-numero>
+									@contagemDeFerramentas(l.Ferramentas)
+									if l.Lapides > 0 {
+										<p class="text-xs text-conteudo-tenue">+{ strconv.Itoa(l.Lapides) } lápide(s)</p>
+									}
+								</td>
 							</tr>
-						</thead>
-						<tbody class="divide-y divide-borda">
-							for _, l := range linhas {
-								<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
-									<td class="px-4 py-3">
-										<a href={ templ.SafeURL(rotaDo(l.ID)) } class="pb-link font-medium">{ l.Titulo() }</a>
-										<p class="text-xs text-conteudo-tenue">{ l.Slug }</p>
-									</td>
-									<td class="px-4 py-3">
-										<code class="font-mono text-xs text-conteudo-suave">{ l.URL }</code>
-									</td>
-									<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Upstreams) }</td>
-									<td class="px-4 py-3" data-numero>
-										@contagemDeFerramentas(l.Ferramentas)
-										if l.Lapides > 0 {
-											<p class="text-xs text-conteudo-tenue">+{ strconv.Itoa(l.Lapides) } lápide(s)</p>
-										}
-									</td>
-								</tr>
-							}
-						</tbody>
-					</table>
-				</div>
+						}
+					</tbody>
+				}
 			}
 		}
 	}
@@ -247,7 +245,7 @@ templ acoesDoDetalhe(d Detalhe) {
 			hx-confirm={ "Remover o endpoint " + d.Slug + "? As chaves de API que só tinham escopo nele param de funcionar, e as sessões abertas são encerradas." }
 			hx-disabled-elt="find button"
 		>
-			<button type="submit" class="pb-botao pb-botao-perigo">Remover</button>
+			@webui.BotaoAcao("pb-botao-perigo", "Remover", "Removendo…")
 		</form>
 		<a href={ templ.SafeURL(rotaDo(d.ID) + "/editar") } class="pb-botao pb-botao-primario">Editar</a>
 	</div>

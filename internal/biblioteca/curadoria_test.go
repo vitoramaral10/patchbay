@@ -26,6 +26,13 @@ type servidorCurado struct {
 // TestCuradoriaLePaginaDeVerdade, contra páginas reais em testdata.
 func curadoriaDeMentira(t *testing.T, servidores []servidorCurado) string {
 	t.Helper()
+	return curadoriaComOficiais(t, servidores, oficiaisPadrao())
+}
+
+func curadoriaComOficiais(
+	t *testing.T, servidores []servidorCurado, oficiais []servidorOficial,
+) string {
+	t.Helper()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /pt-BR/remote-mcp-servers", func(w http.ResponseWriter, _ *http.Request) {
@@ -55,9 +62,56 @@ func curadoriaDeMentira(t *testing.T, servidores []servidorCurado) string {
 		}
 		http.NotFound(w, r)
 	})
+	// O acervo /official é outra lista do mesmo site, e a varredura o percorre
+	// sempre. Mesmo os testes que só se importam com os remotos precisam de um
+	// índice que exista: índice vazio é marcação mudada, e derruba a varredura
+	// de propósito.
+	mux.HandleFunc("GET /pt-BR/official", func(w http.ResponseWriter, _ *http.Request) {
+		var b strings.Builder
+		b.WriteString(`<html><body><main>`)
+		for _, o := range oficiais {
+			fmt.Fprintf(&b, `<a href="/pt-BR/servers/%s">%s</a>`, o.Slug, o.Nome)
+		}
+		b.WriteString(`</main></body></html>`)
+		_, _ = w.Write([]byte(b.String()))
+	})
+	mux.HandleFunc("GET /pt-BR/servers/{slug...}", func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("slug")
+		for _, o := range oficiais {
+			if o.Slug != slug {
+				continue
+			}
+			trecho := ""
+			if o.Comando != "" {
+				trecho = fmt.Sprintf(`<pre>{&quot;mcpServers&quot;:{&quot;x&quot;:{`+
+					`&quot;command&quot;: &quot;%s&quot;, &quot;args&quot;: [%s]}}}</pre>`,
+					o.Comando, o.Args)
+			}
+			_, _ = fmt.Fprintf(w, `<html><body><h1>%s</h1><p>%s</p>`+
+				`<dl><dt>Categoria</dt><dd>Ferramentas</dd></dl>%s</body></html>`,
+				o.Nome, o.Resumo, trecho)
+			return
+		}
+		http.NotFound(w, r)
+	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	return ts.URL + "/pt-BR"
+}
+
+// servidorOficial descreve uma entrada do acervo /servers/.
+type servidorOficial struct {
+	// Args é o miolo do vetor JSON, já escapado como o site escreve:
+	// `&quot;-y&quot;, &quot;pacote&quot;`.
+	Slug, Nome, Resumo, Comando, Args string
+}
+
+// oficiaisPadrao é o mínimo que todo teste precisa: um índice que existe.
+func oficiaisPadrao() []servidorOficial {
+	return []servidorOficial{{
+		Slug: "exemplo-oficial", Nome: "Exemplo Oficial", Resumo: "processo local de teste",
+		Comando: "npx", Args: `&quot;-y&quot;, &quot;exemplo-oficial-mcp&quot;`,
+	}}
 }
 
 // curadoriaMuda é a origem existindo e não publicando nada. Serve aos testes que
@@ -234,6 +288,16 @@ func TestCuradoriaInsisteEmTaxaExcedida(t *testing.T) {
 			`<a href="/pt-BR/remote-mcp-servers/notion"><div class="truncate">Notion</div></a>` +
 			`</main></body></html>`))
 	})
+	// O acervo /official precisa existir mesmo aqui: a varredura o percorre
+	// sempre, e índice ausente derruba tudo antes de chegar ao que se testa.
+	mux.HandleFunc("GET /pt-BR/official", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html><body><a href="/pt-BR/servers/ex">Ex</a></body></html>`))
+	})
+	mux.HandleFunc("GET /pt-BR/servers/{slug...}", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html><body><h1>Ex</h1><p>oi</p>` +
+			`<pre>{&quot;command&quot;: &quot;npx&quot;, &quot;args&quot;: [&quot;-y&quot;, &quot;ex&quot;]}</pre>` +
+			`</body></html>`))
+	})
 	mux.HandleFunc("GET /pt-BR/remote-mcp-servers/notion", func(w http.ResponseWriter, _ *http.Request) {
 		idas++
 		if idas == 1 {
@@ -265,8 +329,86 @@ func TestCuradoriaInsisteEmTaxaExcedida(t *testing.T) {
 		Sincronizar(context.Background()); err != nil {
 		t.Fatalf("Sincronizar: erro = %v, quer nil", err)
 	}
+	// Dois curados: o remoto que só passou na segunda tentativa, e o oficial.
 	if _, total, _ := repo.Buscar(context.Background(),
-		biblioteca.Filtro{SoCurados: true}, 10, 0); total != 1 {
-		t.Fatalf("curados = %d, quer 1: a varredura desistiu no primeiro 429", total)
+		biblioteca.Filtro{SoCurados: true}, 10, 0); total != 2 {
+		t.Fatalf("curados = %d, quer 2: a varredura desistiu no primeiro 429", total)
+	}
+}
+
+// TestOficiaisLeemPaginaDeVerdade roda contra páginas reais do acervo /servers/
+// do mcpservers.org, guardadas em testdata.
+//
+// Os três casos que importam estão aqui, e o segundo é o comum: página com
+// comando aproveitável, página sem comando algum, e o índice paginado.
+func TestOficiaisLeemPaginaDeVerdade(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /pt-BR/official", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(amostra(t, "mcpservers-oficial-indice.html"))
+	})
+	mux.HandleFunc("GET /pt-BR/servers/anki-mcp/anki-mcp-desktop", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(amostra(t, "mcpservers-oficial-comando.html"))
+	})
+	mux.HandleFunc("GET /pt-BR/servers/apify-mcp-server", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(amostra(t, "mcpservers-oficial-sem-comando.html"))
+	})
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	c := biblioteca.NovaCuradoria(ts.URL + "/pt-BR")
+	ctx := context.Background()
+
+	// O índice de verdade tem 29 links e cita a última página. O número exato
+	// muda com o site; o que se afirma é que ele foi lido e paginado.
+	slugs, err := c.SlugsOficiais(ctx)
+	if err == nil && len(slugs) < 10 {
+		t.Fatalf("slugs = %d, quer dezenas: a marcação do índice mudou", len(slugs))
+	}
+	// Com um dublê que serve a mesma página para todo número, a paginação para
+	// no teto e devolve o mesmo conjunto; o que interessa é não ter estourado.
+	if err != nil && !strings.Contains(err.Error(), "página") {
+		t.Fatalf("SlugsOficiais: erro = %v", err)
+	}
+
+	// O slug com barra no meio precisa sobreviver ao caminho e ao nome.
+	bom, err := c.Oficial(ctx, "anki-mcp/anki-mcp-desktop")
+	if err != nil {
+		t.Fatalf("Oficial: erro = %v, quer nil", err)
+	}
+	if bom.Nome != "mcpservers.org/anki-mcp/anki-mcp-desktop" {
+		t.Errorf("Nome = %q, quer os três segmentos", bom.Nome)
+	}
+	if bom.Transporte != biblioteca.TransporteSTDIO {
+		t.Errorf("Transporte = %q, quer stdio", bom.Transporte)
+	}
+	if bom.Comando != "npx" || len(bom.Args) < 2 {
+		t.Fatalf("execução = %s %v, quer npx com argumentos", bom.Comando, bom.Args)
+	}
+	if !bom.Curado {
+		t.Error("oficial veio sem a marca de curado")
+	}
+
+	// E a maioria não tem comando: recusar é o comportamento, não o defeito.
+	if _, err := c.Oficial(ctx, "apify-mcp-server"); !errors.Is(err, biblioteca.ErrFormatoDaOrigem) {
+		t.Fatalf("sem comando: erro = %v, quer ErrFormatoDaOrigem", err)
+	}
+}
+
+func TestSnippetComMarcadorDeExemploNaoViraCadastro(t *testing.T) {
+	t.Parallel()
+
+	// O README manda a pessoa trocar o caminho. Cadastrar isso entrega um
+	// upstream quebrado com cara de pronto — foi o defeito que se viu no
+	// catálogo do MetaMCP (--user-agent=YourUserAgent).
+	base := curadoriaComOficiais(t, nil, []servidorOficial{{
+		Slug: "com-marcador", Nome: "Com Marcador", Resumo: "exemplo",
+		Comando: "node",
+		Args:    `&quot;C:\PATH\TO\PARENT\FOLDER\build\index.js&quot;`,
+	}})
+	if _, err := biblioteca.NovaCuradoria(base).
+		Oficial(context.Background(), "com-marcador"); !errors.Is(err, biblioteca.ErrFormatoDaOrigem) {
+		t.Fatalf("erro = %v, quer ErrFormatoDaOrigem", err)
 	}
 }

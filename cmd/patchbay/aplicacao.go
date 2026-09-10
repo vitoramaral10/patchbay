@@ -92,10 +92,11 @@ type Aplicacao struct {
 type OpcaoApp func(*opcoesApp)
 
 type opcoesApp struct {
-	cimd                authsrv.DocumentosCIMD
-	origemBiblioteca    string
-	curadoriaBiblioteca string
-	intervaloBiblioteca time.Duration
+	cimd                 authsrv.DocumentosCIMD
+	origemBiblioteca     string
+	curadoriaBiblioteca  string
+	intervaloBiblioteca  time.Duration
+	semSementeBiblioteca bool
 }
 
 // ComBuscadorCIMD troca o buscador de documentos de CIMD.
@@ -121,6 +122,16 @@ func ComCuradoriaDaBiblioteca(base string) OpcaoApp {
 	return func(o *opcoesApp) { o.curadoriaBiblioteca = base }
 }
 
+// SemSementeDaBiblioteca desliga o catálogo embutido.
+//
+// Só o teste usa, e precisa usar: a semente versionada tem 509 servidores de
+// verdade, e um teste de UI que os carregasse passaria a depender de um arquivo
+// de dados que muda a cada release. Quem cobre a semeadura é
+// internal/biblioteca, com semente injetada.
+func SemSementeDaBiblioteca() OpcaoApp {
+	return func(o *opcoesApp) { o.semSementeBiblioteca = true }
+}
+
 // ComIntervaloDaBiblioteca troca de quanto em quanto tempo o catálogo local é
 // refeito.
 //
@@ -129,6 +140,15 @@ func ComCuradoriaDaBiblioteca(base string) OpcaoApp {
 // produção o intervalo é constante do pacote.
 func ComIntervaloDaBiblioteca(d time.Duration) OpcaoApp {
 	return func(o *opcoesApp) { o.intervaloBiblioteca = d }
+}
+
+// opcaoDaSemente traduz a escolha do teste em opção do sincronizador. Sem
+// escolha, vale a semente embutida.
+func opcaoDaSemente(opc opcoesApp) biblioteca.OpcaoSincronizador {
+	if opc.semSementeBiblioteca {
+		return biblioteca.ComSemente(nil, time.Time{})
+	}
+	return func(*biblioteca.Sincronizador) {}
 }
 
 // montar abre o banco, aplica as migrações e liga os componentes.
@@ -280,6 +300,7 @@ func montar(
 		biblioteca.NovoRepositorio(leitura, escrita),
 		log.With("componente", "biblioteca_sync"),
 		biblioteca.ComIntervalo(opc.intervaloBiblioteca),
+		opcaoDaSemente(opc),
 	)
 	a.adminBib = biblioteca.NovoAdmin(
 		biblioteca.NovoRepositorio(leitura, escrita),

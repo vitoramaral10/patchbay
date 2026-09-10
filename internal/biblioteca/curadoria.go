@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -329,4 +330,221 @@ func recorte(s string, de, tamanho int) string {
 		ate = len(s)
 	}
 	return s[de:ate]
+}
+
+// BaseOficiais é a lista de "servidores MCP oficiais" do mcpservers.org.
+//
+// Mesmo site da curadoria de remotos, acervo diferente: estes vivem em
+// /servers/<slug> e são, quase todos, processo local. Medido em 2026-09-09, o
+// que eles declaram é bem menos do que os remotos declaram:
+//
+//   - **nenhum** tem <dt>Transporte</dt>, <dt>Autenticação</dt> nem URL no bloco
+//     de conexão (0 de 10 amostrados);
+//   - o comando existe só como trecho de copiar-e-colar do README, e numa
+//     amostra de 14 apenas 4 eram aproveitáveis: 9 não tinham bloco algum e 1
+//     trazia caminho de exemplo (C:\PATH\TO\PARENT\FOLDER).
+//
+// Por isso este acervo entra pelo que ele é — uma lista de nomes que alguém
+// chamou de oficiais — e só quando o comando sai limpo. O acervo maior do mesmo
+// site (/all, 12.173) fica de fora: seriam 406 páginas de índice mais 12.173 de
+// detalhe, ~7 horas por varredura, para a mesma qualidade de dado que o registry
+// já entrega estruturada em packages[].
+const caminhoOficiais = "official"
+
+// TetoDePaginasOficiais fecha a paginação de /official.
+//
+// Medido em 22 páginas de 30 em 2026-09-09. O teto é folga com fim: paginação
+// de terceiro que passa a devolver sempre a mesma página viraria varredura
+// eterna sem ele.
+const TetoDePaginasOficiais = 60
+
+// SlugsOficiais percorre a paginação de /official e devolve os identificadores.
+//
+// Diferente dos remotos, aqui o índice pagina: 647 servidores de 30 em 30. A
+// última página é descoberta pelos próprios links de paginação, e não chutada.
+func (c *Curadoria) SlugsOficiais(ctx context.Context) ([]string, error) {
+	primeira, err := c.paginaOficial(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
+	slugs, visto := slugsDeServidor(primeira), map[string]bool{}
+	for _, s := range slugs {
+		visto[s] = true
+	}
+	ultima := ultimaPagina(primeira)
+	if ultima > TetoDePaginasOficiais {
+		ultima = TetoDePaginasOficiais
+	}
+	for p := 2; p <= ultima; p++ {
+		pagina, err := c.paginaOficial(ctx, p)
+		if err != nil {
+			return nil, fmt.Errorf("página %d: %w", p, err)
+		}
+		for _, s := range slugsDeServidor(pagina) {
+			if visto[s] {
+				continue
+			}
+			visto[s] = true
+			slugs = append(slugs, s)
+		}
+	}
+	if len(slugs) == 0 {
+		return nil, fmt.Errorf("%w: nenhum servidor na lista de oficiais", ErrFormatoDaOrigem)
+	}
+	return slugs, nil
+}
+
+func (c *Curadoria) paginaOficial(ctx context.Context, n int) (string, error) {
+	alvo, err := url.JoinPath(c.base, caminhoOficiais)
+	if err != nil {
+		return "", fmt.Errorf("%w: base inválida: %w", ErrOrigemIndisponivel, err)
+	}
+	if n > 1 {
+		alvo += "?page=" + strconv.Itoa(n)
+	}
+	return c.buscar(ctx, alvo)
+}
+
+// Oficial lê a página de um servidor do acervo /servers/.
+//
+// Devolve ErrFormatoDaOrigem quando não há comando aproveitável — que é o caso
+// da maioria. Recusar é o comportamento: um cartão com "adicionar" que abre um
+// formulário sem comando é pior do que o servidor não aparecer.
+func (c *Curadoria) Oficial(ctx context.Context, slug string) (Item, error) {
+	if !slugDeServidorValido(slug) {
+		return Item{}, ErrNaoEncontrado
+	}
+	alvo, err := url.JoinPath(c.base, "servers", slug)
+	if err != nil {
+		return Item{}, fmt.Errorf("%w: base inválida: %w", ErrOrigemIndisponivel, err)
+	}
+	pagina, err := c.buscar(ctx, alvo)
+	if err != nil {
+		return Item{}, err
+	}
+	return lerOficial(slug, pagina)
+}
+
+// As expressões do acervo /servers/.
+var (
+	// reCartaoOficial casa o link de um servidor no índice. O slug pode ter
+	// uma barra no meio (AudienseCo/mcp-audiense-insights) e maiúsculas.
+	reCartaoOficial = regexp.MustCompile(`href="[^"]*?/servers/([^"?#]+)"`)
+	// rePaginaOficial casa os links de paginação, para descobrir a última.
+	rePaginaOficial = regexp.MustCompile(`/official\?page=(\d+)`)
+	// reSlugDeServidor é a forma de um slug do acervo /servers/.
+	reSlugDeServidor = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,80}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,80})?$`)
+
+	// reComandoDoSnippet tira o comando e os argumentos do trecho de
+	// copiar-e-colar que a página mostra. É JSON dentro do HTML, escapado, e por
+	// isso a leitura acontece depois de resolver as entidades.
+	//
+	// Os dois na mesma expressão, e nesta ordem, porque é assim que o site os
+	// escreve. Comando sem args, ou args antes do comando, não casa — e não
+	// casar é o resultado certo: o que sai daqui vira linha de comando de um
+	// processo, e meio acerto ali é um upstream que não sobe.
+	reComandoDoSnippet = regexp.MustCompile(`(?s)"command"\s*:\s*"([^"]+)"\s*,\s*"args"\s*:\s*\[([^\])]{0,400})\]`)
+	reArgDoSnippet     = regexp.MustCompile(`"([^"]*)"`)
+
+	// rePlaceholder são os marcadores que o README deixa para a pessoa trocar.
+	// Um comando com isso dentro não sobe, e cadastrá-lo assim seria entregar um
+	// upstream quebrado com cara de pronto.
+	replaceholderNoArg = regexp.MustCompile(`(?i)PATH[/\\]TO|YOUR[_ ]|<[A-Z_]{3,}>|CAMINHO[_/ ]|/path/to|SEU[_ ]`)
+)
+
+func slugsDeServidor(pagina string) []string {
+	achados := reCartaoOficial.FindAllStringSubmatch(pagina, -1)
+	visto := make(map[string]bool, len(achados))
+	slugs := make([]string, 0, len(achados))
+	for _, a := range achados {
+		s := a[1]
+		if visto[s] || !slugDeServidorValido(s) {
+			continue
+		}
+		visto[s] = true
+		slugs = append(slugs, s)
+	}
+	return slugs
+}
+
+// ultimaPagina lê o maior número que os links de paginação citam.
+//
+// A página mostra os vizinhos e a última — é dela que sai o total, e é por isso
+// que este código não precisa adivinhar quantas páginas existem.
+func ultimaPagina(pagina string) int {
+	maior := 1
+	for _, m := range rePaginaOficial.FindAllStringSubmatch(pagina, -1) {
+		if n, err := strconv.Atoi(m[1]); err == nil && n > maior {
+			maior = n
+		}
+	}
+	return maior
+}
+
+func slugDeServidorValido(s string) bool { return reSlugDeServidor.MatchString(s) }
+
+// lerOficial tira da página de um servidor do acervo /servers/ o que dá para
+// cadastrar.
+func lerOficial(slug, pagina string) (Item, error) {
+	i := Item{
+		// A barra do slug sobrevive no nome, e o nome fica com três segmentos
+		// (mcpservers.org/AudienseCo/mcp-audiense-insights). É de propósito: o
+		// nome é identidade, e encurtá-lo criaria colisão entre dois servidores
+		// da mesma organização.
+		Nome:       "mcpservers.org/" + slug,
+		Curado:     true,
+		Transporte: TransporteSTDIO,
+	}
+	if m := reTituloCurado.FindStringSubmatch(pagina); m != nil {
+		i.Titulo = texto(m[1])
+		i.Descricao = texto(m[2])
+	}
+	if i.Titulo == "" {
+		return Item{}, fmt.Errorf("%w: %s sem nome", ErrFormatoDaOrigem, slug)
+	}
+	if i.Descricao == "" {
+		if m := reSobreCurado.FindStringSubmatch(pagina); m != nil {
+			i.Descricao = texto(m[1])
+		}
+	}
+
+	comando, args, ok := execucaoDoSnippet(pagina)
+	if !ok {
+		// A maioria cai aqui, e cair aqui é o certo. Ver o comentário de
+		// BaseOficiais: numa amostra de 14, só 4 tinham comando aproveitável.
+		return Item{}, fmt.Errorf("%w: %s sem comando aproveitável", ErrFormatoDaOrigem, slug)
+	}
+	i.Comando, i.Args = comando, args
+	return i, nil
+}
+
+// execucaoDoSnippet lê o comando do trecho de configuração da página.
+//
+// Recusa o que tem marcador de exemplo dentro: "C:/PATH/TO/PARENT/FOLDER" e
+// "YOUR_API_KEY" são pedidos para a pessoa trocar, e cadastrá-los como se
+// fossem configuração entrega um upstream quebrado com cara de pronto.
+func execucaoDoSnippet(pagina string) (string, []string, bool) {
+	m := reComandoDoSnippet.FindStringSubmatch(html.UnescapeString(pagina))
+	if m == nil {
+		return "", nil, false
+	}
+	comando := strings.TrimSpace(m[1])
+	if comando == "" || replaceholderNoArg.MatchString(comando) {
+		return "", nil, false
+	}
+	var args []string
+	for _, a := range reArgDoSnippet.FindAllStringSubmatch(m[2], -1) {
+		v := strings.TrimSpace(a[1])
+		if v == "" {
+			continue
+		}
+		if replaceholderNoArg.MatchString(v) {
+			return "", nil, false
+		}
+		args = append(args, v)
+	}
+	if len(args) == 0 {
+		return "", nil, false
+	}
+	return comando, args, true
 }
