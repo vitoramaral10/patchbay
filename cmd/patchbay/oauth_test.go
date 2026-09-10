@@ -135,6 +135,7 @@ func subirPatchbayOAuth(t *testing.T, urlUpstream string, opcoes ...OpcaoApp) pa
 	app, err := montar(ctx, cfg, cofreDeTeste(t), log, append([]OpcaoApp{
 		ComOrigemDaBiblioteca(registryMudo(t)),
 		ComCuradoriaDaBiblioteca(curadoriaMudaDeTeste(t)),
+		SemSementeDaBiblioteca(),
 	}, opcoes...)...)
 	if err != nil {
 		t.Fatalf("montar: erro = %v, quer nil", err)

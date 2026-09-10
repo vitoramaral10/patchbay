@@ -82,10 +82,10 @@ func TestVarreduraPercorreTodasAsPaginas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Buscar: erro = %v, quer nil", err)
 	}
-	// Três do registry, uma por página, mais o servidor que a curadoria muda
-	// publica: a varredura junta as duas origens.
-	if total != 4 {
-		t.Fatalf("servidores gravados = %d, quer 4 (3 do registry + 1 da curadoria)", total)
+	// Três do registry, uma por página, mais um remoto curado e um oficial: a
+	// varredura junta as três listas.
+	if total != 5 {
+		t.Fatalf("servidores gravados = %d, quer 5 (3 do registry + 1 curado + 1 oficial)", total)
 	}
 	if idas := ts.idas.Load(); idas != 3 {
 		t.Errorf("idas à origem = %d, quer 3", idas)
@@ -95,8 +95,8 @@ func TestVarreduraPercorreTodasAsPaginas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sincronizacao: erro = %v, quer nil", err)
 	}
-	if estado.Nunca() || estado.Servidores != 4 || estado.Erro != "" {
-		t.Fatalf("estado = %+v, quer varredura completa de 4 sem erro", estado)
+	if estado.Nunca() || estado.Servidores != 5 || estado.Erro != "" {
+		t.Fatalf("estado = %+v, quer varredura completa de 5 sem erro", estado)
 	}
 }
 
@@ -120,8 +120,8 @@ func TestVarreduraInsisteNaPaginaQueFalhou(t *testing.T) {
 	if err := sincronizadorDeTeste(t, ts.URL, repo).Sincronizar(ctx); err != nil {
 		t.Fatalf("Sincronizar: erro = %v, quer nil", err)
 	}
-	if _, total, _ := repo.Buscar(ctx, biblioteca.Filtro{Termo: ""}, 10, 0); total != 2 {
-		t.Fatalf("servidores = %d, quer 2: a varredura desistiu na primeira falha", total)
+	if _, total, _ := repo.Buscar(ctx, biblioteca.Filtro{Termo: ""}, 10, 0); total != 3 {
+		t.Fatalf("servidores = %d, quer 3: a varredura desistiu na primeira falha", total)
 	}
 }
 
@@ -273,8 +273,8 @@ func TestMesclagemJuntaAsDuasOrigens(t *testing.T) {
 
 	// E não pode ter duplicado o Notion.
 	_, total, _ := repo.Buscar(ctx, biblioteca.Filtro{}, 100, 0)
-	if total != 2 {
-		t.Errorf("total = %d, quer 2: a normalização da URL não casou os dois lados", total)
+	if total != 3 {
+		t.Errorf("total = %d, quer 3 (notion + neon + o oficial padrão): a normalização da URL não casou os dois lados", total)
 	}
 }
 
@@ -327,8 +327,19 @@ func TestMesclagemNaoDeixaNomeColidir(t *testing.T) {
 	if err := sincronizadorCom(t, registry.URL, curada, repo).Sincronizar(ctx); err != nil {
 		t.Fatalf("Sincronizar: erro = %v, quer nil — a colisão derrubou a varredura", err)
 	}
+	// Dois: o homônimo do registry (que ganha) e o oficial padrão. O que não
+	// pode é três — seria o Neon curado tendo entrado com o mesmo nome.
 	_, total, _ := repo.Buscar(ctx, biblioteca.Filtro{}, 10, 0)
-	if total != 1 {
-		t.Fatalf("total = %d, quer 1: o homônimo entrou duas vezes", total)
+	if total != 2 {
+		t.Fatalf("total = %d, quer 2: o homônimo entrou duas vezes", total)
+	}
+	// E o que sobrou com esse nome é o do registry, não o curado: quem chegou
+	// primeiro manda, e o curado foi descartado em vez de sobrescrever.
+	homonimo, err := repo.Um(ctx, "mcpservers.org/neon")
+	if err != nil {
+		t.Fatalf("Um: erro = %v, quer nil", err)
+	}
+	if homonimo.URL != "https://outro.test/mcp" {
+		t.Errorf("URL = %q, quer a do registry: o curado sobrescreveu o homônimo", homonimo.URL)
 	}
 }

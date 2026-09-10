@@ -185,13 +185,14 @@ navegador, log de proxy e `Referer`.
 A biblioteca lê **duas** fontes e as mescla. Nenhuma das duas bastava sozinha, e
 isso foi medido em 2026-09-09, não suposto:
 
-| | registry oficial | mcpservers.org |
-|---|---|---|
-| servidores | **29.843** | **293** (só remotos) |
-| processo local (STDIO) | 11.769 | nenhum |
-| **autenticação declarada** | **campo não existe** | 25 de 25 na amostra (22 OAuth) |
-| resumo em português | não | sim |
-| curadoria | qualquer um que prove o namespace; 2/3 são contas de GitHub | escolhidos a dedo |
+| | registry oficial | mcpservers.org `/remote-mcp-servers` | mcpservers.org `/official` |
+|---|---|---|---|
+| servidores | **29.843** | **293** (só remotos) | **647** (só locais) |
+| processo local (STDIO) | 11.769 | nenhum | todos |
+| **autenticação declarada** | **campo não existe** | 25 de 25 (22 OAuth) | **0 de 10** |
+| transporte / URL declarados | sim | 25 de 25 | **0 de 10** |
+| comando aproveitável | estruturado em `packages[]` | — | **4 de 14** |
+| resumo em português | não | sim | sim |
 
 O número que decidiu: numa amostra de 25 dos 293 remotos do mcpservers.org, **só
 3 existem no registry**. Neon, MDN, Pendo, Blackbaud, Candid e Unthread são
@@ -202,11 +203,30 @@ E a autenticação importa mais do que parece: sem ela, o formulário de upstrea
 abre em credencial estática para um servidor que só fala OAuth, e o erro aparece
 no primeiro 401, horas depois. Com a curadoria, o **modo OAuth já vem marcado**.
 
+O `/official` entra pelo que ele é: uma lista de nomes que alguém chamou de
+oficiais. Ele **não** declara transporte, autenticação nem URL — o comando existe
+só como trecho de copiar-e-colar do README, e o patchbay o recusa quando vem com
+marcador de exemplo (`C:\PATH\TO\PARENT\FOLDER`, `YOUR_API_KEY`), porque
+cadastrar isso entrega um upstream quebrado com cara de pronto.
+
+**O acervo maior do mesmo site (`/all`, 12.173) fica de fora, e o motivo é
+medido.** Ele não contém os remotos — `/servers/notion`, `/servers/linear` e
+`/servers/atlassian` respondem **404**; os 293 vivem noutro caminho. O que ele
+tem é cauda longa auto-ingerida de hostname
+(`agent-ledger-production-0ff8-up-railway-app-status`), sem nenhum campo de
+conexão, ao custo de 406 páginas de índice mais 12.173 de detalhe — **~7 horas
+por varredura** no ritmo que o limite de taxa deles impõe. O registry já entrega
+a mesma cauda longa com `packages[]` estruturado.
+
 **A chave de junção é a URL do endpoint.** As duas origens publicam o mesmo
 endereço para o mesmo servidor, e casar por ele é exato — casar por nome não
 seria, porque "Notion" de um lado é `com.notion/mcp` do outro. A URL é
 normalizada (minúsculas, sem barra final) para o mesmo servidor não virar dois
 cartões.
+
+Os oficiais são processo local e não têm URL, então casam pela **linha de
+comando**, com a versão do pacote ignorada — o registry pina (`@1.2.3`) e o
+mcpservers.org não, e sem normalizar isso o mesmo servidor viraria dois cartões.
 
 Quando os dois têm o servidor, cada lado ganha no que ele garante: a **identidade
 técnica** é do registry (nome, namespace, versão — é o que ele verifica ao
@@ -230,11 +250,47 @@ como não-curado quem é curado e apagaria a autenticação de todo mundo — pi
 que uma cópia com idade visível. Página de detalhe avulsa que falha é tolerada;
 abaixo de metade, não.
 
+### Instalação nova nasce com catálogo
+
+A primeira varredura leva perto de uma hora — 297 páginas do registry, 293
+páginas de detalhe dos remotos curados, 22 mais 647 dos oficiais. Até
+2026-09-09, a tela passava esse tempo dizendo "o catálogo ainda está sendo
+baixado" e não servia para nada.
+
+Agora o binário carrega uma **semente**: o catálogo versionado em
+`internal/biblioteca/semente.json.gz`, embutido por `go:embed`. No primeiro boot,
+e **só** quando nenhuma varredura terminou ainda, ele entra no banco.
+
+**A semente versionada leva só os curados** — 509 servidores em 23 kB: 293
+remotos, 216 locais, 279 deles com OAuth. São os que alguém procura no primeiro
+dia, e o resto do catálogo (28.805 no total) chega pela varredura em menos de uma
+hora. A alternativa, versionar tudo, custaria 1,9 MB no binário **e um blob de
+1,9 MB no histórico do git a cada regeração** — e blob binário em git é
+permanente.
+
+**Isto não é o catálogo embutido que foi recusado no começo do projeto.** Aquele
+era a única fonte e envelhecia junto com o release. Este é semente: ele entra com
+a data em que foi gerado, e é justamente essa data que faz o sincronizador
+considerá-lo vencido e sair varrendo em seguida. Meia hora depois de subir, o que
+está na tela veio da rede — e enquanto isso a tela mostra a idade de verdade, não
+"atualizado agora".
+
+Regerar antes de cortar versão:
+
+```sh
+task biblioteca:semente -- --so-curados   # o que vai versionado: 23 kB
+task biblioteca:semente                   # tudo: 1,9 MB, para quem quiser
+```
+
+A varredura leva ~42 minutos e a data que ela grava é a idade que toda instalação
+nova vai mostrar até a primeira varredura terminar — regerar perto do corte de
+versão é o que mantém isso honesto.
+
 ### Filtrar os oficiais
 
 Trinta mil servidores é cauda longa demais para escolher no olho. O filtro **Só
-oficiais** recorta pela curadoria do mcpservers.org — algumas centenas escolhidas
-a dedo —, e o cartão de quem passa leva o selo *curado*.
+oficiais** recorta pela curadoria do mcpservers.org — os 293 remotos mais os
+aproveitáveis do `/official` —, e o cartão de quem passa leva o selo *curado*.
 
 A alternativa que se cogitou era o namespace de domínio verificado: o registry
 exige que *"para publicar em `com.example/server`, o publicador prove que é dono

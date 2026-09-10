@@ -18,11 +18,20 @@
 // E dois terços do que há lá são namespaces io.github.*, ou seja, conta de
 // GitHub, não domínio de fornecedor.
 //
-// O **mcpservers.org** dá curadoria: 293 servidores remotos escolhidos a dedo.
+// O **mcpservers.org** dá curadoria, em duas listas. A de remotos tem 293
+// servidores escolhidos a dedo.
 // Numa amostra de 25 deles, 25 declaram a forma de autenticação (22 são OAuth),
 // o resumo vem em português, e — o que decidiu a questão — **só 3 dos 25 existem
 // no registry**. Neon, MDN, Pendo, Blackbaud, Candid e Unthread são remotos
 // conhecidos que simplesmente não estão lá.
+//
+// A segunda lista dele, /official, tem 647 servidores de processo local. Ela
+// entra pelo que é — nomes que alguém chamou de oficiais —, porque não declara
+// transporte, autenticação nem URL (0 de 10 amostrados): o comando existe só
+// como trecho de README, e só 4 de 14 saíram aproveitáveis. O acervo maior do
+// mesmo site (/all, 12.173) fica de fora: ele nem contém os remotos —
+// /servers/notion responde 404 — e custaria ~7 horas por varredura para repetir,
+// sem estrutura, a cauda longa que o registry já entrega em packages[].
 //
 // A chave de junção é a **URL do endpoint**: as duas publicam o mesmo endereço
 // para o mesmo servidor, e casar por ele é exato — casar por nome não seria,
@@ -30,8 +39,19 @@
 // identidade técnica do registry e com o texto e a autenticação da curadoria;
 // ver mesclar, em sincronizador.go.
 //
+// Os oficiais, que não têm URL, casam pela linha de comando com a versão do
+// pacote ignorada — o registry pina e o mcpservers.org não.
+//
 // A primeira versão desta tela lia só o mcpservers.org, a segunda só o registry.
 // Nenhuma das duas bastava.
+//
+// # A semente
+//
+// A primeira varredura leva perto de uma hora, e a tela passava esse tempo sem
+// servir para nada. Por isso o binário carrega um catálogo versionado — ver
+// semente.go —, que entra no banco no primeiro boot com a data em que foi
+// gerado. Essa data é o que faz o sincronizador considerá-lo vencido e varrer em
+// seguida: a semente é ponto de partida, nunca o catálogo em vigor.
 //
 // # O catálogo é copiado, não lido ao vivo
 //

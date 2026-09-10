@@ -67,6 +67,7 @@ func subirUI(t *testing.T, opcoes ...OpcaoApp) uiDeTeste {
 	opcoes = append([]OpcaoApp{
 		ComOrigemDaBiblioteca(registryMudo(t)),
 		ComCuradoriaDaBiblioteca(curadoriaMudaDeTeste(t)),
+		SemSementeDaBiblioteca(),
 	}, opcoes...)
 
 	app, err := montar(ctx, cfg, cofreDeTeste(t), slog.New(slog.DiscardHandler), opcoes...)
@@ -153,6 +154,16 @@ func curadoriaMudaDeTeste(t *testing.T) string {
 			`<h2>Detalhes da conexão</h2><code>https://exemplo.invalido/mcp</code>` +
 			`<dl><dt>Transporte</dt><dd>Streamable HTTP</dd>` +
 			`<dt>Autenticação</dt><dd>Aberto — sem autenticação</dd></dl></body></html>`))
+	})
+	// O acervo /official é a terceira lista que a varredura percorre. Índice
+	// ausente derruba a varredura inteira, então todo dublê precisa de um.
+	mux.HandleFunc("GET /pt-BR/official", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html><body><a href="/pt-BR/servers/exemplo">Exemplo</a></body></html>`))
+	})
+	mux.HandleFunc("GET /pt-BR/servers/{slug...}", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html><body><h1>Exemplo Oficial</h1><p>processo local</p>` +
+			`<pre>{&quot;command&quot;: &quot;npx&quot;, &quot;args&quot;: ` +
+			`[&quot;-y&quot;, &quot;exemplo-oficial-mcp&quot;]}</pre></body></html>`))
 	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)

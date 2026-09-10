@@ -60,6 +60,19 @@ tasks:
     cmds:
       - ./{{.BINARIO}} seed {{.CLI_ARGS}}
 
+  biblioteca:semente:
+    desc: regrava o catálogo embutido varrendo as origens (leva perto de uma hora)
+    deps: [build]
+    # Não depende do banco nem da chave mestra: varre as origens e escreve o
+    # arquivo que o go:embed leva para o binário. Rode antes de cortar versão —
+    # a data que ele grava é a idade que toda instalação nova vai mostrar.
+    #
+    # O que vai versionado é `-- --so-curados`: 509 servidores em 23 kB, contra
+    # 28.805 em 1,9 MB. Blob binário no git é permanente, e a cauda longa chega
+    # pela varredura em menos de uma hora de qualquer forma.
+    cmds:
+      - ./{{.BINARIO}} biblioteca-semente {{.CLI_ARGS}}
+
   # --- front-end -------------------------------------------------------------
 
   ui:
