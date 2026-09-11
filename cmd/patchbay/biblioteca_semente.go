@@ -15,12 +15,13 @@ import (
 // caminhoDaSemente é onde o go:embed a procura.
 const caminhoDaSemente = "internal/biblioteca/semente.json.gz"
 
-// comandoBibliotecaSemente varre as origens e regrava o catálogo embutido.
+// comandoBibliotecaSemente varre a origem e regrava o catálogo embutido.
 //
 // Roda na máquina de quem constrói o release, não no gateway: é uma varredura
-// completa contra dois sites de terceiro, e leva perto de uma hora. O resultado
-// vai versionado, e é ele que faz instalação nova nascer com catálogo em vez de
-// esperar a primeira varredura.
+// completa da lista oficial do mcpservers.org — o índice paginado mais uma
+// página de detalhe por servidor —, e leva cerca de 30 minutos (29m26s
+// medidos em 2026-09-11). O resultado vai versionado, e é ele que faz
+// instalação nova nascer com catálogo em vez de esperar a primeira varredura.
 //
 // A data gravada é a de agora, e é a idade que a tela vai mostrar em toda
 // instalação nova até a primeira varredura terminar. Regerar a semente perto do
@@ -29,31 +30,19 @@ func comandoBibliotecaSemente(ctx context.Context, args []string, saida *os.File
 	fs := flag.NewFlagSet("biblioteca-semente", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	destino := fs.String("o", caminhoDaSemente, "arquivo de saída")
-	soCurados := fs.Bool("so-curados", false,
-		"grava só os curados — algumas centenas em vez de dezenas de milhares")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	// repo nulo de propósito: Varrer não grava nada. Ver o comentário dela.
-	sinc := biblioteca.NovoSincronizador(
-		biblioteca.NovaOrigem(""), biblioteca.NovaCuradoria(""), nil, log)
+	sinc := biblioteca.NovoSincronizador(biblioteca.NovaCuradoria(""), nil, log)
 
-	_, _ = fmt.Fprintln(saida, "varrendo as origens — isto leva perto de uma hora")
+	_, _ = fmt.Fprintln(saida, "varrendo a origem — isto leva cerca de 30 minutos")
 	inicio := time.Now()
 	itens, err := sinc.Varrer(ctx)
 	if err != nil {
 		return fmt.Errorf("varrer: %w", err)
-	}
-	if *soCurados {
-		curados := make([]biblioteca.Item, 0, len(itens))
-		for _, i := range itens {
-			if i.Curado {
-				curados = append(curados, i)
-			}
-		}
-		itens = curados
 	}
 	if len(itens) == 0 {
 		return fmt.Errorf("a varredura não trouxe nenhum servidor")
@@ -92,13 +81,7 @@ func comandoBibliotecaSemente(ctx context.Context, args []string, saida *os.File
 	if err != nil {
 		return fmt.Errorf("conferir semente: %w", err)
 	}
-	curados := 0
-	for _, i := range itens {
-		if i.Curado {
-			curados++
-		}
-	}
-	_, _ = fmt.Fprintf(saida, "semente gravada em %s: %d servidores (%d curados), %d kB, em %s\n",
-		*destino, len(itens), curados, info.Size()/1024, time.Since(inicio).Round(time.Second))
+	_, _ = fmt.Fprintf(saida, "semente gravada em %s: %d servidores, %d kB, em %s\n",
+		*destino, len(itens), info.Size()/1024, time.Since(inicio).Round(time.Second))
 	return nil
 }

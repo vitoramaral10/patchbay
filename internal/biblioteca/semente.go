@@ -13,9 +13,9 @@ import (
 // sementeEmbutida é o catálogo que viaja dentro do binário.
 //
 // Ela existe por um motivo só: instalação nova não nascer vazia. A primeira
-// varredura leva perto de uma hora — 297 páginas do registry, 293 páginas de
-// detalhe dos remotos curados e 22 mais 647 dos oficiais —, e durante esse tempo
-// a tela dizia "o catálogo ainda está sendo baixado" e não servia para nada.
+// varredura leva de 20 a 35 minutos — 22 páginas de índice mais uma página de
+// detalhe por servidor da lista oficial —, e durante esse tempo a tela dizia
+// "o catálogo ainda está sendo baixado" e não servia para nada.
 //
 // **Não é o catálogo embutido que foi recusado em 2026-09-09.** Aquele era a
 // única fonte, e envelhecia junto com o release. Este é semente: ele entra no

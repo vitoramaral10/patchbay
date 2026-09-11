@@ -39,9 +39,9 @@ func NovoAdmin(repo *RepositorioSQLite, sinc *Sincronizador, log *slog.Logger) *
 
 // Rotas registra as telas. Exigem sessão de admin, como o resto do painel.
 //
-// O nome do servidor vai no fim do caminho, e com reticências, porque nome de
-// registry tem barra no meio (com.notion/mcp): num segmento simples o mux
-// cortaria no meio do nome. É também por isso que "adicionar" vem antes do
+// O nome do servidor vai no fim do caminho, e com reticências, porque nome do
+// catálogo tem barra no meio (mcpservers.org/<slug>): num segmento simples o
+// mux cortaria no meio do nome. É também por isso que "adicionar" vem antes do
 // nome, e não depois — curinga com reticências só existe no último segmento.
 func (a *Admin) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+webui.RotaBiblioteca, a.listar)
@@ -59,11 +59,6 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filtro := Filtro{
 		Termo: strings.TrimSpace(q.Get("q")),
-		// A caixa marcada vira ?curados=1; desmarcada não manda nada, que é
-		// como um checkbox de formulário HTML se comporta. Ler a presença, e
-		// não o valor, é o que faz o link do htmx e o GET sem JavaScript
-		// concordarem.
-		SoCurados: q.Get("curados") != "",
 	}
 	pagina := paginaDaQuery(q.Get("p"))
 	htmx := r.Header.Get("HX-Request") == "true"
@@ -126,15 +121,35 @@ func (a *Admin) adicionar(w http.ResponseWriter, r *http.Request) {
 		webui.Redirecionar(w, r, webui.RotaBiblioteca+"?aviso=sumiu")
 		return
 	}
+	if idx, ok := indiceDoEndpoint(r, item); ok {
+		item.URL = item.Endpoints[idx]
+	}
 	webui.Redirecionar(w, r, rotaDeCadastro(item))
+}
+
+// indiceDoEndpoint lê o índice do endpoint escolhido no cartão (D-07), quando
+// válido.
+//
+// Query ausente ou índice fora da faixa não é erro: cai no comportamento
+// atual, que usa a URL do item — o mesmo link "Adicionar" de sempre.
+func indiceDoEndpoint(r *http.Request, item Item) (int, bool) {
+	v := r.URL.Query().Get("endpoint")
+	if v == "" {
+		return 0, false
+	}
+	idx, err := strconv.Atoi(v)
+	if err != nil || idx < 0 || idx >= len(item.Endpoints) {
+		return 0, false
+	}
+	return idx, true
 }
 
 // atualizar pede uma varredura fora de hora.
 //
-// POST porque dispara trabalho: um GET que varre o registry seria varredura a
-// cada prefetch de navegador. A resposta é imediata e a varredura continua no
-// fundo — ela leva minutos, e prender a requisição só faria o navegador
-// desistir no meio.
+// POST porque dispara trabalho: um GET que varre o mcpservers.org seria
+// varredura a cada prefetch de navegador. A resposta é imediata e a varredura
+// continua no fundo — ela leva minutos, e prender a requisição só faria o
+// navegador desistir no meio.
 func (a *Admin) atualizar(w http.ResponseWriter, r *http.Request) {
 	aviso := "atualizando"
 	if !a.sinc.Disparar() {
@@ -166,22 +181,24 @@ func paginaDaQuery(v string) int {
 //
 // Nenhum campo de credencial entra aqui: query vaza para histórico do
 // navegador, log de proxy e Referer. O modo de credencial entra só quando a
-// curadoria declarou a autenticação — sem essa declaração, mandar um palpite
-// seria pior do que deixar o formulário no padrão dele.
+// página de detalhe declarou a autenticação — sem essa declaração, mandar um
+// palpite seria pior do que deixar o formulário no padrão dele.
 func rotaDeCadastro(i Item) string {
 	q := url.Values{
 		"tipo": {i.Transporte},
 		"nome": {i.Titulo},
 	}
-	// O modo só entra quando alguém declarou a autenticação, e só a curadoria
-	// declara. Servidor que vem só do registry não leva palpite: o formulário
-	// fica no padrão dele e o admin escolhe.
+	// O modo só entra quando a página de detalhe declarou a autenticação.
+	// Servidor sem declaração não leva palpite: o formulário fica no padrão
+	// dele e o admin escolhe.
 	if modo := i.ModoDeCredencial(); modo != "" {
 		q.Set("modo", modo)
 	}
+	// Sem comando publicado, nada de comando/arg na query: o formulário fica
+	// no padrão dele, e o admin escolhe.
 	if i.Remoto() {
 		q.Set("url", i.URL)
-	} else {
+	} else if i.Comando != "" {
 		q.Set("comando", i.Comando)
 		for _, a := range i.Args {
 			q.Add("arg", a)
@@ -201,8 +218,9 @@ var avisos = map[string]webui.Alerta{
 	"atualizando": {
 		Tom:    webui.TomInfo,
 		Titulo: "A atualização do catálogo começou.",
-		Texto: "Ela roda no fundo e leva uns quinze minutos: são cerca de trezentas idas " +
-			"ao registry. A lista abaixo continua sendo a anterior até ela terminar.",
+		Texto: "Ela roda no fundo e leva de 20 a 35 minutos: são 22 páginas de índice e " +
+			"cerca de 650 de detalhe, na lista oficial do mcpservers.org. A lista abaixo " +
+			"continua sendo a anterior até ela terminar.",
 	},
 	"ja-atualizando": {
 		Tom:    webui.TomInfo,
@@ -216,7 +234,7 @@ var avisos = map[string]webui.Alerta{
 type Pagina struct {
 	// Itens é a página do catálogo local.
 	Itens []Item
-	// Filtro é o recorte pedido: o termo digitado e o corte por origem.
+	// Filtro é o recorte pedido: o termo digitado.
 	Filtro Filtro
 	// Total é quantos servidores casam com o termo, no catálogo inteiro.
 	Total int
@@ -255,9 +273,6 @@ func (p Pagina) rota(numero int) string {
 	q := url.Values{}
 	if p.Filtro.Termo != "" {
 		q.Set("q", p.Filtro.Termo)
-	}
-	if p.Filtro.SoCurados {
-		q.Set("curados", "1")
 	}
 	if numero > 1 {
 		q.Set("p", strconv.Itoa(numero))

@@ -87,16 +87,18 @@ type Aplicacao struct {
 // Existe pelos dois componentes que fazem requisição de saída, e que o teste
 // ponta a ponta precisa apontar para um servidor em processo: o buscador de
 // documentos de CIMD, cuja URL vem de terceiro e que o guarda de SSRF —
-// corretamente — recusaria em teste; e a biblioteca, que varre o registry
-// oficial e sem isto faria o teste depender da internet.
+// corretamente — recusaria em teste; e a biblioteca, que varre o mcpservers.org
+// e sem isto faria o teste depender da internet.
 type OpcaoApp func(*opcoesApp)
 
 type opcoesApp struct {
 	cimd                 authsrv.DocumentosCIMD
-	origemBiblioteca     string
 	curadoriaBiblioteca  string
 	intervaloBiblioteca  time.Duration
 	semSementeBiblioteca bool
+	sementeBiblioteca    []biblioteca.Item
+	sementeBibliotecaEm  time.Time
+	sementeBibliotecaOk  bool
 }
 
 // ComBuscadorCIMD troca o buscador de documentos de CIMD.
@@ -104,32 +106,38 @@ func ComBuscadorCIMD(b authsrv.DocumentosCIMD) OpcaoApp {
 	return func(o *opcoesApp) { o.cimd = b }
 }
 
-// ComOrigemDaBiblioteca troca a base de onde a biblioteca varre o catálogo.
+// ComCuradoriaDaBiblioteca troca a base da origem da biblioteca, a lista
+// oficial do mcpservers.org.
 //
-// Só o teste usa: em produção a base é o registry oficial, fixa no pacote. Não
-// é configuração — apontar a biblioteca para outro lugar em produção seria
-// cadastrar upstream a partir de uma lista que ninguém revisou.
-func ComOrigemDaBiblioteca(base string) OpcaoApp {
-	return func(o *opcoesApp) { o.origemBiblioteca = base }
-}
-
-// ComCuradoriaDaBiblioteca troca a base da segunda origem da biblioteca, a
-// lista curada de servidores remotos.
-//
-// Só o teste usa, pela mesma razão de ComOrigemDaBiblioteca: sem isto a suíte
-// sairia para o mcpservers.org a cada execução.
+// Só o teste usa: sem isto a suíte sairia para o mcpservers.org a cada
+// execução.
 func ComCuradoriaDaBiblioteca(base string) OpcaoApp {
 	return func(o *opcoesApp) { o.curadoriaBiblioteca = base }
 }
 
 // SemSementeDaBiblioteca desliga o catálogo embutido.
 //
-// Só o teste usa, e precisa usar: a semente versionada tem 509 servidores de
+// Só o teste usa, e precisa usar: a semente versionada tem 651 servidores de
 // verdade, e um teste de UI que os carregasse passaria a depender de um arquivo
 // de dados que muda a cada release. Quem cobre a semeadura é
 // internal/biblioteca, com semente injetada.
 func SemSementeDaBiblioteca() OpcaoApp {
 	return func(o *opcoesApp) { o.semSementeBiblioteca = true }
+}
+
+// ComSementeDaBiblioteca troca o catálogo do primeiro boot pelos itens dados,
+// em vez do embutido no binário.
+//
+// Só o teste usa, e é ele que precisa: provar que a migração 00015 entrega a
+// semente nova antes de qualquer varredura não pode depender dos 651
+// servidores de verdade da semente embutida, que muda a cada release (ver
+// SemSementeDaBiblioteca).
+func ComSementeDaBiblioteca(itens []biblioteca.Item, geradoEm time.Time) OpcaoApp {
+	return func(o *opcoesApp) {
+		o.sementeBiblioteca = itens
+		o.sementeBibliotecaEm = geradoEm
+		o.sementeBibliotecaOk = true
+	}
 }
 
 // ComIntervaloDaBiblioteca troca de quanto em quanto tempo o catálogo local é
@@ -145,6 +153,9 @@ func ComIntervaloDaBiblioteca(d time.Duration) OpcaoApp {
 // opcaoDaSemente traduz a escolha do teste em opção do sincronizador. Sem
 // escolha, vale a semente embutida.
 func opcaoDaSemente(opc opcoesApp) biblioteca.OpcaoSincronizador {
+	if opc.sementeBibliotecaOk {
+		return biblioteca.ComSemente(opc.sementeBiblioteca, opc.sementeBibliotecaEm)
+	}
 	if opc.semSementeBiblioteca {
 		return biblioteca.ComSemente(nil, time.Time{})
 	}
@@ -286,16 +297,15 @@ func montar(
 		a.endpoints.Sincronizar, nomeExpostoDe,
 		log.With("componente", "admin_upstream"),
 	)
-	// A biblioteca tem cópia local de duas origens — o registry oficial e a
-	// lista curada do mcpservers.org —, mesclada por uma goroutine de fundo. A
-	// tela lê o banco e nunca a rede: é o que faz a busca digitada responder na
-	// hora, e o que mantém a tela de pé com a internet fora.
+	// A biblioteca tem cópia local da lista oficial do mcpservers.org, mantida
+	// por uma goroutine de fundo. A tela lê o banco e nunca a rede: é o que
+	// faz a busca digitada responder na hora, e o que mantém a tela de pé com
+	// a internet fora.
 	//
 	// O resto do gateway não sabe que ela existe — nem o boot depende dela: a
 	// primeira varredura acontece depois, em Iniciar, e enquanto ela não termina
 	// a tela diz que o catálogo ainda está vindo.
 	a.sincBib = biblioteca.NovoSincronizador(
-		biblioteca.NovaOrigem(opc.origemBiblioteca),
 		biblioteca.NovaCuradoria(opc.curadoriaBiblioteca),
 		biblioteca.NovoRepositorio(leitura, escrita),
 		log.With("componente", "biblioteca_sync"),
@@ -434,7 +444,7 @@ func (a *Aplicacao) Iniciar(ctx context.Context) {
 
 	// A cópia local do catálogo de servidores MCP. A primeira varredura só
 	// acontece se o que está no banco estiver vencido, então reiniciar o
-	// patchbay não custa trezentas requisições ao registry.
+	// patchbay não custa uma varredura inteira do mcpservers.org.
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()

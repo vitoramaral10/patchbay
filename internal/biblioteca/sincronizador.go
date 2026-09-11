@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,61 +13,43 @@ import (
 // IntervaloDeSincronizacao é de quanto em quanto tempo o catálogo local é
 // refeito.
 //
-// Doze horas porque o registry é um catálogo de terceiro que cresce aos poucos:
+// Doze horas porque a origem é um acervo de terceiro que cresce aos poucos:
 // servidor novo aparecendo meio dia depois é aceitável, e uma varredura custa
-// ~300 requisições e ~16 minutos contra um serviço que não é nosso (medido em
-// 2026-09-09: 28.067 servidores gravados em 15m57s). Quem precisa de agora tem o
-// botão de atualizar na tela.
+// cerca de 30 minutos contra um site que não é nosso — ~651 páginas de detalhe
+// a dois segundos uma da outra, que é a pausa que a origem exige (ver
+// esperaEntreCuradas), mais as 22 páginas de índice (medido em 2026-09-11).
+// Quem precisa de agora tem o botão de atualizar na tela.
 const IntervaloDeSincronizacao = 12 * time.Hour
 
 // PrazoDaVarredura é quanto tempo uma varredura inteira pode levar.
 //
-// Existe porque a paciência por página é grande de propósito (45s), e 297
-// páginas de paciência somariam horas se a origem entrasse num dia ruim. Trinta
-// Uma hora cobre as duas origens somadas, com folga para as tentativas: 15m57s
-// medidos na varredura completa do registry em 2026-09-09, mais ~10 minutos das
-// 293 páginas de detalhe do mcpservers.org — que vão a dois segundos uma da
-// outra porque a origem limita taxa. E ainda assim é um fim: passou disso, a
+// Existe porque a paciência por página é grande de propósito (45s), e ~651
+// páginas de paciência somariam horas se a origem entrasse num dia ruim. Uma
+// hora cobre o acervo inteiro com folga para as tentativas: as páginas de
+// detalhe vão a dois segundos uma da outra porque a origem limita taxa, o que
+// deu 29m26s na medição de 2026-09-11. E ainda assim é um fim: passou disso, a
 // varredura vira falha registrada, o catálogo anterior continua servindo, e a
 // próxima tenta de novo.
 const PrazoDaVarredura = time.Hour
 
-// pisoDaCuradoria é a fração das páginas de detalhe que precisa dar certo para
-// a curadoria contar.
+// tentativasPorPagina é quantas vezes uma página de detalhe é pedida antes de a
+// varredura desistir dela.
 //
-// Página avulsa falhando é aceitável — são 293 requisições a um site de
-// terceiro, e desistir por causa de uma jogaria fora a varredura inteira. Mas
-// uma varredura em que quase tudo falhou marcaria como não-curado quem é curado,
-// e o filtro "só curados" ficaria vazio sem ninguém entender por quê. Metade é
-// o ponto em que o resultado deixa de ser confiável.
-const pisoDaCuradoria = 0.5
-
-const (
-	// tentativasPorPagina é quantas vezes uma página é pedida antes de a
-	// varredura desistir. Medido em 2026-09-09: o registry responde a maioria
-	// das páginas em ~1,4s, mas requisições avulsas chegaram a passar de 40
-	// segundos sem responder. Desistir na primeira falha jogaria fora meia
-	// varredura por causa de um soluço.
-	tentativasPorPagina = 3
-	// esperaEntreTentativas é quanto se espera antes de repetir uma página.
-	esperaEntreTentativas = 3 * time.Second
-	// tetoDePaginas fecha a porta do cursor que nunca termina. Com 100 por
-	// página, mil páginas são 100 mil servidores — muito acima dos 29.610
-	// medidos, e ainda assim um fim.
-	tetoDePaginas = 1000
-)
+// Só em taxa excedida: a origem limita taxa (ver esperaEntreCuradas), e desistir
+// no primeiro 429 jogaria fora um servidor por causa de um balde que ainda não
+// encheu. O resto — página que sumiu, marcação que mudou — não melhora
+// esperando.
+const tentativasPorPagina = 3
 
 // Sincronizador mantém a cópia local do catálogo.
 //
 // É a única coisa neste pacote que escreve. A tela só lê, e é justamente essa
 // separação que faz a busca digitada não tocar a rede.
 type Sincronizador struct {
-	origem    *Origem
 	curadoria *Curadoria
 	repo      *RepositorioSQLite
 	log       *slog.Logger
 	intervalo time.Duration
-	espera    time.Duration
 	// esperaCurada é a pausa entre duas páginas de detalhe da curadoria.
 	esperaCurada time.Duration
 	// semente é de onde sai o catálogo do primeiro boot. Trocável só pelo
@@ -118,7 +99,6 @@ func ComIntervalo(d time.Duration) OpcaoSincronizador {
 func ComEsperaEntreTentativas(d time.Duration) OpcaoSincronizador {
 	return func(s *Sincronizador) {
 		if d >= 0 {
-			s.espera = d
 			s.esperaCurada = d
 		}
 	}
@@ -134,16 +114,14 @@ func ComSemente(itens []Item, geradoEm time.Time) OpcaoSincronizador {
 
 // NovoSincronizador monta a rotina sobre a origem e o repositório.
 func NovoSincronizador(
-	origem *Origem, curadoria *Curadoria, repo *RepositorioSQLite, log *slog.Logger,
+	curadoria *Curadoria, repo *RepositorioSQLite, log *slog.Logger,
 	opcoes ...OpcaoSincronizador,
 ) *Sincronizador {
 	s := &Sincronizador{
-		origem:       origem,
 		curadoria:    curadoria,
 		repo:         repo,
 		log:          log,
 		intervalo:    IntervaloDeSincronizacao,
-		espera:       esperaEntreTentativas,
 		esperaCurada: esperaEntreCuradas,
 		semente:      Semente,
 		fundo:        context.Background(),
@@ -165,10 +143,10 @@ func (s *Sincronizador) Manter(ctx context.Context) {
 	s.fundo = ctx
 	s.mu.Unlock()
 
-	// Semeou agora, varre agora — sem consultar a idade. A semente é parcial de
-	// propósito (só os curados) e pode ter sido gerada hoje, no corte da versão:
-	// deixá-la decidir pela idade faria a instalação nova passar doze horas com
-	// algumas centenas de servidores achando que o catálogo está completo.
+	// Semeou agora, varre agora — sem consultar a idade. A semente pode ter sido
+	// gerada dias antes, no corte da versão: deixá-la decidir pela idade faria a
+	// instalação nova passar doze horas achando que o catálogo do release está
+	// fresco, quando não está.
 	if s.semear(ctx) || s.precisaAgora(ctx) {
 		s.tentar(ctx)
 	}
@@ -326,14 +304,14 @@ func (s *Sincronizador) tentar(ctx context.Context) {
 	if err := s.Sincronizar(ctx); err != nil {
 		if ctx.Err() == nil && !errors.Is(err, ErrJaEmCurso) {
 			s.log.Warn("a sincronização da biblioteca não terminou",
-				"origem", s.origem.base, "erro", err, "duracao", time.Since(inicio))
+				"erro", err, "duracao", time.Since(inicio))
 		}
 		return
 	}
 	s.log.Info("biblioteca sincronizada", "duracao", time.Since(inicio))
 }
 
-// Varrer lê as origens e devolve o catálogo mesclado, sem gravar nada.
+// Varrer lê a origem e devolve o catálogo, sem gravar nada.
 //
 // Exportada para o subcomando que regenera a semente embutida. Não toca no
 // repositório — é a única operação do sincronizador que não toca —, então um
@@ -344,46 +322,29 @@ func (s *Sincronizador) Varrer(ctx context.Context) ([]Item, error) {
 	return s.varrer(ctxVarredura)
 }
 
-// varrer lê as duas origens e devolve o catálogo mesclado.
-//
-// O registry é a base — é dele que vêm o alcance e os servidores de processo
-// local. A curadoria do mcpservers.org entra por cima, e a chave de junção é a
-// **URL do endpoint**: as duas origens publicam o mesmo endereço para o mesmo
-// servidor, e casar por ele é exato, ao contrário de casar por nome.
-//
-// O que a curadoria acrescenta a quem já estava lá: a autenticação (que o
-// esquema do registry não tem), o resumo em português e a marca de curado. O que
-// ela acrescenta sozinha: os remotos que o registry não conhece — medido em
-// 2026-09-09, 22 de 25 amostrados.
-func (s *Sincronizador) varrer(ctx context.Context) ([]Item, error) {
-	doRegistry, err := s.varrerRegistry(ctx)
-	if err != nil {
-		return nil, err
-	}
-	curados, err := s.varrerCuradoria(ctx)
-	if err != nil {
-		return nil, err
-	}
-	oficiais, err := s.varrerOficiais(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return mesclar(doRegistry, curados, oficiais), nil
-}
-
-// varrerOficiais lê a lista /official do mcpservers.org: 647 servidores em 22
-// páginas de índice, mais uma página de detalhe cada.
+// varrer lê a lista /official do mcpservers.org: 651 servidores em 22 páginas
+// de índice (medido em 2026-09-11), mais uma página de detalhe cada.
 //
 // Tolerante por natureza, e não por acidente: a maioria das páginas **não** tem
 // comando aproveitável (numa amostra de 14, só 4 tinham), então página recusada
 // é o caso comum e não pode contar como falha. O que derruba a varredura aqui é
-// o índice não vir — sem ele não há o que ler.
-func (s *Sincronizador) varrerOficiais(ctx context.Context) ([]Item, error) {
+// o índice não vir — sem ele não há o que ler, e devolver lista vazia como
+// sucesso apagaria o catálogo inteiro.
+func (s *Sincronizador) varrer(ctx context.Context) ([]Item, error) {
 	slugs, err := s.curadoria.SlugsOficiais(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("oficiais: %w", err)
 	}
 	itens := make([]Item, 0, len(slugs)/3)
+	// O nome é chave primária no banco, então um nome repetido derrubaria a
+	// varredura inteira com erro de constraint, longe da causa: ninguém o
+	// encontraria depurando o INSERT.
+	//
+	// Hoje ele não filtra nada — SlugsOficiais já devolve slug único e o nome
+	// sai do slug. É segunda linha de propósito, para quando a leitura do
+	// índice ou a forma do nome mudarem; quem cobra o comportamento de ponta a
+	// ponta é TestIndiceQueRepeteOServidorNaoDuplicaOItem.
+	nomes := make(map[string]bool, len(slugs))
 	var semComando, indisponiveis int
 	for i, slug := range slugs {
 		if i > 0 {
@@ -396,15 +357,34 @@ func (s *Sincronizador) varrerOficiais(ctx context.Context) ([]Item, error) {
 		item, err := s.oficialComTentativas(ctx, slug)
 		switch {
 		case err == nil:
+			if nomes[item.Nome] {
+				continue
+			}
+			nomes[item.Nome] = true
 			itens = append(itens, item)
+			if item.Comando == "" {
+				// O normal (D-03): a maioria não tem comando aproveitável, e
+				// isso deixou de ser recusa — o item entra sem comando.
+				semComando++
+			}
 		case ctx.Err() != nil:
 			return nil, ctx.Err()
-		case errors.Is(err, ErrFormatoDaOrigem):
-			// Sem comando aproveitável: o normal.
-			semComando++
 		default:
+			// ErrFormatoDaOrigem só sobra aqui para página sem título — de
+			// verdade fora do padrão, e não mais a falta de comando, que
+			// agora entra no catálogo (D-03).
 			indisponiveis++
 		}
+	}
+	// Piso de 10%: um detalhe fora do ar é tolerado (D-03 é sobre a maioria não
+	// ter comando, não sobre a origem cair), mas passado o piso o catálogo
+	// resultante já não representa o acervo — melhor manter o anterior do que
+	// gravar um recorte que só existe porque a origem estava com problema.
+	// Aritmética inteira sem arredondar: 10% exatos não falha, só o que passa
+	// disso.
+	if total := len(slugs); total > 0 && indisponiveis*10 > total {
+		return nil, fmt.Errorf("%w: %d de %d detalhes indisponíveis",
+			ErrOrigemIndisponivel, indisponiveis, total)
 	}
 	s.log.Info("oficiais lidos",
 		"aproveitados", len(itens), "sem_comando", semComando,
@@ -412,6 +392,13 @@ func (s *Sincronizador) varrerOficiais(ctx context.Context) ([]Item, error) {
 	return itens, nil
 }
 
+// oficialComTentativas insiste numa página de detalhe enquanto a origem estiver
+// limitando taxa.
+//
+// Só em 429, e por isso ele é erro próprio: o resto — página que sumiu, formato
+// que mudou — não melhora esperando, e repetir seria peso na origem sem chance
+// de sucesso. A espera cresce a cada tentativa porque um 429 costuma significar
+// que o balde de taxa vai demorar mais que a pausa normal para encher.
 func (s *Sincronizador) oficialComTentativas(ctx context.Context, slug string) (Item, error) {
 	var ultimo error
 	for tentativa := range tentativasPorPagina {
@@ -432,262 +419,4 @@ func (s *Sincronizador) oficialComTentativas(ctx context.Context, slug string) (
 		ultimo = err
 	}
 	return Item{}, ultimo
-}
-
-// varrerCuradoria lê a lista de remotos do mcpservers.org, uma página de detalhe
-// por servidor.
-//
-// Sequencial e com pausa: quatro requisições em paralelo faziam ~30% virarem
-// desafio de bot naquele Cloudflare. Aqui a pressa não vale nada — isto roda de
-// doze em doze horas, no fundo.
-func (s *Sincronizador) varrerCuradoria(ctx context.Context) ([]Item, error) {
-	slugs, err := s.curadoria.Slugs(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("curadoria: %w", err)
-	}
-	itens := make([]Item, 0, len(slugs))
-	var falhas int
-	for i, slug := range slugs {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(s.esperaCurada):
-			}
-		}
-		item, err := s.curadaComTentativas(ctx, slug)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			// Página avulsa que não deu: o servidor fica de fora da curadoria e
-			// a varredura segue. Ele ainda pode existir pelo registry.
-			falhas++
-			s.log.Debug("servidor curado não pôde ser lido", "slug", slug, "erro", err)
-			continue
-		}
-		itens = append(itens, item)
-	}
-	if len(itens) < int(float64(len(slugs))*pisoDaCuradoria) {
-		return nil, fmt.Errorf("%w: curadoria trouxe só %d de %d servidores (%d falhas)",
-			ErrOrigemIndisponivel, len(itens), len(slugs), falhas)
-	}
-	if falhas > 0 {
-		s.log.Info("curadoria lida com falhas parciais",
-			"lidos", len(itens), "falhas", falhas, "total", len(slugs))
-	}
-	return itens, nil
-}
-
-// varrerRegistry percorre o catálogo inteiro do registry, página por página.
-func (s *Sincronizador) varrerRegistry(ctx context.Context) ([]Item, error) {
-	var itens []Item
-	visto := map[string]bool{}
-	cursor := ""
-
-	for pagina := range tetoDePaginas {
-		res, err := s.pedirComTentativas(ctx, cursor)
-		if err != nil {
-			return nil, fmt.Errorf("página %d: %w", pagina+1, err)
-		}
-		for _, i := range res.Itens {
-			// A origem pagina por cursor, e cursor que repete devolveria o mesmo
-			// servidor duas vezes — que aqui viraria erro de chave primária no
-			// meio da transação, longe da causa.
-			if visto[i.Nome] {
-				continue
-			}
-			visto[i.Nome] = true
-			itens = append(itens, i)
-		}
-		if res.ProximoCursor == "" {
-			return itens, nil
-		}
-		if res.ProximoCursor == cursor {
-			return nil, fmt.Errorf("%w: a origem repetiu o cursor %q",
-				ErrFormatoDaOrigem, cursor)
-		}
-		cursor = res.ProximoCursor
-	}
-	return nil, fmt.Errorf("%w: a origem não terminou em %d páginas",
-		ErrFormatoDaOrigem, tetoDePaginas)
-}
-
-// pedirComTentativas insiste numa página antes de desistir da varredura.
-//
-// Só em indisponibilidade: esquema mudado não melhora tentando de novo, e
-// repetir seria peso na origem sem chance de sucesso.
-func (s *Sincronizador) pedirComTentativas(ctx context.Context, cursor string) (Resultado, error) {
-	var ultimo error
-	for tentativa := range tentativasPorPagina {
-		if tentativa > 0 {
-			select {
-			case <-ctx.Done():
-				return Resultado{}, ctx.Err()
-			case <-time.After(s.espera):
-			}
-		}
-		res, err := s.origem.Listar(ctx, "", cursor)
-		if err == nil {
-			return res, nil
-		}
-		if !errors.Is(err, ErrOrigemIndisponivel) || ctx.Err() != nil {
-			return Resultado{}, err
-		}
-		ultimo = err
-	}
-	return Resultado{}, ultimo
-}
-
-// curadaComTentativas insiste numa página de detalhe enquanto a origem estiver
-// limitando taxa.
-//
-// Só em 429, e por isso ele é erro próprio: o resto — página que sumiu, formato
-// que mudou — não melhora esperando, e repetir seria peso na origem sem chance
-// de sucesso. A espera cresce a cada tentativa porque um 429 costuma significar
-// que o balde de taxa vai demorar mais que a pausa normal para encher.
-func (s *Sincronizador) curadaComTentativas(ctx context.Context, slug string) (Item, error) {
-	var ultimo error
-	for tentativa := range tentativasPorPagina {
-		if tentativa > 0 {
-			select {
-			case <-ctx.Done():
-				return Item{}, ctx.Err()
-			case <-time.After(s.esperaCurada * time.Duration(1<<tentativa)):
-			}
-		}
-		item, err := s.curadoria.Um(ctx, slug)
-		if err == nil {
-			return item, nil
-		}
-		if !errors.Is(err, ErrTaxaExcedida) || ctx.Err() != nil {
-			return Item{}, err
-		}
-		ultimo = err
-	}
-	return Item{}, ultimo
-}
-
-// mesclar junta o catálogo do registry com a curadoria do mcpservers.org.
-//
-// A chave é a URL do endpoint, normalizada: as duas origens publicam o mesmo
-// endereço para o mesmo servidor, e casar por ele é exato. Casar por nome não
-// seria — "Notion" no mcpservers.org é "com.notion/mcp" no registry.
-//
-// Quando os dois têm o servidor, cada lado ganha no que ele garante:
-//
-//   - identidade técnica é do registry (nome, namespace, versão). É o que ele
-//     verifica ao aceitar a publicação, e é o que o filtro de domínio lê.
-//   - texto para gente e autenticação são da curadoria. O título e o resumo de
-//     lá são escritos por uma pessoa e traduzidos; a autenticação **só existe**
-//     lá. O transporte também, porque a página de lá descreve exatamente aquele
-//     endereço.
-//
-// Os oficiais entram por último e por outro caminho: eles são processo local e
-// não têm URL, então casam pela **linha de comando**, com a versão do pacote
-// ignorada — o registry pina (@1.2.3) e o mcpservers.org não, e sem normalizar
-// isso o mesmo servidor viraria dois cartões.
-//
-// Servidor que só a curadoria tem entra inteiro, com identidade própria — ver
-// lerCurado. Servidor que só o registry tem passa intacto, sem marca de curado.
-func mesclar(doRegistry, curados, oficiais []Item) []Item {
-	porURL := make(map[string]int, len(doRegistry))
-	for i, it := range doRegistry {
-		if it.Remoto() && it.URL != "" {
-			porURL[chaveDeEndpoint(it.URL)] = i
-		}
-	}
-
-	saida := make([]Item, len(doRegistry), len(doRegistry)+len(curados))
-	copy(saida, doRegistry)
-
-	// O nome é chave primária no banco, então uma colisão derrubaria a
-	// varredura inteira com erro de constraint, longe da causa. Ela é
-	// improvável — exigiria o registry aceitar um servidor no namespace
-	// "mcpservers.org" —, e é exatamente por ser improvável que precisa ser
-	// tratada aqui: ninguém a encontraria depurando o INSERT.
-	nomes := make(map[string]bool, len(doRegistry)+len(curados))
-	for _, it := range doRegistry {
-		nomes[it.Nome] = true
-	}
-
-	for _, c := range curados {
-		i, achou := porURL[chaveDeEndpoint(c.URL)]
-		if !achou {
-			if nomes[c.Nome] {
-				continue
-			}
-			nomes[c.Nome] = true
-			saida = append(saida, c)
-			continue
-		}
-		base := saida[i]
-		base.Curado = true
-		base.Autenticacao = c.Autenticacao
-		base.PedeCredencial = c.PedeCredencial
-		base.Transporte = c.Transporte
-		if c.Titulo != "" {
-			base.Titulo = c.Titulo
-		}
-		if c.Descricao != "" {
-			base.Descricao = c.Descricao
-		}
-		saida[i] = base
-	}
-
-	// Os oficiais são stdio: casam pela execução, não pela URL.
-	porExecucao := make(map[string]int, len(saida))
-	for i, it := range saida {
-		if !it.Remoto() {
-			porExecucao[chaveDeExecucao(it)] = i
-		}
-	}
-	for _, o := range oficiais {
-		if i, achou := porExecucao[chaveDeExecucao(o)]; achou {
-			// Já existe pelo registry, com identificador e argumentos
-			// declarados — que são melhores que o trecho de README de onde
-			// estes saem. O que o oficial acrescenta é só a marca.
-			saida[i].Curado = true
-			continue
-		}
-		if nomes[o.Nome] {
-			continue
-		}
-		nomes[o.Nome] = true
-		saida = append(saida, o)
-	}
-	return saida
-}
-
-// chaveDeExecucao normaliza a linha de comando de um servidor de processo local
-// para a comparação.
-//
-// A versão do pacote sai fora: o registry pina (@modelcontextprotocol/x@1.2.3) e
-// o mcpservers.org publica sem versão, e tratar os dois como servidores
-// diferentes duplicaria o cartão na tela.
-func chaveDeExecucao(i Item) string {
-	partes := make([]string, 0, len(i.Args)+1)
-	partes = append(partes, strings.ToLower(i.Comando))
-	for _, a := range i.Args {
-		partes = append(partes, strings.ToLower(semVersao(a)))
-	}
-	return strings.Join(partes, " ")
-}
-
-// semVersao tira o sufixo @versão de um identificador de pacote, preservando o
-// @ inicial do escopo npm (@org/pacote).
-func semVersao(arg string) string {
-	if i := strings.LastIndexByte(arg, '@'); i > 0 {
-		return arg[:i]
-	}
-	return arg
-}
-
-// chaveDeEndpoint normaliza uma URL para a comparação.
-//
-// Minúsculas e sem barra final: as duas origens escrevem o mesmo endereço com
-// diferenças que não mudam para onde ele aponta, e tratá-las como servidores
-// diferentes duplicaria o cartão na tela.
-func chaveDeEndpoint(u string) string {
-	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(u), "/"))
 }
