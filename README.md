@@ -46,8 +46,8 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
   MCP no meio. `(*os.Process).Kill` mata só o filho direto e deixa o **neto**
   vivo — `npx` lança `node`, `uvx` lança `python` —, e é esse neto que vazava um
   processo por reconexão até esgotar os PIDs da máquina no gateway anterior.
-- `internal/biblioteca` — a tela que transforma um servidor do **registry oficial
-  do MCP** num upstream preenchido. Cópia local em SQLite, refeita a cada 12
+- `internal/biblioteca` — a tela que transforma um servidor da lista oficial do
+  mcpservers.org num upstream preenchido. Cópia local em SQLite, refeita a cada 12
   horas por uma goroutine de fundo: a tela lê o banco e nunca a rede, e é a
   única parte do pacote que sai para a internet que fala com a origem.
 - `internal/upstream` — uma sessão MCP por servidor configurado, conectada
@@ -125,7 +125,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário.
 | `/admin/login` · `/admin/sair` | Entrada e saída |
 | `/admin/` | Painel: MCPs por estado, endpoints, ferramentas, chaves |
 | `/admin/mcps` | CRUD de MCP HTTP e SSE (bearer e headers estáticos, ou OAuth) e STDIO (comando, argumentos e ambiente); detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora, e botão **Autorizar** no modo OAuth |
-| `/admin/biblioteca` | Catálogo de duas origens — o **registry oficial do MCP** (alcance e processo local) e a lista curada do **mcpservers.org** (autenticação declarada e resumo em português) —, mescladas pela URL do endpoint numa cópia local refeita a cada 12 horas. Busca instantânea e filtro **Só oficiais**. **Adicionar** abre o formulário de MCP preenchido, com o modo OAuth já marcado quando a curadoria o declara. A idade do catálogo fica à vista, com o botão **Atualizar agora** ao lado |
+| `/admin/biblioteca` | Lista oficial do mcpservers.org em cópia local refeita a cada 12 horas: ~652 servidores com nome, descrição em português, site e (quando publicado) comando ou URL de conexão, e `OAuth` quando a página cita OAuth. Busca instantânea. **Adicionar** abre o formulário de MCP preenchido com os dados do servidor, um por endpoint quando o servidor publica mais de um. A idade do catálogo fica à vista, com o botão **Atualizar agora** ao lado |
 | `/admin/endpoints` | CRUD de endpoint com composição fina — quais MCPs entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada MCP dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
 | `/admin/oauth` | Clientes do authorization server: cadastro à mão, e as linhas que aparecem sozinhas por **CIMD** ou **DCR** — a coluna Origem diz qual é qual. Detalhe com a allowlist de redirect, o escopo, as sessões vivas e a revogação de cliente ou de sessão |
@@ -161,13 +161,12 @@ na primeira tentativa — três campos em que errar não dá erro de formulário
 um upstream degradado horas depois. A biblioteca troca isso por escolher um nome
 de uma lista.
 
-`/admin/biblioteca` junta duas fontes: o
-[registry oficial do Model Context Protocol](https://registry.modelcontextprotocol.io)
-— **29.843 servidores** medidos em 2026-09-09, dos quais 11.769 só existem como
-pacote instalável — e os **293 servidores remotos curados** do
-[mcpservers.org](https://mcpservers.org/pt-BR/remote-mcp-servers), que são os
-únicos que declaram a forma de autenticação. Busca por nome e descrição, vários
-termos exigindo todos em qualquer ordem, e um filtro para ver só os curados.
+`/admin/biblioteca` oferece a lista oficial do
+[mcpservers.org/pt-BR/official](https://mcpservers.org/pt-BR/official)
+— **~652 servidores** em 22 páginas de índice. Busca por nome e descrição, vários
+termos exigindo todos em qualquer ordem. A origem publica cada servidor com seu
+título, descrição em português, site e — quando a página o especifica — comando
+(para STDIO) ou URL de conexão (para HTTP/SSE).
 
 **Adicionar não cadastra nada.** Ele lê o servidor no catálogo local e
 redireciona para `/admin/upstreams/novo` com os campos preenchidos: endpoint e
@@ -180,146 +179,84 @@ importarem — quem guarda esse contrato é um teste de integração em
 Nenhum campo de credencial viaja nessa URL: query entra em histórico do
 navegador, log de proxy e `Referer`.
 
-### Duas origens, e por quê
+Servidor com mais de um endpoint publicado (caso do Cloudflare, com 17) lista
+cada um no cartão com um **Adicionar** próprio, que abre o formulário já com
+aquela URL. Servidor sem comando nem URL reconhecível não some da lista: o
+cartão diz que a página não publica comando nem endpoint reconhecível, com
+link para abrir a página do servidor no mcpservers.org e para o site, e
+**Adicionar** abre o formulário só com o nome.
 
-A biblioteca lê **duas** fontes e as mescla. Nenhuma das duas bastava sozinha, e
-isso foi medido em 2026-09-09, não suposto:
+### Origem: lista oficial do mcpservers.org
 
-| | registry oficial | mcpservers.org `/remote-mcp-servers` | mcpservers.org `/official` |
-|---|---|---|---|
-| servidores | **29.843** | **293** (só remotos) | **647** (só locais) |
-| processo local (STDIO) | 11.769 | nenhum | todos |
-| **autenticação declarada** | **campo não existe** | 25 de 25 (22 OAuth) | **0 de 10** |
-| transporte / URL declarados | sim | 25 de 25 | **0 de 10** |
-| comando aproveitável | estruturado em `packages[]` | — | **4 de 14** |
-| resumo em português | não | sim | sim |
+O patchbay raspa as 22 páginas de índice e as ~651 páginas de detalhe de
+`/pt-BR/official`, cada uma com pausa de 2 segundos. A varredura toma cerca de 30
+minutos — 29m26s na varredura real de 2026-09-11, dentro do prazo de 1
+hora. Roda no boot (quando a cópia anterior venceu ou não existe), de 12 em 12
+horas durante o funcionamento, e a pedido pelo botão "Atualizar agora" na tela.
 
-O número que decidiu: numa amostra de 25 dos 293 remotos do mcpservers.org, **só
-3 existem no registry**. Neon, MDN, Pendo, Blackbaud, Candid e Unthread são
-remotos conhecidos que simplesmente não estão lá — não é duplicata, é cobertura
-que faltava.
+**O que cada servidor traz na lista:**
 
-E a autenticação importa mais do que parece: sem ela, o formulário de upstream
-abre em credencial estática para um servidor que só fala OAuth, e o erro aparece
-no primeiro 401, horas depois. Com a curadoria, o **modo OAuth já vem marcado**.
+- Nome em `mcpservers.org/<slug>`.
+- Título e descrição completos em português.
+- Site da origem: o primeiro link externo da página (quando há).
+- Comando (para STDIO): quando publicado, com o interpretador explícito
+  (`npx`, `uvx`) ou um caminho. Servidor sem comando entra mesmo assim — o
+  formulário de cadastro abre com o nome preenchido e o comando vazio.
+- URL de conexão (para HTTP/SSE): quando publicada, a URL `https` que termina em
+  `/mcp` ou `/sse`. De autenticação sai uma coisa só — `OAuth`, e **só** quando a
+  página cita OAuth na mesma região do texto. Nenhuma outra forma de
+  autenticação é lida: não se deduz token, chave nem "servidor aberto" da prosa
+  da página.
 
-O `/official` entra pelo que ele é: uma lista de nomes que alguém chamou de
-oficiais. Ele **não** declara transporte, autenticação nem URL — o comando existe
-só como trecho de copiar-e-colar do README, e o patchbay o recusa quando vem com
-marcador de exemplo (`C:\PATH\TO\PARENT\FOLDER`, `YOUR_API_KEY`), porque
-cadastrar isso entrega um upstream quebrado com cara de pronto.
+**O que a lista não é:**
 
-**O acervo maior do mesmo site (`/all`, 12.173) fica de fora, e o motivo é
-medido.** Ele não contém os remotos — `/servers/notion`, `/servers/linear` e
-`/servers/atlassian` respondem **404**; os 293 vivem noutro caminho. O que ele
-tem é cauda longa auto-ingerida de hostname
-(`agent-ledger-production-0ff8-up-railway-app-status`), sem nenhum campo de
-conexão, ao custo de 406 páginas de índice mais 12.173 de detalhe — **~7 horas
-por varredura** no ritmo que o limite de taxa deles impõe. O registry já entrega
-a mesma cauda longa com `packages[]` estruturado.
+- Não é o `/all` do site (12 mil servidores de cauda longa, sem transporte
+  declarado, varredura de 7 horas). Nem a lista de remotos curados (`/remote-mcp-servers`).
+- Não consulta nenhuma outra origem além da lista oficial do mcpservers.org.
+- Não faz curadoria local: entra o que o mcpservers.org publica como oficial.
 
-**A chave de junção é a URL do endpoint.** As duas origens publicam o mesmo
-endereço para o mesmo servidor, e casar por ele é exato — casar por nome não
-seria, porque "Notion" de um lado é `com.notion/mcp` do outro. A URL é
-normalizada (minúsculas, sem barra final) para o mesmo servidor não virar dois
-cartões.
+**Tolerância e falha:**
 
-Os oficiais são processo local e não têm URL, então casam pela **linha de
-comando**, com a versão do pacote ignorada — o registry pina (`@1.2.3`) e o
-mcpservers.org não, e sem normalizar isso o mesmo servidor viraria dois cartões.
-
-Quando os dois têm o servidor, cada lado ganha no que ele garante: a **identidade
-técnica** é do registry (nome, namespace, versão — é o que ele verifica ao
-aceitar a publicação), e o **texto para gente e a autenticação** são da curadoria
-(escritos por uma pessoa, traduzidos, e a autenticação só existe lá). Servidor
-que só a curadoria tem entra com identidade própria, `mcpservers.org/<slug>`, que
-diz de onde veio.
-
-**O mcpservers.org limita taxa, e o número importa.** As 293 páginas de detalhe
-vão uma a cada **2 segundos**, sequenciais — e esse intervalo é medido, não
-escolhido: com 250 ms, uma varredura de verdade em 2026-09-09 trouxe **63 de
-293**, e as outras 230 vieram com `HTTP 429`. A origem não manda `Retry-After`,
-então o que resta é ir devagar e insistir: um 429 numa página faz o patchbay
-repetir aquela página com espera crescente, em vez de descartá-la. São ~10
-minutos para a curadoria inteira, dentro de uma varredura de fundo que roda de
-doze em doze horas.
-
-Se o mcpservers.org estiver fora, **a varredura inteira falha** e o catálogo
-anterior continua servindo. É deliberado: uma varredura sem a curadoria marcaria
-como não-curado quem é curado e apagaria a autenticação de todo mundo — pior do
-que uma cópia com idade visível. Página de detalhe avulsa que falha é tolerada;
-abaixo de metade, não.
+Detalhe fora do ar (URL do servidor indisponível, página de detalhe com erro)
+conta e é pulado; até 10% de perda é tolerado. Acima de 10%, a varredura falha e
+o catálogo anterior fica em vigor, com a hora da tentativa falhada visível na
+tela. Qualquer problema de rede — site fora, 403, marcação de página mudada —
+preserva o catálogo que estava.
 
 ### Instalação nova nasce com catálogo
 
-A primeira varredura leva perto de uma hora — 297 páginas do registry, 293
-páginas de detalhe dos remotos curados, 22 mais 647 dos oficiais. Até
-2026-09-09, a tela passava esse tempo dizendo "o catálogo ainda está sendo
-baixado" e não servia para nada.
+A primeira varredura leva cerca de 30 minutos — o tempo das ~651 páginas de
+detalhe com pausa de 2 segundos; a tela estima "de 20 a 35 minutos" enquanto ela
+corre. Até ter o primeiro catálogo pronto, a tela poderia ficar bloqueada.
 
-Agora o binário carrega uma **semente**: o catálogo versionado em
+Em vez disso, o binário carrega uma **semente**: o catálogo versionado em
 `internal/biblioteca/semente.json.gz`, embutido por `go:embed`. No primeiro boot,
-e **só** quando nenhuma varredura terminou ainda, ele entra no banco.
+e **só** quando nenhuma varredura terminou ainda, ele entra no banco. A semente
+traz toda a lista oficial — 651 servidores em ~56 kB — gerada na hora do corte
+de versão. Ela entra com a data em que foi gerada, e é justamente essa data que
+faz o sincronizador considerá-lo vencido e sair varrendo em seguida. Meia hora
+depois de subir, o que está na tela veio da rede — e enquanto isso a tela mostra
+a idade de verdade, não "atualizado agora".
 
-**A semente versionada leva só os curados** — 509 servidores em 23 kB: 293
-remotos, 216 locais, 279 deles com OAuth. São os que alguém procura no primeiro
-dia, e o resto do catálogo (28.805 no total) chega pela varredura em menos de uma
-hora. A alternativa, versionar tudo, custaria 1,9 MB no binário **e um blob de
-1,9 MB no histórico do git a cada regeração** — e blob binário em git é
-permanente.
-
-**Isto não é o catálogo embutido que foi recusado no começo do projeto.** Aquele
-era a única fonte e envelhecia junto com o release. Este é semente: ele entra com
-a data em que foi gerado, e é justamente essa data que faz o sincronizador
-considerá-lo vencido e sair varrendo em seguida. Meia hora depois de subir, o que
-está na tela veio da rede — e enquanto isso a tela mostra a idade de verdade, não
-"atualizado agora".
-
-Regerar antes de cortar versão:
+Regerar a semente antes de cortar versão:
 
 ```sh
-task biblioteca:semente -- --so-curados   # o que vai versionado: 23 kB
-task biblioteca:semente                   # tudo: 1,9 MB, para quem quiser
+task biblioteca:semente                   # gera com a lista oficial
 ```
 
-A varredura leva ~42 minutos e a data que ela grava é a idade que toda instalação
-nova vai mostrar até a primeira varredura terminar — regerar perto do corte de
-versão é o que mantém isso honesto.
+A primeira instalação vê a idade da semente até a varredura terminar; regerar
+perto do corte de versão é o que mantém isso honesto.
 
-### Filtrar os oficiais
-
-Trinta mil servidores é cauda longa demais para escolher no olho. O filtro **Só
-oficiais** recorta pela curadoria do mcpservers.org — os 293 remotos mais os
-aproveitáveis do `/official` —, e o cartão de quem passa leva o selo *curado*.
-
-A alternativa que se cogitou era o namespace de domínio verificado: o registry
-exige que *"para publicar em `com.example/server`, o publicador prove que é dono
-do domínio `example.com`"*. Ela **corta 29.843 para 9.871, mas em 7.701 domínios
-distintos** — quase tudo é domínio de um servidor só. Cortar dois terços não
-transforma cauda longa em curadoria, então esse sinal ficou como selo secundário
-no cartão (*domínio verificado*), e não como filtro.
 
 ### O catálogo é copiado, e o que isso custa
 
-A tela **não** lê a origem a cada abertura. Isso foi tentado e caiu contra a
-medição: são 29.610 servidores em páginas de 100, a varredura inteira leva ~16
-minutos, e requisições avulsas ao registry chegaram a passar de 40 segundos sem
-responder. A tela herdava a latência e a instabilidade de um terceiro a cada
-tecla digitada.
-
-A instabilidade não é teórica: com um prazo de 15 s por requisição, uma varredura
-ao vivo **morreu na página 235 de 297**, com as três tentativas daquela página
-estourando. Daí o prazo por página ser de **45 s** — quem espera é a goroutine de
-fundo, e ela tem paciência de sobra — e a varredura inteira ter um teto de **30
-minutos**, para paciência por página não virar varredura eterna. Com esses dois
-números, a varredura completa gravou **28.067 servidores em 15m57s**.
-
-Existe cópia local em SQLite, refeita **a cada 12 horas** por uma goroutine de
-fundo (`internal/biblioteca/sincronizador.go`) — a única parte do pacote que
-fala com a rede. A tela lê o banco, e é por isso que a busca responde na hora e
-continua funcionando com a internet fora: medido com 30 mil linhas, **de 30 a 96
-ms** por busca. A troca do catálogo inteiro segura o escritor único do SQLite por
-**~640 ms**, duas vezes por dia.
+A tela **não** lê a origem a cada abertura. Raspar sob demanda traz latência e
+instabilidade de quem consultaria um terceiro a cada busca. Em vez disso, existe
+cópia local em SQLite, refeita **a cada 12 horas** por uma goroutine de fundo
+(`internal/biblioteca/sincronizador.go`) — a única parte do pacote que fala com
+a rede. A tela lê o banco, e é por isso que a busca responde na hora e continua
+funcionando com a internet fora: o catálogo tem ~650 linhas, não os milhares de
+uma origem sem curadoria.
 
 O preço é explícito, e está escrito na tela: **o catálogo tem idade**. Um
 servidor publicado hoje não aparece até a próxima varredura. A idade fica visível
@@ -330,38 +267,52 @@ servidor que existe e concluir que o patchbay está quebrado.
 Três garantias do lado da escrita:
 
 - Varredura que volta **vazia não apaga** o catálogo. Zero servidor é sempre
-  defeito, e trocar uma foto boa por uma vazia deixaria a tela pior do que a
-  origem estar fora do ar.
+  defeito.
 - Varredura que **falha no meio não toca** no catálogo: a cópia anterior continua
   servindo, e a tela mostra a idade dela junto com o erro da última tentativa.
 - A troca é uma transação só, e é **troca, não soma**: quem estiver com a tela
-  aberta vê a foto anterior inteira e passa a ver a nova inteira, e o servidor
-  que saiu do registry sai daqui também.
+  aberta vê o catálogo anterior inteiro e passa a ver o novo inteiro.
 
 A primeira varredura só acontece no boot quando o que está no banco venceu ou não
-existe — reiniciar o patchbay não custa trezentas requisições ao registry.
+existe.
 
 ### O que entra na cópia, e o que fica de fora
 
-Um servidor só é gravado se o patchbay souber cadastrá-lo. Remoto ganha do
-pacote, porque é o upstream que o gateway alcança pela rede sem nada instalado ao
-lado; só quando não há remoto utilizável é que o processo local entra.
+Todo item que a página de índice lista entra no catálogo — a biblioteca não
+recusa servidor por transporte desconhecido ou por faltar comando.
 
-- Transporte que este código não conhece **não** vira `http` por padrão: seria um
-  upstream que falha no primeiro handshake.
-- Só URL `https`: um endpoint em texto claro carregaria o bearer do upstream sem
-  cifra.
-- No STDIO, o comando sai de `runtimeHint` ou de uma tabela de três executores
-  previsíveis (`npm→npx`, `pypi→uvx`, `nuget→dnx`). Fora daí — `oci`, `mcpb` — o
-  comando depende de flags que a origem não declara, e montá-lo seria adivinhar:
-  esses pacotes são descartados. A única coisa acrescentada é o `-y` do `npx`,
-  porque sem ele o `npx` pergunta e um upstream STDIO roda sem terminal para
-  responder.
-
-Servidor sem conexão utilizável não aparece na lista. Um cartão com botão
-"adicionar" que abre um formulário vazio é pior do que o servidor não aparecer,
-porque o admin só descobriria no fim. Na varredura de 2026-09-09 isso descartou
-1.543 dos 29.610 — os 28.067 que ficaram são os que o patchbay sabe cadastrar.
+- **Servidor cuja página não publica comando** entra como STDIO com comando vazio: o
+  cartão mostra "a página deste servidor não publica comando nem endpoint reconhecível — abra a página e cadastre à mão" e "Adicionar" abre o formulário com o
+  nome preenchido e o comando em branco, para o admin completar ou descartar.
+  Snippet que traz `command` sem `args` também é aceito.
+- **Site** é o primeiro link externo (`target="_blank"`) que aparece até 4 KB
+  depois da descrição — não o campo `url:` do payload da página, que costuma
+  apontar para o site do fornecedor, não para o servidor.
+- **Descrição** continua opcional: item sem descrição entra com o campo vazio
+  e é contado, não recusado.
+- **Remoto** exige sempre uma URL `https` terminando em `/mcp` ou `/sse`, e o
+  servidor tem de se anunciar como remoto por um destes dois caminhos — o
+  rótulo sozinho já basta, sem depender da descrição usar palavras de sinal:
+  (a) a URL vem precedida, em até 120 caracteres, por um rótulo de conexão
+  (por exemplo "endpoint", "conecte-se em", "URL de conexão"), **ou** (b) a
+  descrição do próprio servidor sinaliza transporte remoto (menções a
+  "servidor remoto", "streamable HTTP" e afins) **e** cita essa mesma URL. Um
+  endpoint citado como removido, legado ou descontinuado é descartado mesmo
+  batendo com essas regras. Sem URL válida, o item entra como STDIO sem
+  comando (regra acima). Transporte vira `sse` quando o caminho termina em
+  `/sse`, senão `http`; `OAuth` só é marcado quando a mesma região do texto
+  cita OAuth.
+- **Tabela de conexão tem precedência sobre rótulo e descrição.** Quando a
+  página de detalhe traz uma tabela cujo cabeçalho tem uma coluna "URL" ou
+  "endpoint", as URLs `https` terminadas em `/mcp` ou `/sse` dessa coluna já
+  ancoram o servidor como remoto — sem precisar de rótulo nem de sinal na
+  descrição. Link de `github.com`, `gitlab.com` ou `bitbucket.org` nunca vira
+  endpoint, mesmo em outra coluna da mesma tabela, e a guarda de
+  removido/legado vale célula a célula. Com várias linhas, a URL do servidor é
+  a da linha marcada "recomendado" (ou a primeira), e **todos** os endpoints
+  da tabela ficam guardados, na ordem da página. Caso medido: a página do
+  Cloudflare publica 17 endpoints numa tabela dessas, e a URL escolhida é
+  `https://mcp.cloudflare.com/mcp`.
 
 ## Composição do endpoint
 
@@ -726,7 +677,7 @@ O que se comprou com isso: **MCP de processo local passa a funcionar no
 container**. Antes, `npx` e `uvx` não existiam ali, e todo upstream STDIO
 entrava em backoff eterno com `executable file not found in $PATH`; enquanto a
 biblioteca só listava servidores remotos ninguém tropeçava nisso, mas ela passou
-a oferecer os ~11 mil que só existem como pacote.
+a oferecer centenas de servidores que só existem como pacote npm/PyPI.
 
 Dois custos que ficam, ditos aqui e não descobertos depois:
 
