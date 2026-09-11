@@ -59,13 +59,12 @@ func subirUI(t *testing.T, opcoes ...OpcaoApp) uiDeTeste {
 	ctx, cancelar := context.WithCancel(context.Background())
 	t.Cleanup(cancelar)
 
-	// A biblioteca varre o registry no boot quando o catálogo local está vazio —
-	// e num t.TempDir() ele está sempre. Sem um padrão aqui, cada teste de UI
-	// dispararia trezentas requisições ao registry de verdade só por subir o
-	// patchbay. O padrão vem antes das opções do chamador, então quem precisa de
-	// um catálogo específico continua trocando a origem.
+	// A biblioteca varre o acervo oficial no boot quando o catálogo local está
+	// vazio — e num t.TempDir() ele está sempre. Sem um padrão aqui, cada teste
+	// de UI dispararia centenas de requisições ao mcpservers.org de verdade só
+	// por subir o patchbay. O padrão vem antes das opções do chamador, então
+	// quem precisa de um catálogo específico continua trocando a origem.
 	opcoes = append([]OpcaoApp{
-		ComOrigemDaBiblioteca(registryMudo(t)),
 		ComCuradoriaDaBiblioteca(curadoriaMudaDeTeste(t)),
 		SemSementeDaBiblioteca(),
 	}, opcoes...)
@@ -118,52 +117,19 @@ func subirUI(t *testing.T, opcoes ...OpcaoApp) uiDeTeste {
 	}
 }
 
-// registryMudo é uma origem que existe e não publica nada.
+// curadoriaMudaDeTeste é a origem da biblioteca, o acervo oficial do
+// mcpservers.org, servindo um índice que existe e não publica nada.
 //
-// Devolve página vazia: o sincronizador a recusa como catálogo (varredura vazia
-// nunca apaga nada) e registra a falha, que é exatamente o estado de "o catálogo
-// ainda não chegou" — o mesmo que o teste veria com a internet fora, e sem sair
-// da máquina.
-func registryMudo(t *testing.T) string {
-	t.Helper()
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"servers":[],"metadata":{}}`))
-	}))
-	t.Cleanup(ts.Close)
-	return ts.URL
-}
-
-// curadoriaMudaDeTeste é a segunda origem da biblioteca, local e mínima.
-//
-// Mínima e não vazia: a varredura recusa uma curadoria que não trouxe nada — é
-// como ela distingue "o site mudou" de "não há servidor curado" —, então um
-// servidor só é o que a mantém acima do piso sem interferir em nada.
+// Página vazia e não ausente: o sincronizador recusa a lista sem nenhum
+// servidor como catálogo (varredura vazia nunca apaga nada) e registra a
+// falha, que é exatamente o estado de "o catálogo ainda não chegou" — o mesmo
+// que o teste veria com a internet fora, e sem sair da máquina.
 func curadoriaMudaDeTeste(t *testing.T) string {
 	t.Helper()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /pt-BR/remote-mcp-servers", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`<html><body><main>` +
-			`<a href="/pt-BR/remote-mcp-servers/exemplo">` +
-			`<div class="truncate">Exemplo</div></a></main></body></html>`))
-	})
-	mux.HandleFunc("GET /pt-BR/remote-mcp-servers/exemplo", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`<html><body><h1>Exemplo</h1><p>servidor de teste</p>` +
-			`<h2>Detalhes da conexão</h2><code>https://exemplo.invalido/mcp</code>` +
-			`<dl><dt>Transporte</dt><dd>Streamable HTTP</dd>` +
-			`<dt>Autenticação</dt><dd>Aberto — sem autenticação</dd></dl></body></html>`))
-	})
-	// O acervo /official é a terceira lista que a varredura percorre. Índice
-	// ausente derruba a varredura inteira, então todo dublê precisa de um.
 	mux.HandleFunc("GET /pt-BR/official", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`<html><body><a href="/pt-BR/servers/exemplo">Exemplo</a></body></html>`))
-	})
-	mux.HandleFunc("GET /pt-BR/servers/{slug...}", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`<html><body><h1>Exemplo Oficial</h1><p>processo local</p>` +
-			`<pre>{&quot;command&quot;: &quot;npx&quot;, &quot;args&quot;: ` +
-			`[&quot;-y&quot;, &quot;exemplo-oficial-mcp&quot;]}</pre></body></html>`))
+		_, _ = w.Write([]byte(`<html><body></body></html>`))
 	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)

@@ -18,88 +18,61 @@ import (
 // como ser uma constante compartilhada, e o compilador não o confere.
 //
 // Estes testes são esse contrato. Eles sobem o patchbay inteiro contra um
-// registry de mentira, esperam a primeira varredura povoar o catálogo local,
+// mcpservers.org de mentira, esperam a primeira varredura povoar o catálogo,
 // clicam no botão que a biblioteca desenha e conferem que o formulário do outro
 // lado volta preenchido. Se alguém renomear um parâmetro em qualquer um dos dois
 // lados, falha aqui.
 
-// A origem de mentira serve o mínimo do esquema do registry que o pacote lê. As
-// amostras de resposta de verdade ficam em internal/biblioteca/testdata, onde a
-// tradução é testada; aqui o que está sob teste é a costura entre as telas.
+// bibliotecaFalsa publica três servidores no acervo /official do
+// mcpservers.org: dois locais, cada um com um comando aproveitável, e um
+// remoto, que publica endpoint e OAuth do jeito que a origem escreve.
 //
-// São dois servidores porque o contrato tem dois lados: um remoto, que preenche
-// url, e um local, que preenche comando e argumentos.
-const catalogoFalso = `{"servers":[
-	{"server":{
-		"name":"com.acme/mcp","title":"Acme","version":"1.2.3",
-		"description":"Pedidos, notas e clientes",
-		"remotes":[{"type":"streamable-http","url":"https://mcp.acme.example/mcp"}]
-	}},
-	{"server":{
-		"name":"com.acme/local","title":"Acme Local","version":"0.4.0",
-		"description":"O mesmo, como processo local",
-		"packages":[{
-			"registryType":"npm","identifier":"acme-mcp","version":"0.4.0",
-			"runtimeHint":"npx","transport":{"type":"stdio"},
-			"runtimeArguments":[{"type":"positional","value":"-y"}]
-		}]
-	}}
-],"metadata":{}}`
-
-// curadoriaFalsa publica o mesmo endpoint que o registry de mentira, declarando
-// OAuth.
-//
-// É a razão de existirem duas origens: o esquema do registry não tem campo de
-// autenticação, e sem esta segunda fonte o admin cadastraria em credencial
-// estática um servidor que só fala OAuth — e descobriria no primeiro 401.
-func curadoriaFalsa(t *testing.T) string {
+// As amostras de resposta de verdade ficam em internal/biblioteca/testdata,
+// onde a tradução é testada; aqui o que está sob teste é a costura entre as
+// telas. São três servidores porque cada teste precisa achar o seu item na
+// lista sem depender do que os outros fazem com o deles.
+func bibliotecaFalsa(t *testing.T) string {
 	t.Helper()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /pt-BR/remote-mcp-servers", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /pt-BR/official", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`<html><body><main>` +
-			`<a href="/pt-BR/remote-mcp-servers/acme"><div class="truncate">Acme</div></a>` +
+			`<a href="/pt-BR/servers/acme-mcp">Acme</a>` +
+			`<a href="/pt-BR/servers/acme-local">Acme Local</a>` +
+			`<a href="/pt-BR/servers/acme-remoto">Acme Remoto</a>` +
 			`</main></body></html>`))
 	})
-	mux.HandleFunc("GET /pt-BR/remote-mcp-servers/acme", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`<html><body><h1>Acme</h1><p>Pedidos, notas e clientes</p>` +
-			`<h2>Detalhes da conexão</h2><code>https://mcp.acme.example/mcp</code>` +
-			`<dl><dt>Transporte</dt><dd>Streamable HTTP</dd>` +
-			`<dt>Autenticação</dt><dd>OAuth</dd></dl></body></html>`))
-	})
-	// O acervo /official é a terceira lista que a varredura percorre. Índice
-	// ausente derruba a varredura inteira, então todo dublê precisa de um.
-	mux.HandleFunc("GET /pt-BR/official", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`<html><body><a href="/pt-BR/servers/exemplo">Exemplo</a></body></html>`))
-	})
-	mux.HandleFunc("GET /pt-BR/servers/{slug...}", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`<html><body><h1>Exemplo Oficial</h1><p>processo local</p>` +
-			`<pre>{&quot;command&quot;: &quot;npx&quot;, &quot;args&quot;: ` +
-			`[&quot;-y&quot;, &quot;exemplo-oficial-mcp&quot;]}</pre></body></html>`))
+	mux.HandleFunc("GET /pt-BR/servers/{slug...}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.PathValue("slug") {
+		case "acme-mcp":
+			_, _ = w.Write([]byte(`<html><body><h1>Acme</h1><p>Pedidos, notas e clientes</p>` +
+				`<pre>{&quot;command&quot;: &quot;npx&quot;, &quot;args&quot;: ` +
+				`[&quot;-y&quot;, &quot;acme-mcp&quot;]}</pre></body></html>`))
+		case "acme-local":
+			_, _ = w.Write([]byte(`<html><body><h1>Acme Local</h1><p>O mesmo, como processo local</p>` +
+				`<pre>{&quot;command&quot;: &quot;npx&quot;, &quot;args&quot;: ` +
+				`[&quot;-y&quot;, &quot;acme-mcp@0.4.0&quot;]}</pre></body></html>`))
+		case "acme-remoto":
+			// A forma em que a origem publica um remoto na lista oficial: sem
+			// bloco estruturado, o que há é a prosa da descrição dizendo que o
+			// servidor é remoto, com que autenticação, e onde conectar.
+			_, _ = w.Write([]byte(`<html><body><h1>Acme Remoto</h1>` +
+				`<p>Servidor MCP remoto (HTTP streamable, OAuth 2.1) para pedidos e notas. ` +
+				`Conecte-se em https://exemplo.test/api/mcp</p></body></html>`))
+		default:
+			http.NotFound(w, r)
+		}
 	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	return ts.URL + "/pt-BR"
 }
 
-func origemFalsa(t *testing.T) string {
-	t.Helper()
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v0/servers", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(catalogoFalso))
-	})
-	ts := httptest.NewServer(mux)
-	t.Cleanup(ts.Close)
-	return ts.URL
-}
-
 // esperarBiblioteca espera a primeira varredura de fundo povoar o catálogo e
 // devolve a tela já com ele.
 //
-// A varredura é assíncrona por desenho — em produção ela leva minutos contra o
-// registry de verdade. Espera por sinal, nunca pelo relógio: o observador é
+// A varredura é assíncrona por desenho — em produção ela leva minutos contra a
+// origem de verdade. Espera por sinal, nunca pelo relógio: o observador é
 // registrado em subirUI, antes de Iniciar, que é onde a varredura começa.
 func esperarBiblioteca(t *testing.T, u uiDeTeste) string {
 	t.Helper()
@@ -111,7 +84,7 @@ func esperarBiblioteca(t *testing.T, u uiDeTeste) string {
 	}
 	pagina := corpo(t, u.abrir(t, webui.RotaBiblioteca))
 	if !strings.Contains(pagina, "Acme") {
-		t.Fatal("a varredura terminou e a tela não mostra o que o registry publicou")
+		t.Fatal("a varredura terminou e a tela não mostra o que a origem publicou")
 	}
 	return pagina
 }
@@ -119,7 +92,7 @@ func esperarBiblioteca(t *testing.T, u uiDeTeste) string {
 func TestBibliotecaApareceNoPainel(t *testing.T) {
 	t.Parallel()
 
-	u := subirUI(t, ComOrigemDaBiblioteca(origemFalsa(t)))
+	u := subirUI(t, ComCuradoriaDaBiblioteca(bibliotecaFalsa(t)))
 	u.setup(t)
 
 	res := u.abrir(t, webui.RotaBiblioteca)
@@ -130,9 +103,6 @@ func TestBibliotecaApareceNoPainel(t *testing.T) {
 	if !strings.Contains(pagina, `href="`+webui.RotaBiblioteca+`"`) {
 		t.Error("a navegação do painel não tem o item Biblioteca")
 	}
-	if !strings.Contains(pagina, "registry.modelcontextprotocol.io") {
-		t.Error("a tela não diz de onde a lista veio")
-	}
 	if !strings.Contains(pagina, "Catálogo local:") {
 		t.Error("a tela não diz de quando é a cópia")
 	}
@@ -141,7 +111,7 @@ func TestBibliotecaApareceNoPainel(t *testing.T) {
 func TestBibliotecaExigeSessao(t *testing.T) {
 	t.Parallel()
 
-	u := subirUI(t, ComOrigemDaBiblioteca(origemFalsa(t)))
+	u := subirUI(t, ComCuradoriaDaBiblioteca(bibliotecaFalsa(t)))
 	u.setup(t)
 	// Sem o setup a tela nem existiria; o que se testa é o portão, então a
 	// sessão é descartada depois de criada.
@@ -174,50 +144,81 @@ func linkDeAdicionar(t *testing.T, pagina, nome string) string {
 // TestAdicionarDaBibliotecaAbreFormularioPreenchido é o teste de ponta a ponta
 // do "só adicionar": ele não constrói o caminho, tira do HTML o href do botão e
 // o segue até o formulário.
+//
+// São os dois lados do contrato, e por isso os dois estão aqui: o item local,
+// que enche tipo, nome, comando e args; e o remoto, que em vez da execução
+// manda a URL e o modo de credencial — com o radio de OAuth já marcado, que é a
+// única parte do formulário que a biblioteca consegue adivinhar com segurança.
 func TestAdicionarDaBibliotecaAbreFormularioPreenchido(t *testing.T) {
 	t.Parallel()
 
-	u := subirUI(t,
-		ComOrigemDaBiblioteca(origemFalsa(t)),
-		ComCuradoriaDaBiblioteca(curadoriaFalsa(t)))
+	u := subirUI(t, ComCuradoriaDaBiblioteca(bibliotecaFalsa(t)))
 	u.setup(t)
 
 	pagina := esperarBiblioteca(t, u)
 	// O cliente segue o 303, então o que chega é o formulário de upstream.
-	res := u.abrir(t, linkDeAdicionar(t, pagina, "com.acme/mcp"))
+	res := u.abrir(t, linkDeAdicionar(t, pagina, "acme-mcp"))
 	if !strings.HasPrefix(res.Request.URL.Path, webui.RotaUpstreams+"/novo") {
 		t.Fatalf("adicionar caiu em %q, quer o formulário de upstream novo", res.Request.URL.Path)
 	}
 	form := corpo(t, res)
 	casos := map[string]string{
-		"nome": `value="Acme"`,
-		"url":  `value="https://mcp.acme.example/mcp"`,
+		"tipo":    `name="tipo" value="stdio"`,
+		"nome":    `value="Acme"`,
+		"comando": `value="npx"`,
 	}
 	for campo, quer := range casos {
 		if !strings.Contains(form, quer) {
 			t.Errorf("o formulário não veio com %s preenchido (queria %s)", campo, quer)
 		}
 	}
+	// Os argumentos vão na caixa de texto, um por linha.
+	if !strings.Contains(form, "-y\nacme-mcp") {
+		t.Error("o formulário não veio com os argumentos preenchidos, na ordem")
+	}
 
-	// O modo é radio, e o preenchido é o que vem marcado. Sem isto o admin
-	// salvaria em credencial estática um servidor que só fala OAuth — e essa é
-	// a informação que só a curadoria tem.
-	if !strings.Contains(form, `value="oauth"`) || !strings.Contains(form, "checked") {
-		t.Error("o formulário não veio com o modo OAuth marcado")
+	// O outro lado: o remoto não tem comando nenhum para mandar, e o que o
+	// formulário precisa receber é a URL e o modo de credencial.
+	resRemoto := u.abrir(t, linkDeAdicionar(t, pagina, "acme-remoto"))
+	if !strings.HasPrefix(resRemoto.Request.URL.Path, webui.RotaUpstreams+"/novo") {
+		t.Fatalf("adicionar caiu em %q, quer o formulário de upstream novo", resRemoto.Request.URL.Path)
+	}
+	formRemoto := corpo(t, resRemoto)
+	if !strings.Contains(formRemoto, `value="https://exemplo.test/api/mcp"`) {
+		t.Error("o formulário não veio com a url do remoto preenchida")
+	}
+	// O radio de OAuth marcado é o que prova que o modo atravessou: o
+	// formulário desenha os dois modos sempre, e só um deles vem checked.
+	oauth := strings.Index(formRemoto, `value="oauth"`)
+	if oauth < 0 {
+		t.Fatal("o formulário não trouxe o modo oauth")
+	}
+	if !strings.Contains(campoDoRadio(formRemoto, oauth), "checked") {
+		t.Error("o formulário veio com o modo oauth desmarcado, e a curadoria declarou OAuth")
 	}
 }
 
-// TestAdicionarDeServidorLocalPreencheAExecucao é o outro lado do contrato: o
-// registry publica milhares de servidores que só existem como pacote, e para
-// eles o que o formulário precisa receber é comando e argumentos, não URL.
+// campoDoRadio devolve o resto do <input> que começa em pos, para se afirmar
+// sobre os atributos daquele radio e não sobre os do vizinho.
+func campoDoRadio(form string, pos int) string {
+	fim := strings.Index(form[pos:], ">")
+	if fim < 0 {
+		return form[pos:]
+	}
+	return form[pos : pos+fim]
+}
+
+// TestAdicionarDeServidorLocalPreencheAExecucao é o mesmo contrato sobre outra
+// linha do catálogo: o que o formulário precisa receber é comando e
+// argumentos, não URL.
 func TestAdicionarDeServidorLocalPreencheAExecucao(t *testing.T) {
 	t.Parallel()
 
-	u := subirUI(t, ComOrigemDaBiblioteca(origemFalsa(t)))
+	u := subirUI(t, ComCuradoriaDaBiblioteca(bibliotecaFalsa(t)))
 	u.setup(t)
 
 	pagina := esperarBiblioteca(t, u)
-	res := u.abrir(t, linkDeAdicionar(t, pagina, "com.acme/local"))
+	res := u.abrir(t, linkDeAdicionar(t, pagina, "acme-local"))
 	if !strings.HasPrefix(res.Request.URL.Path, webui.RotaUpstreams+"/novo") {
 		t.Fatalf("adicionar caiu em %q, quer o formulário de upstream novo", res.Request.URL.Path)
 	}
@@ -247,7 +248,7 @@ func TestBibliotecaComOrigemForaNaoDerrubaOPainel(t *testing.T) {
 	}))
 	t.Cleanup(fora.Close)
 
-	u := subirUI(t, ComOrigemDaBiblioteca(fora.URL))
+	u := subirUI(t, ComCuradoriaDaBiblioteca(fora.URL))
 	u.setup(t)
 
 	res := u.abrir(t, webui.RotaBiblioteca)
@@ -335,7 +336,7 @@ func TestPreenchimentoDeArgsRecusaOQuePartiriaACaixa(t *testing.T) {
 func TestAtualizarBibliotecaPassaPelaProtecaoDeCSRF(t *testing.T) {
 	t.Parallel()
 
-	u := subirUI(t, ComOrigemDaBiblioteca(origemFalsa(t)))
+	u := subirUI(t, ComCuradoriaDaBiblioteca(bibliotecaFalsa(t)))
 	u.setup(t)
 	esperarBiblioteca(t, u)
 
