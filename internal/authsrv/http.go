@@ -64,6 +64,7 @@ func (h *HTTP) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc(RotaMetadataOIDCEndpoint, h.metadataAS)
 	mux.HandleFunc(RotaMetadataOIDCSufixo, h.metadataAS)
 	mux.HandleFunc(RotaMetadataRecurso, h.metadataRecurso)
+	mux.HandleFunc(RotaMetadataRecursoSufixo, h.metadataRecurso)
 	mux.HandleFunc(RotaMetadataRecursoRaiz, h.metadataRecursoRaiz)
 	mux.HandleFunc(RotaToken, h.token)
 	mux.HandleFunc(RotaRevogar, h.revogar)

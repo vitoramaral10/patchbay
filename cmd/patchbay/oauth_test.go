@@ -567,6 +567,13 @@ func TestMetadataBemFormada(t *testing.T) {
 				caminho:      "/.well-known/oauth-protected-resource/mcp/" + p.endpointPessoal,
 				querResource: p.recursoPessoal,
 			},
+			// A forma que anexa o sufixo depois do caminho do recurso, alias do
+			// caso "com slug": é a que o cliente monta quando concatena o
+			// sufixo ao fim da URL do endpoint em vez de inserir o caminho.
+			"sufixo depois do recurso": {
+				caminho:      "/mcp/" + p.endpointPessoal + "/.well-known/oauth-protected-resource",
+				querResource: p.recursoPessoal,
+			},
 			"fallback na raiz": {
 				caminho:      "/.well-known/oauth-protected-resource",
 				querResource: p.urlPublica,

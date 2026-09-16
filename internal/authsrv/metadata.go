@@ -43,6 +43,16 @@ const (
 	// descoberta; este é o que responde quando ele bate ali direto, sem ainda
 	// saber qual slug quer.
 	RotaMetadataRecursoRaiz = "/.well-known/oauth-protected-resource"
+	// RotaMetadataRecursoSufixo é a mesma metadata RFC 9728 na forma que anexa
+	// o sufixo well-known *depois* do caminho do recurso, espelhando o que
+	// RotaMetadataOIDCSufixo já faz para a descoberta do AS.
+	//
+	// O RFC 9728 §3.1 manda inserir o caminho entre o sufixo e o host, que é o
+	// que RotaMetadataRecurso serve; esta é a forma que o cliente monta quando
+	// concatena o sufixo ao fim da URL do recurso, do jeito que o OIDC ensinou.
+	// É alias do mesmo documento, pelo mesmo motivo dos outros: quem chega aqui
+	// está descobrindo, e um 404 no meio da descoberta é o cliente desistindo.
+	RotaMetadataRecursoSufixo = "/mcp/{endpoint}/.well-known/oauth-protected-resource"
 	// RotaAutorizar é o authorize endpoint. Fica atrás da sessão de admin.
 	RotaAutorizar = "/oauth/authorize"
 	// RotaToken é o token endpoint.
