@@ -762,6 +762,87 @@ func TestAutorizacaoSemSessaoDeAdminVaiParaOLogin(t *testing.T) {
 	}
 }
 
+// TestAutorizacaoCrossSiteChegaAoConsentimento trava a decisão de cookie que o
+// consentimento depende: o cookie de sessão do admin é SameSite=Lax, então ele
+// viaja na navegação de topo por GET vinda de outro site — que é exatamente o
+// que o cliente OAuth faz ao mandar o navegador para o authorize endpoint.
+//
+// Com SameSite=Strict o cookie não viajaria, o portão responderia o 303 do
+// login, e o cliente OAuth recusaria o fluxo por receber um redirecionamento
+// para a tela do provedor onde esperava code ou erro OAuth. Não é específico de
+// um cliente: é incompatibilidade com qualquer um. A outra metade da trava está
+// em internal/admin: conferirCookie assevera o SameSite do Set-Cookie do login.
+func TestAutorizacaoCrossSiteChegaAoConsentimento(t *testing.T) {
+	t.Parallel()
+
+	p := subirPatchbayOAuth(t, upstreamFalso(t))
+	alvo := p.urlPublica + authsrv.RotaAutorizar + "?" + p.pedidoPadrao().Encode()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, alvo, nil)
+	if err != nil {
+		t.Fatalf("montar requisição: erro = %v, quer nil", err)
+	}
+	req.AddCookie(p.cookie)
+	// O que o navegador manda numa navegação de topo iniciada por outro site —
+	// e o que a proteção de origem do net/http lê para decidir.
+	req.Header.Set("Origin", "https://claude.ai")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+
+	res, err := p.cliente.Do(req)
+	if err != nil {
+		t.Fatalf("requisição: erro = %v, quer nil", err)
+	}
+	t.Cleanup(func() { _ = res.Body.Close() })
+
+	if res.StatusCode != http.StatusOK {
+		corpo, _ := io.ReadAll(res.Body)
+		t.Fatalf("authorize cross-site com sessão: status = %d, quer 200 com o consentimento (corpo: %.300q)",
+			res.StatusCode, corpo)
+	}
+	corpo, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("ler corpo: erro = %v, quer nil", err)
+	}
+	if !strings.Contains(string(corpo), "claude.ai de teste") {
+		t.Errorf("corpo = %.300q, quer a tela de consentimento", corpo)
+	}
+}
+
+// TestConsentimentoCrossSiteRecusado é o contrapeso do teste acima: o POST da
+// decisão continua barrado quando vem de outro site. Afrouxar o cookie para Lax
+// não pode ter aberto a porta que a proteção de CSRF fecha — Lax não manda o
+// cookie em POST cross-site, e a proteção de origem do net/http recusa antes
+// disso.
+func TestConsentimentoCrossSiteRecusado(t *testing.T) {
+	t.Parallel()
+
+	p := subirPatchbayOAuth(t, upstreamFalso(t))
+	corpo := p.pedidoPadrao()
+	corpo.Set("decisao", "aceitar")
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		p.urlPublica+authsrv.RotaAutorizar, strings.NewReader(corpo.Encode()))
+	if err != nil {
+		t.Fatalf("montar requisição: erro = %v, quer nil", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(p.cookie)
+	req.Header.Set("Origin", "https://claude.ai")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+
+	res, err := p.cliente.Do(req)
+	if err != nil {
+		t.Fatalf("requisição: erro = %v, quer nil", err)
+	}
+	t.Cleanup(func() { _ = res.Body.Close() })
+
+	if res.StatusCode != http.StatusForbidden {
+		t.Errorf("POST de consentimento cross-site: status = %d, quer 403", res.StatusCode)
+	}
+}
+
 // --- token endpoint ---
 
 func TestTokenEndpoint(t *testing.T) {
