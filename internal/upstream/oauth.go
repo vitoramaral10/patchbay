@@ -133,10 +133,22 @@ type ClienteOAuth struct {
 	// Issuer é o issuer do AS a que estas credenciais pertencem. Vazio desliga a
 	// conferência; preenchido, o SDK recusa usá-las com outro AS (SEP-2352).
 	Issuer string
+	// RedirectLoopback é o redirect_uri de loopback registrado no provedor,
+	// quando ele só aceita loopback — a Canva é o caso (fatia 15). Vazio é o
+	// normal: o redirect é o callback público do patchbay.
+	//
+	// Ninguém escuta nesse endereço. Ele existe porque o provedor exige que o
+	// redirect_uri da requisição de autorização e o da troca por token sejam
+	// byte a byte o que está registrado lá; quem recebe o code é a barra de
+	// endereços do navegador do admin, e de lá ele é colado na UI.
+	RedirectLoopback string
 }
 
 // Definido informa se há cliente pré-registrado configurado.
 func (c ClienteOAuth) Definido() bool { return c.ClientID != "" }
+
+// UsaLoopback informa se o consentimento deste upstream termina em colar a URL.
+func (c ClienteOAuth) UsaLoopback() bool { return c.RedirectLoopback != "" }
 
 // Concessao é o resultado de um consentimento concluído: o token mais o mínimo
 // para renová-lo sem refazer a descoberta.
@@ -179,6 +191,11 @@ type EstadoOAuth struct {
 	Consentido bool
 	ExpiraEm   time.Time
 	RefreshEm  time.Time
+	// RedirectLoopback é o redirect de loopback configurado, quando há um. Não é
+	// segredo: é o endereço que o admin registrou no provedor, e mostrá-lo na
+	// tela é o que permite conferir que ele bate byte a byte com o cadastro de
+	// lá — que é a causa número um de "invalid_grant" nesse fluxo.
+	RedirectLoopback string
 }
 
 // RotuloDoRegistro traduz o registro no texto da tela.

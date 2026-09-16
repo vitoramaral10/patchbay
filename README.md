@@ -5,21 +5,22 @@ serve a um cliente de IA como se fossem um só.
 
 Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 
-> Estado: fatias **1-14 e 16** do épico entregues — catálogo e endpoint,
+> Estado: as **16 fatias** do épico entregues — catálogo e endpoint,
 > resiliência de upstream, composição fina do endpoint, upstream STDIO com
 > supervisor de processo, segredos cifrados em repouso, **OAuth de upstream
-> com consentimento pela tela, refresh serializado, CIMD e registro
-> dinâmico**, a **sonda de saúde funcional** (um `tools/call` de verdade por
-> servidor, opt-in), o authorization server completo (CIMD, DCR e redirect URI
+> com consentimento pela tela, refresh serializado, CIMD, registro
+> dinâmico e o provedor que só aceita loopback**, a **sonda de saúde
+> funcional** (um `tools/call` de verdade por servidor, opt-in), o authorization server completo (CIMD, DCR e redirect URI
 > de loopback incluídos), o **transporte SSE legado**, a observabilidade
 > (trilha por chamada, tela filtrável, log ao vivo por SSE e redação de
 > segredo), o export/import da configuração em YAML e o empacotamento (imagem
 > Docker multi-arch com Node e uv para MCP local).
 >
-> Fora da v1: a **fatia 15** (provedor loopback-only, tipo Canva) foi adiada por
-> decisão do dono em 2026-09-08 — redirect só-loopback exigiria um binário
-> auxiliar na máquina do admin ou colar o `code` à mão na UI, e nenhuma fonte da
-> pesquisa cobre esse cenário.
+> A **fatia 15** (provedor loopback-only, tipo Canva) entrou em 2026-09-16, pela
+> segunda das duas saídas que o estudo previa: colar na UI a URL que o provedor
+> devolveu. A primeira — um binário auxiliar na máquina do admin — não foi
+> escrita, e não precisa ser. Ver
+> [Provedor que só aceita loopback](#provedor-que-só-aceita-loopback).
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
@@ -316,9 +317,11 @@ recusa servidor por transporte desconhecido ou por faltar comando.
 
 ## Adicionar colando o comando de instalação
 
-Quase todo servidor MCP publica a instalação como uma linha só:
+Quase todo servidor MCP publica a instalação como uma linha só, num dos dois
+dialetos que circulam hoje:
 
     claude mcp add --transport http --scope user exemplo https://mcp.exemplo.com/mcp --header "Authorization: Bearer o-seu-token"
+    npx add-mcp https://mcp.exemplo.com/mcp
 
 Transcrever essa linha para o formulário é trabalho mecânico com quatro chances
 de errar — transporte, URL, nome do header e token —, e nenhum dos quatro dá
@@ -326,12 +329,41 @@ erro de formulário: dá MCP degradado depois. A caixa no topo de `/admin/mcps`
 troca isso por um Ctrl+V: cole a linha, clique em **Criar MCP**, e o cadastro
 existe.
 
-O que o patchbay lê: `--transport` (e, quando ele falta, o formato do destino
-decide), `--header`, `--env`, `--scope`, o `--` que separa as opções do processo
-a lançar, aspas simples e duplas, quebra de linha com contrabarra, e o `$` do
-prompt que vem junto no copiar-colar. Opção que ele não conhece é **recusa**, e
-não descarte silencioso: uma flag nova pode ser a que muda o significado do
-resto da linha.
+O que o patchbay lê do `claude mcp add`: `--transport` (e, quando ele falta, o
+formato do destino decide), `--header`, `--env`, `--scope`, o `--` que separa as
+opções do processo a lançar, aspas simples e duplas, quebra de linha com
+contrabarra, e o `$` do prompt que vem junto no copiar-colar. Opção que ele não
+conhece é **recusa**, e não descarte silencioso: uma flag nova pode ser a que
+muda o significado do resto da linha.
+
+### O dialeto do `add-mcp`
+
+O [`add-mcp`](https://www.npmjs.com/package/add-mcp) é um CLI do npm que grava a
+configuração de MCP em vinte e poucos agentes de código. Ele não escreve no
+patchbay e nunca vai escrever — o que se aproveita é a linha, que descreve o
+mesmo servidor. `npx`, `npx -y`, `bunx`, `pnpm dlx` e `yarn dlx` na frente são
+aceitos.
+
+A forma é `npx add-mcp <url-ou-pacote> [opções]`, com um posicional só. O que
+muda em relação ao dialeto do Claude Code:
+
+- **O nome é inferido quando falta.** Lá o nome é o primeiro posicional; aqui é
+  o `--name`, e sem ele o patchbay tira do destino — o primeiro rótulo do host
+  que não seja `mcp`, `api` ou `www` (`mcp.canva.com` vira `canva`), ou o nome
+  do pacote sem o escopo do npm (`@upstash/context7-mcp` vira `context7-mcp`).
+  Nome ruim se corrige na edição, ou com `--name` no comando.
+- **Pacote vira processo.** `npx add-mcp algum-mcp` descreve um servidor que
+  roda como pacote npm, então o cadastro sai como o processo `npx -y algum-mcp`,
+  lançado na máquina do patchbay. O `-y` entra porque não há ninguém para
+  responder ao prompt do npx num processo supervisionado.
+- **`--timeout` vira o timeout do upstream**, e `-h/--header`, `--env`,
+  `--args` e `-t/--transport/--type` caem nos mesmos campos do outro dialeto.
+- **As opções de agente viram aviso.** `--agent`, `--global`, `--all`, `--yes`,
+  `--gitignore`, `--auto-approve`, `--scopes` e `--bearer-token-env` dizem em
+  qual agente de código gravar, ou leem um segredo do ambiente daquela máquina.
+  Aqui não há agente nem aquele ambiente: quem decide quem enxerga o MCP são os
+  endpoints. Elas não mudam o servidor que a linha descreve, então seguem o
+  mesmo critério do `--scope` — aviso, não recusa.
 
 Três traduções valem a pena saber:
 
@@ -570,6 +602,54 @@ persistência cifrada do que ele produz.
 O `redirect_uri` é **contrato**: registre no provedor exatamente
 `<URL pública>/admin/upstreams/oauth/callback`. Mudar `PATCHBAY_PUBLIC_URL`
 depois invalida todo consentimento existente.
+
+### Provedor que só aceita loopback
+
+A Canva — e é ela o caso que abriu a fatia 15 — só registra
+`http://127.0.0.1:<porta>` como `redirect_uri` enquanto a integração não passa
+por revisão: não aceita `localhost` como hostname, nem domínio próprio. E um
+gateway que roda como serviço não tem loopback que o navegador do admin alcance,
+porque o `127.0.0.1` de quem autoriza é a máquina *dele*.
+
+O estudo previa duas saídas e não escolhia nenhuma: um binário auxiliar na
+máquina do admin, ou colar o código à mão na UI. **A escolhida foi a segunda**,
+em 2026-09-16, e a primeira não precisou ser escrita. O motivo é que ela não
+compra nada que justifique distribuir e rodar um segundo programa: em qualquer
+das duas, o navegador do admin é redirecionado para um endereço onde ninguém
+escuta — o que muda é só quem lê o `code` de lá.
+
+Como configurar:
+
+1. Registre a integração no provedor com um `redirect_uri` de loopback, com
+   porta — `http://127.0.0.1:53682/callback`. O provedor devolve um `client_id`.
+2. No cadastro do MCP, modo **OAuth**, preencha o `client_id` e o campo
+   **redirect de loopback** com o mesmo valor, byte a byte.
+3. Clique em **Autorizar**. Em vez de redirecionar, o patchbay abre uma tela em
+   duas etapas.
+4. O link da etapa 1 abre o provedor numa aba nova. Autorize lá. O navegador vai
+   ser devolvido ao `127.0.0.1`, e **a página vai falhar — é esperado**.
+5. Copie a URL inteira da barra de endereços e cole na etapa 2. O patchbay lê
+   dela o `code` e o `state`, e troca por token com o mesmo `redirect_uri` de
+   loopback.
+
+O `client_id` é obrigatório nesse modo, e não por gosto: o Client ID Metadata
+Document e o registro dinâmico declaram o callback público do patchbay como
+`redirect_uri`, e um provedor que só aceita loopback recusaria o documento
+inteiro. Quem exige loopback exige cadastro manual — é de lá que o `client_id`
+sai. Por isso os dois caminhos ficam desligados quando o campo está preenchido.
+
+O `code` não é gravado em lugar nenhum: ele é trocado por token na hora, e o que
+fica cifrado é o token. O `state` vale uma vez — colar a mesma URL de novo é
+recusado, como no callback normal.
+
+**O que ainda não foi verificado contra a Canva de verdade.** O estudo propunha
+um spike (S2) para responder se ela aceita um `code` trocado por um backend
+remoto quando o `redirect_uri` registrado é loopback. Esse teste exige uma
+integração registrada lá e não foi feito. O que existe é o fluxo inteiro coberto
+por teste contra um authorization server de verdade em processo, incluindo a
+asserção que fecha a dúvida de desenho: o `redirect_uri` que vai na autorização e
+o que vai na troca por token são o mesmo. Se a Canva recusar, a recusa vai vir
+como `invalid_grant` na troca — e é isso que o log vai dizer.
 
 ### Qual client_id
 

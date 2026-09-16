@@ -61,6 +61,12 @@ type asFalso struct {
 	recusaRefresh bool
 	// segundos é a validade do access token emitido.
 	segundos int
+	// redirects guarda o redirect_uri visto em cada etapa, para o teste do
+	// provedor loopback-only provar que os dois são o mesmo: um redirect_uri
+	// diferente na troca por token é invalid_grant em provedor de verdade, e o
+	// AS falso aceitaria qualquer um sem isto.
+	redirectNoAuthorize string
+	redirectNoToken     string
 
 	idasAoToken     atomic.Int32
 	idasAoRegistro  atomic.Int32
@@ -150,6 +156,7 @@ func (as *asFalso) autorizar(w http.ResponseWriter, r *http.Request) {
 
 	codigo := "cod-" + strconv.Itoa(int(as.idasAoAuthorize.Load()))
 	as.mu.Lock()
+	as.redirectNoAuthorize = q.Get("redirect_uri")
 	as.codigos[codigo] = codigoEmitido{
 		desafio:  q.Get("code_challenge"),
 		clientID: q.Get("client_id"),
@@ -184,6 +191,7 @@ func (as *asFalso) token(w http.ResponseWriter, r *http.Request) {
 
 func (as *asFalso) trocarCodigo(w http.ResponseWriter, r *http.Request) {
 	as.mu.Lock()
+	as.redirectNoToken = r.PostFormValue("redirect_uri")
 	emitido, ok := as.codigos[r.PostFormValue("code")]
 	delete(as.codigos, r.PostFormValue("code"))
 	as.mu.Unlock()
@@ -197,6 +205,13 @@ func (as *asFalso) trocarCodigo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	as.emitir(w, concessaoFalsa{clientID: emitido.clientID, escopos: emitido.escopos})
+}
+
+// redirectsVistos devolve o redirect_uri de cada etapa.
+func (as *asFalso) redirectsVistos() (autorizacao, token string) {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	return as.redirectNoAuthorize, as.redirectNoToken
 }
 
 func (as *asFalso) renovar(w http.ResponseWriter, r *http.Request) {

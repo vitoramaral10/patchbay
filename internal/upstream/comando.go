@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
@@ -15,6 +16,18 @@ import (
 // `claude mcp add`, e transcrever aquela linha para o formulário é trabalho
 // mecânico com quatro chances de errar: o transporte, a URL, o nome do header e
 // o token. Este arquivo faz a transcrição.
+//
+// São dois dialetos, porque a documentação publica os dois:
+//
+//	claude mcp add --transport http canva https://mcp.canva.com/mcp
+//	npx add-mcp https://mcp.canva.com/mcp
+//
+// O segundo é o `add-mcp` do npm, que escreve a configuração de MCP em vinte e
+// poucos agentes de código. Ele não é o patchbay e nunca vai listar o patchbay:
+// o que se aproveita dele é a linha, que descreve o mesmo servidor. As formas
+// são diferentes o bastante para não caberem no mesmo laço — lá o nome é opção
+// e o primeiro posicional é o destino; aqui o nome é posicional —, e por isso
+// cada uma tem a sua função.
 //
 // O resultado é um Form e não uma escrita no banco: colar é a entrada, não a
 // decisão. Quem grava continua sendo o mesmo caminho do formulário — a mesma
@@ -62,39 +75,55 @@ func LerComandoDeInstalacao(texto string) (Importacao, error) {
 	if err != nil {
 		return Importacao{}, err
 	}
-	tokens, err = pularPrefixoDoComando(tokens)
+	tokens, dialeto, err := pularPrefixoDoComando(tokens)
 	if err != nil {
 		return Importacao{}, err
 	}
-	return montarImportacao(tokens)
+	if dialeto == dialetoAddMCP {
+		return montarDoAddMCP(tokens)
+	}
+	return montarDoClaude(tokens)
 }
 
-// pularPrefixoDoComando descarta o que vem antes do `add` e confere que o
-// comando é mesmo o de adicionar servidor.
+// Os dois dialetos de comando de instalação que o analisador lê.
+const (
+	dialetoClaude = "claude"
+	dialetoAddMCP = "add-mcp"
+)
+
+// pularPrefixoDoComando descarta o que vem antes do verbo, diz qual dialeto
+// achou e confere que o comando é mesmo o de adicionar servidor.
 //
 // Aceita a linha com ou sem o executável na frente, porque quem copia de uma
 // documentação às vezes traz o `$` do prompt junto e às vezes copia só a partir
-// do `mcp`. O que não é aceito é adivinhar: um `claude mcp remove` colado por
-// engano precisa ser recusado, não interpretado como adição.
-func pularPrefixoDoComando(tokens []string) ([]string, error) {
+// do `mcp`. Pelo mesmo motivo aceita os lançadores de pacote na frente do
+// `add-mcp` — `npx`, `npx -y`, `bunx`, `pnpm dlx`, `yarn dlx` —, que são a
+// mesma linha com outro jeito de baixar o programa.
+//
+// O que não é aceito é adivinhar: um `claude mcp remove` colado por engano
+// precisa ser recusado, não interpretado como adição.
+func pularPrefixoDoComando(tokens []string) ([]string, string, error) {
 	for i, t := range tokens {
 		switch t {
 		case "add":
-			return tokens[i+1:], nil
+			return tokens[i+1:], dialetoClaude, nil
+		case "add-mcp":
+			return tokens[i+1:], dialetoAddMCP, nil
 		case "add-json":
-			return nil, errors.New("O formato `claude mcp add-json` ainda não é lido aqui. " +
+			return nil, "", errors.New("O formato `claude mcp add-json` ainda não é lido aqui. " +
 				"Use a linha `claude mcp add`, ou cadastre pelo formulário.")
-		case "mcp", "claude", "$", ">", "#", "%", "PS>":
+		case "mcp", "claude", "$", ">", "#", "%", "PS>",
+			"npx", "bunx", "pnpm", "yarn", "dlx", "-y", "--yes":
 			continue
 		default:
 			if ehPrefixoDePrompt(t) {
 				continue
 			}
-			return nil, errors.New("Não reconheci este comando. Cole a linha inteira de " +
-				"`claude mcp add`, como aparece na documentação do servidor.")
+			return nil, "", errors.New("Não reconheci este comando. Cole a linha inteira de " +
+				"`claude mcp add` ou de `npx add-mcp`, como aparece na documentação do servidor.")
 		}
 	}
-	return nil, ErrComandoVazio
+	return nil, "", ErrComandoVazio
 }
 
 // ErrComandoVazio é o campo em branco, e não um comando malformado. A tela
@@ -108,7 +137,7 @@ func ehPrefixoDePrompt(t string) bool {
 	return len(t) > 1 && strings.ContainsAny(t[len(t)-1:], "$>#")
 }
 
-// montarImportacao percorre as opções e os posicionais do `claude mcp add`.
+// montarDoClaude percorre as opções e os posicionais do `claude mcp add`.
 //
 // A forma é `claude mcp add [opções] <nome> <comando-ou-url> [args...]`, com
 // `--` separando as opções do processo a lançar. As opções conhecidas são as
@@ -116,7 +145,7 @@ func ehPrefixoDePrompt(t string) bool {
 // Opção desconhecida é erro e não é ignorada — uma flag nova do Claude Code
 // pode ser justamente a que muda o significado do resto da linha, e descartá-la
 // em silêncio gravaria um servidor diferente do que o comando descrevia.
-func montarImportacao(tokens []string) (Importacao, error) {
+func montarDoClaude(tokens []string) (Importacao, error) {
 	var (
 		imp         Importacao
 		posicionais []string
@@ -231,6 +260,217 @@ func montarImportacao(tokens []string) (Importacao, error) {
 			"os endpoints a que você ligá-lo.")
 	}
 	return imp, nil
+}
+
+// montarDoAddMCP percorre a linha do `add-mcp` do npm.
+//
+// A forma é `npx add-mcp <url-ou-pacote> [opções]`: um posicional só, e o nome
+// vem do `--name` ou é inferido do destino. É a diferença que obriga a ter duas
+// funções — no `claude mcp add` o nome é o primeiro posicional, e ler as duas
+// formas no mesmo laço faria uma URL virar nome de servidor quando o admin
+// esquecesse uma flag.
+//
+// Boa parte das opções do add-mcp descreve *em qual agente* gravar — --agent,
+// --global, --all, --yes, --gitignore, --auto-approve. Aqui não existe agente:
+// o patchbay é um só, e quem decide a visibilidade do MCP são os endpoints.
+// Essas viram aviso, e não recusa, pelo mesmo critério do --scope: elas não
+// mudam o servidor que a linha descreve. Opção que eu não conheço continua
+// sendo recusa.
+func montarDoAddMCP(tokens []string) (Importacao, error) {
+	var (
+		imp         Importacao
+		posicionais []string
+		transporte  string
+		nome        string
+		argsTexto   string
+		timeout     string
+		headers     []CampoHeader
+		ambiente    []CampoEnv
+		doAgente    []string
+	)
+
+	for i := 0; i < len(tokens); i++ {
+		t := tokens[i]
+		if !strings.HasPrefix(t, "-") || t == "-" {
+			posicionais = append(posicionais, t)
+			continue
+		}
+
+		nomeOpcao, valor, colado := strings.Cut(t, "=")
+		if !colado {
+			nomeOpcao = t
+		}
+		precisaValor := func() (string, error) {
+			if colado {
+				return valor, nil
+			}
+			if i+1 >= len(tokens) {
+				return "", errors.New("A opção " + nomeOpcao + " ficou sem valor no fim do comando.")
+			}
+			i++
+			return tokens[i], nil
+		}
+
+		switch nomeOpcao {
+		case "-t", "--transport", "--type":
+			v, err := precisaValor()
+			if err != nil {
+				return Importacao{}, err
+			}
+			transporte = strings.ToLower(strings.TrimSpace(v))
+		case "-n", "--name":
+			v, err := precisaValor()
+			if err != nil {
+				return Importacao{}, err
+			}
+			nome = strings.TrimSpace(v)
+		case "-h", "--header":
+			v, err := precisaValor()
+			if err != nil {
+				return Importacao{}, err
+			}
+			headers = append(headers, CampoHeader{Nome: v})
+		case "--env":
+			v, err := precisaValor()
+			if err != nil {
+				return Importacao{}, err
+			}
+			ambiente = append(ambiente, CampoEnv{Nome: v})
+		case "--args":
+			v, err := precisaValor()
+			if err != nil {
+				return Importacao{}, err
+			}
+			argsTexto = v
+		case "--timeout":
+			v, err := precisaValor()
+			if err != nil {
+				return Importacao{}, err
+			}
+			timeout = strings.TrimSpace(v)
+		// As que descrevem o agente de destino, e não o servidor.
+		case "-g", "--global", "--all", "--gitignore", "-y", "--yes", "--auto-approve":
+			doAgente = append(doAgente, nomeOpcao)
+		case "-a", "--agent", "--approve-tool", "--scopes", "--oauth-scopes", "--bearer-token-env":
+			if _, err := precisaValor(); err != nil {
+				return Importacao{}, err
+			}
+			doAgente = append(doAgente, nomeOpcao)
+		default:
+			return Importacao{}, errors.New("Não conheço a opção " + resumir(nomeOpcao) +
+				" do add-mcp. As lidas aqui são --transport, --name, --header, --env, " +
+				"--args e --timeout.")
+		}
+	}
+
+	if len(posicionais) == 0 {
+		return Importacao{}, errors.New("Faltou a URL ou o pacote no comando. " +
+			"A forma é `npx add-mcp <url-ou-pacote>`.")
+	}
+	if len(posicionais) > 1 {
+		return Importacao{}, errors.New("O comando trouxe mais de um destino — " +
+			resumir(posicionais[0]) + " e " + resumir(posicionais[1]) +
+			". O add-mcp instala um servidor por vez.")
+	}
+
+	imp.Form = formularioBase()
+	destino := posicionais[0]
+
+	tipo, aviso, err := tipoDoComando(transporte, destino)
+	if err != nil {
+		return Importacao{}, err
+	}
+	imp.Form.Tipo = tipo
+	if aviso != "" {
+		imp.Avisos = append(imp.Avisos, aviso)
+	}
+
+	if tipo == TipoSTDIO {
+		// Pacote, e não executável: `npx add-mcp algum-mcp` diz ao add-mcp para
+		// rodar aquele pacote npm, e é isso que o patchbay precisa lançar. O
+		// `-y` entra porque sem ele o npx pergunta antes de baixar, e não há
+		// ninguém para responder num processo supervisionado.
+		imp.Form.Comando = "npx"
+		args := []string{"-y", destino}
+		args = append(args, strings.Fields(argsTexto)...)
+		imp.Form.ArgsTexto = strings.Join(args, "\n")
+		imp.Avisos = append(imp.Avisos, "O comando descreve o pacote "+resumir(destino)+
+			", então este MCP vira o processo `npx -y "+destino+"`, lançado aqui, "+
+			"com o usuário do patchbay.")
+	} else if argsTexto != "" {
+		return Importacao{}, errors.New("O comando traz --args num servidor HTTP. " +
+			"Argumento é coisa de processo local.")
+	}
+	if tipo != TipoSTDIO {
+		imp.Form.URL = destino
+	}
+
+	if nome == "" {
+		nome = nomeDoDestino(destino, tipo)
+	}
+	if nome == "" {
+		return Importacao{}, errors.New("Não consegui tirar um nome de " + resumir(destino) +
+			". Acrescente `--name <nome>` ao comando.")
+	}
+	imp.Form.Nome = nome
+
+	if timeout != "" {
+		ms, err := strconv.ParseInt(timeout, 10, 64)
+		if err != nil || ms < TimeoutMinimoMS || ms > TimeoutMaximoMS {
+			return Importacao{}, errors.New("O --timeout precisa ser um número de " +
+				"milissegundos entre " + strconv.FormatInt(TimeoutMinimoMS, 10) + " e " +
+				strconv.FormatInt(TimeoutMaximoMS, 10) + ".")
+		}
+		imp.Form.TimeoutMS = ms
+	}
+
+	if err := aplicarHeaders(&imp, headers, tipo); err != nil {
+		return Importacao{}, err
+	}
+	if err := aplicarAmbiente(&imp, ambiente, tipo); err != nil {
+		return Importacao{}, err
+	}
+	if len(doAgente) > 0 {
+		imp.Avisos = append(imp.Avisos, "O comando trazia "+strings.Join(doAgente, ", ")+
+			", que dizem ao add-mcp em qual agente de código gravar. Aqui não há agente: "+
+			"quem decide quem enxerga este MCP são os endpoints a que você ligá-lo.")
+	}
+	return imp, nil
+}
+
+// nomeDoDestino tira um nome de servidor da URL ou do pacote.
+//
+// O add-mcp também infere o nome quando o --name falta, e um MCP sem nome não
+// existe neste cadastro — então a alternativa a inferir seria recusar a forma
+// mais curta do comando, que é justamente a que a documentação publica.
+//
+// A regra é previsível de propósito, para o admin conseguir antecipá-la:
+// numa URL, o primeiro rótulo do host que não seja `mcp`, `api` ou `www`
+// (mcp.canva.com vira canva); num pacote, o nome sem o escopo do npm
+// (@upstash/context7-mcp vira context7-mcp). Nome ruim se corrige na edição,
+// ou com --name no comando.
+func nomeDoDestino(destino, tipo string) string {
+	if tipo == TipoSTDIO {
+		_, pacote, temEscopo := strings.Cut(destino, "/")
+		if !temEscopo || !strings.HasPrefix(destino, "@") {
+			pacote = destino
+		}
+		return strings.TrimSpace(pacote)
+	}
+
+	u, err := url.Parse(destino)
+	if err != nil {
+		return ""
+	}
+	host := u.Hostname()
+	for rotulo := range strings.SplitSeq(host, ".") {
+		switch rotulo {
+		case "", "mcp", "api", "www":
+			continue
+		}
+		return rotulo
+	}
+	return ""
 }
 
 // formularioBase é o formulário novo, com os mesmos padrões da tela de cadastro:

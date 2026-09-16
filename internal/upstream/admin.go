@@ -226,6 +226,10 @@ type Form struct {
 	// pré-registrado pertence. Vazio desliga a conferência; preenchido, recusa
 	// usar a credencial com outro AS (SEP-2352).
 	OAuthIssuer string
+	// OAuthLoopback é o redirect_uri de loopback, para o provedor que só aceita
+	// loopback — a Canva é o caso. Vazio é o normal: o redirect é o callback
+	// público do patchbay.
+	OAuthLoopback string
 	// OAuthDisponivel diz se este processo tem broker de OAuth. Falso esconde o
 	// modo da tela: oferecer um fluxo que ninguém completaria é pior que não
 	// oferecer.
@@ -357,6 +361,10 @@ func (f *Form) Validar() bool {
 	}
 	f.validarCredenciais()
 	f.validarOAuth()
+	// Fora de validarOAuth de propósito: aquela função desiste cedo quando o
+	// modo não é oauth, e um redirect de loopback preenchido no modo estático
+	// passaria sem ninguém dizer que ele não vale ali.
+	f.validarLoopback()
 	f.validarSonda()
 	return len(f.Erros) == 0
 }
@@ -516,6 +524,55 @@ func (f *Form) validarOAuth() {
 	if f.OAuthIssuer != "" && f.OAuthClientID == "" {
 		f.Erros["oauth_issuer"] = "O issuer só vale com client_id pré-registrado: é ele que " +
 			"a conferência protege."
+	}
+}
+
+// validarLoopback confere o redirect_uri do provedor que só aceita loopback.
+//
+// As regras não são invenção do patchbay: são o que a RFC 8252 §7.3 chama de
+// redirect de loopback e o que a Canva aceita na prática — http, endereço
+// literal de loopback, porta explícita. `localhost` fica de fora porque ele é
+// um nome que o DNS resolve, e provedor nenhum garante para onde; a Canva o
+// recusa explicitamente, e aceitá-lo aqui produziria um invalid_redirect_uri no
+// meio do consentimento, longe deste formulário.
+//
+// Client_id pré-registrado é exigido junto porque as outras duas formas de
+// registro declaram o callback público do patchbay como redirect_uri: um
+// provedor que só aceita loopback recusaria o documento inteiro. Quem exige
+// loopback exige cadastro manual da integração, e é de lá que sai o client_id.
+func (f *Form) validarLoopback() {
+	f.OAuthLoopback = strings.TrimSpace(f.OAuthLoopback)
+	if f.OAuthLoopback == "" {
+		return
+	}
+	if !f.UsaOAuth() {
+		f.Erros["oauth_loopback"] = "O redirect de loopback só vale no modo OAuth."
+		return
+	}
+
+	u, err := url.Parse(f.OAuthLoopback)
+	switch {
+	case err != nil || u.Host == "":
+		f.Erros["oauth_loopback"] = "O redirect de loopback é uma URL, como " +
+			"http://127.0.0.1:53682/callback."
+	case u.Scheme != "http":
+		f.Erros["oauth_loopback"] = "O redirect de loopback é http, não " + u.Scheme +
+			": é um endereço da máquina de quem autoriza, e não há TLS ali."
+	case u.Hostname() == "localhost":
+		f.Erros["oauth_loopback"] = "Use o endereço literal 127.0.0.1 (ou [::1]), não localhost. " +
+			"localhost é um nome que o DNS resolve, e provedor nenhum garante para onde — " +
+			"a Canva recusa."
+	case u.Hostname() != "127.0.0.1" && u.Hostname() != "::1":
+		f.Erros["oauth_loopback"] = "O redirect de loopback aponta para 127.0.0.1 ou [::1], " +
+			"não para " + resumir(u.Hostname()) + "."
+	case u.Port() == "":
+		f.Erros["oauth_loopback"] = "Informe a porta que você registrou no provedor, " +
+			"como http://127.0.0.1:53682/callback: o redirect_uri da troca por token " +
+			"precisa bater byte a byte com o de lá."
+	case f.OAuthClientID == "":
+		f.Erros["oauth_loopback"] = "O modo loopback precisa do client_id do cadastro que " +
+			"você fez no provedor: nem o Client ID Metadata Document nem o registro " +
+			"dinâmico servem aqui, porque os dois declaram o callback público."
 	}
 }
 
@@ -847,6 +904,9 @@ func (f *Form) CompletarOAuth(e EstadoOAuth) {
 	}
 	if f.OAuthIssuer == "" {
 		f.OAuthIssuer = e.Issuer
+	}
+	if f.OAuthLoopback == "" {
+		f.OAuthLoopback = e.RedirectLoopback
 	}
 }
 

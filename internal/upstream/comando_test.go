@@ -317,3 +317,139 @@ func TestLerComandoDeInstalacao_ComandoGrande(t *testing.T) {
 		t.Fatal("LerComandoDeInstalacao() aceitou um comando acima do limite")
 	}
 }
+
+// TestLerComandoDeInstalacao_AddMCP cobre o segundo dialeto: a linha do
+// `add-mcp` do npm, que é a que alguns servidores publicam hoje — inclusive
+// sem nome nenhum, porque lá o nome é inferido.
+func TestLerComandoDeInstalacao_AddMCP(t *testing.T) {
+	t.Parallel()
+
+	imp, err := upstream.LerComandoDeInstalacao(`npx add-mcp 'https://mcp.canva.com/mcp'`)
+	if err != nil {
+		t.Fatalf("LerComandoDeInstalacao() = %v, quer sucesso", err)
+	}
+	// O nome sai do host, sem o rótulo mcp: é o que permite a forma mais curta
+	// do comando virar cadastro, já que um MCP sem nome não existe aqui.
+	if imp.Form.Nome != "canva" {
+		t.Errorf("Nome = %q, quer canva", imp.Form.Nome)
+	}
+	if imp.Form.TipoEfetivo() != upstream.TipoHTTP {
+		t.Errorf("Tipo = %q, quer http", imp.Form.TipoEfetivo())
+	}
+	if imp.Form.URL != "https://mcp.canva.com/mcp" {
+		t.Errorf("URL = %q, quer a do comando", imp.Form.URL)
+	}
+	if !imp.Form.Validar() {
+		t.Errorf("Validar() recusou o que o comando descrevia: %v", imp.Form.Erros)
+	}
+}
+
+// TestLerComandoDeInstalacao_AddMCPFormas percorre o resto do dialeto: as
+// opções que viram cadastro, as que só descrevem o agente de destino, e as
+// recusas.
+func TestLerComandoDeInstalacao_AddMCPFormas(t *testing.T) {
+	t.Parallel()
+
+	casos := map[string]struct {
+		comando  string
+		querErro string
+		confere  func(*testing.T, upstream.Importacao)
+	}{
+		"lançador de pacote na frente, e transporte explícito": {
+			comando: `npx -y add-mcp https://mcp.exemplo.com/sse --transport sse`,
+			confere: func(t *testing.T, imp upstream.Importacao) {
+				if imp.Form.TipoEfetivo() != upstream.TipoSSE {
+					t.Errorf("Tipo = %q, quer sse", imp.Form.TipoEfetivo())
+				}
+				if imp.Form.Nome != "exemplo" {
+					t.Errorf("Nome = %q, quer exemplo", imp.Form.Nome)
+				}
+			},
+		},
+		"header com Authorization vira bearer, e --name manda no nome": {
+			comando: `npx add-mcp https://mcp.exemplo.com/mcp ` +
+				`-h "Authorization: Bearer sk-abc123" --name escolhido`,
+			confere: func(t *testing.T, imp upstream.Importacao) {
+				if imp.Form.Nome != "escolhido" {
+					t.Errorf("Nome = %q, quer escolhido", imp.Form.Nome)
+				}
+				if got := imp.Form.Bearer.Revelar(); got != "sk-abc123" {
+					t.Errorf("Bearer = %q, quer sk-abc123", got)
+				}
+			},
+		},
+		"pacote vira o processo npx -y": {
+			comando: `npx add-mcp @upstash/context7-mcp --env API_KEY=abc`,
+			confere: func(t *testing.T, imp upstream.Importacao) {
+				if imp.Form.TipoEfetivo() != upstream.TipoSTDIO {
+					t.Errorf("Tipo = %q, quer stdio", imp.Form.TipoEfetivo())
+				}
+				if imp.Form.Comando != "npx" {
+					t.Errorf("Comando = %q, quer npx", imp.Form.Comando)
+				}
+				if imp.Form.ArgsTexto != "-y\n@upstash/context7-mcp" {
+					t.Errorf("ArgsTexto = %q, quer -y e o pacote", imp.Form.ArgsTexto)
+				}
+				// O nome perde o escopo do npm, e a variável vai cifrada.
+				if imp.Form.Nome != "context7-mcp" {
+					t.Errorf("Nome = %q, quer context7-mcp", imp.Form.Nome)
+				}
+				if len(imp.Form.EnvSecretos) != 1 {
+					t.Errorf("EnvSecretos = %v, quer uma variável", imp.Form.EnvSecretos)
+				}
+			},
+		},
+		"as opções de agente viram aviso, não recusa": {
+			comando: `npx add-mcp https://mcp.exemplo.com/mcp -g --all -y --agent cursor`,
+			confere: func(t *testing.T, imp upstream.Importacao) {
+				var achou bool
+				for _, a := range imp.Avisos {
+					if strings.Contains(a, "agente de código") {
+						achou = true
+					}
+				}
+				if !achou {
+					t.Errorf("Avisos = %v, quer um sobre as opções de agente", imp.Avisos)
+				}
+				if !imp.Form.Validar() {
+					t.Errorf("Validar() recusou: %v", imp.Form.Erros)
+				}
+			},
+		},
+		"--timeout vira o timeout do upstream": {
+			comando: `npx add-mcp https://mcp.exemplo.com/mcp --timeout 30000`,
+			confere: func(t *testing.T, imp upstream.Importacao) {
+				if imp.Form.TimeoutMS != 30000 {
+					t.Errorf("TimeoutMS = %d, quer 30000", imp.Form.TimeoutMS)
+				}
+			},
+		},
+		"token de exemplo continua sendo recusado": {comando: `npx add-mcp https://mcp.exemplo.com/mcp -h "Authorization: Bearer [your token]"`, querErro: "marcador"},
+		"sem destino":   {comando: `npx add-mcp`, querErro: "Faltou a URL"},
+		"dois destinos": {comando: `npx add-mcp https://a.com/mcp https://b.com/mcp`, querErro: "um servidor por vez"},
+		"opção que eu não conheço é recusa, não descarte": {comando: `npx add-mcp https://mcp.exemplo.com/mcp --inventada`, querErro: "Não conheço a opção"},
+		"--timeout fora da faixa":                         {comando: `npx add-mcp https://mcp.exemplo.com/mcp --timeout 9999999`, querErro: "milissegundos"},
+		"--args num servidor HTTP":                        {comando: `npx add-mcp https://mcp.exemplo.com/mcp --args "-v"`, querErro: "Argumento é coisa de processo local"},
+	}
+
+	for nome, tc := range casos {
+		t.Run(nome, func(t *testing.T) {
+			t.Parallel()
+
+			imp, err := upstream.LerComandoDeInstalacao(tc.comando)
+			if tc.querErro != "" {
+				if err == nil {
+					t.Fatalf("erro = nil, quer recusa contendo %q", tc.querErro)
+				}
+				if !strings.Contains(err.Error(), tc.querErro) {
+					t.Errorf("erro = %q, quer conter %q", err, tc.querErro)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("erro = %v, quer sucesso", err)
+			}
+			tc.confere(t, imp)
+		})
+	}
+}

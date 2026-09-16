@@ -1,0 +1,95 @@
+package upstream
+
+import (
+	"strconv"
+
+	"github.com/vitoramaral10/patchbay/internal/platform/webui"
+)
+
+// A tela do provedor que só aceita redirect de loopback (fatia 15).
+//
+// Ela existe porque, nesse fluxo, o navegador do admin vai bater num endereço
+// da máquina *dele* onde ninguém escuta — e o que ele vai ver é um erro de
+// conexão. Sem esta tela antes, o passo seguinte ("copie a barra de endereços")
+// teria de ser adivinhado na frente de uma página de erro do navegador.
+//
+// O patchbay não abre o provedor sozinho aqui: o link é explícito, e de
+// preferência numa aba nova, para esta página continuar aberta com a caixa de
+// colar. Um redirecionamento automático levaria embora a única instrução.
+
+func rotaColarRetorno(id int64) string {
+	return webui.RotaUpstreams + "/" + strconv.FormatInt(id, 10) + "/autorizar/colar"
+}
+
+// TelaEntregaLoopback conduz o consentimento em duas etapas visíveis: autorizar
+// no provedor, colar de volta o que ele devolveu.
+templ TelaEntregaLoopback(d DadosLoopback) {
+	@webui.Pagina(webui.DadosPagina{
+		Titulo: "Autorizar " + d.UpstreamNome,
+		Subtitulo: "Este provedor só aceita redirect de loopback, então a última etapa é " +
+			"manual: o navegador é devolvido à sua máquina, e você traz de lá o que ele recebeu.",
+		Secao:   webui.SecaoUpstreams,
+		Usuario: webui.UsuarioDoContexto(ctx),
+	}) {
+		if d.Erro != "" {
+			@webui.AlertaCaixa(webui.Alerta{
+				Tom:    webui.TomPerigo,
+				Titulo: "Não deu para usar este retorno.",
+				Texto:  d.Erro,
+			})
+		}
+		<div class="flex max-w-2xl flex-col gap-6">
+			@webui.Cartao("1 · Autorize no provedor") {
+				<div class="flex flex-col gap-4 px-4 py-5">
+					<p class="max-w-[65ch] text-sm text-conteudo-suave">
+						Abra o link abaixo e conclua o consentimento. No fim, o provedor vai mandar
+						seu navegador para
+						<code class="font-mono break-all">{ d.Redirect }</code>, que é um endereço
+						da <strong>sua</strong> máquina — não da máquina do patchbay. Não há nada
+						escutando ali, então a página vai falhar. <strong>É esperado.</strong>
+					</p>
+					<div>
+						<a
+							href={ templ.SafeURL(d.URLProvedor) }
+							target="_blank"
+							rel="noopener"
+							class="pb-botao pb-botao-primario"
+						>
+							Abrir o provedor numa aba nova
+						</a>
+					</div>
+					<p class="max-w-[65ch] text-sm text-conteudo-tenue">
+						Numa aba nova de propósito: esta página precisa continuar aberta, porque é
+						nela que o retorno é colado. A autorização vale por alguns minutos.
+					</p>
+				</div>
+			}
+			@webui.Cartao("2 · Traga de volta a barra de endereços") {
+				<form method="post" action={ templ.SafeURL(rotaColarRetorno(d.UpstreamID)) } class="flex flex-col gap-4 px-4 py-5">
+					<input type="hidden" name="provedor" value={ d.URLProvedor }/>
+					<p class="max-w-[65ch] text-sm text-conteudo-suave">
+						Com a página de erro na frente, copie a URL inteira da barra de endereços e
+						cole aqui. Ela é parecida com
+						<code class="font-mono text-xs break-all">{ d.Redirect }?code=…&amp;state=…</code>.
+					</p>
+					@webui.CampoTexto(webui.DadosCampo{
+						Nome:   "retorno",
+						Rotulo: "URL de retorno",
+						Valor:  d.Colado,
+						Ajuda: "A URL inteira, ou só a parte depois do ponto de interrogação. " +
+							"O patchbay lê dela o código e o state, e descarta o resto.",
+						Placeholder: d.Redirect + "?code=...&state=...",
+					})
+					<p class="max-w-[65ch] text-sm text-conteudo-suave">
+						O código vale uma vez e por poucos minutos. Ele não é gravado: o patchbay o
+						troca por token na hora, e o que fica cifrado é o token.
+					</p>
+					<div class="flex flex-wrap items-center gap-3">
+						<button type="submit" class="pb-botao pb-botao-primario">Concluir a autorização</button>
+						<a href={ templ.SafeURL(rotaDo(d.UpstreamID)) } class="pb-botao pb-botao-secundario">Cancelar</a>
+					</div>
+				</form>
+			}
+		</div>
+	}
+}

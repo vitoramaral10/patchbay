@@ -140,6 +140,22 @@ func (b *BrokerOAuth) RedirectURI() string {
 	return b.urlPublica + webui.RotaCallbackOAuthUpstream
 }
 
+// redirectDe é o redirect_uri daquele upstream: o de loopback quando o provedor
+// só aceita loopback, o callback público no resto.
+//
+// O de loopback é um endereço onde ninguém escuta, e é essa a razão de ele
+// existir. O provedor exige que o redirect_uri da requisição de autorização e o
+// da troca por token sejam byte a byte o que está registrado lá; quem recebe o
+// code é a barra de endereços do navegador do admin, e de lá ele volta colado
+// na UI. Os dois usos precisam do mesmo valor — um redirect_uri diferente na
+// troca é invalid_grant —, e por isso ele sai de uma função só.
+func (b *BrokerOAuth) redirectDe(cliente ClienteOAuth) string {
+	if cliente.UsaLoopback() {
+		return cliente.RedirectLoopback
+	}
+	return b.RedirectURI()
+}
+
 // URLMetadataCliente é a URL do Client ID Metadata Document, que no CIMD é o
 // próprio client_id.
 //
@@ -334,9 +350,18 @@ func (b *BrokerOAuth) Autorizacao(ctx context.Context, cfg Config) (auth.OAuthHa
 
 	s.cliente = cliente
 	s.urlCIMD = b.URLMetadataCliente()
+	if cliente.UsaLoopback() {
+		// No modo loopback o cliente é sempre pré-registrado, e as outras duas
+		// formas de registro ficam de fora — não por preferência, por
+		// aritmética: o Client ID Metadata Document e o registro dinâmico
+		// declaram o callback público como redirect_uri, e um provedor que só
+		// aceita loopback recusaria o documento inteiro. Quem exige loopback
+		// exige cadastro manual da integração, que é de onde sai o client_id.
+		s.urlCIMD = ""
+	}
 
 	conf := &auth.AuthorizationCodeHandlerConfig{
-		RedirectURL:              b.RedirectURI(),
+		RedirectURL:              b.redirectDe(cliente),
 		AuthorizationCodeFetcher: s.buscarCodigo,
 		// O patchbay guarda o refresh token cifrado em repouso, então pedir
 		// offline_access é honesto — e sem ele todo vencimento de access token
@@ -367,8 +392,10 @@ func (b *BrokerOAuth) Autorizacao(ctx context.Context, cfg Config) (auth.OAuthHa
 		// admin não informou nada.
 		conf.PreregisteredClient = &oauthex.ClientCredentials{ClientID: concessao.ClientIDEfetivo}
 	}
-	conf.DynamicClientRegistrationConfig = &auth.DynamicClientRegistrationConfig{
-		Metadata: b.metadataDeRegistro(),
+	if !cliente.UsaLoopback() {
+		conf.DynamicClientRegistrationConfig = &auth.DynamicClientRegistrationConfig{
+			Metadata: b.metadataDeRegistro(),
+		}
 	}
 
 	if temConcessao && concessao.Token.Valido() && concessao.URLToken != "" {
@@ -441,7 +468,7 @@ func (b *BrokerOAuth) fonteDaConcessao(s *sessaoOAuth, cliente ClienteOAuth, c C
 			TokenURL:  c.URLToken,
 			AuthStyle: oauth2.AuthStyle(c.Estilo),
 		},
-		RedirectURL: b.RedirectURI(),
+		RedirectURL: b.redirectDe(cliente),
 		Scopes:      c.Escopos,
 	}
 	if c.Registro == RegistroPreRegistrado && !cliente.Segredo.Vazio() {

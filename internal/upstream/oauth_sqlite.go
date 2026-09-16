@@ -47,9 +47,10 @@ func (r *RepositorioSQLite) ClienteOAuth(ctx context.Context, upstreamID int64) 
 		cifrado string
 	)
 	err := r.leitura.QueryRowContext(ctx, `
-SELECT client_id, client_secret_cifrado, issuer
+SELECT client_id, client_secret_cifrado, issuer, redirect_loopback
   FROM upstream_oauth
- WHERE upstream_id = ?`, upstreamID).Scan(&c.ClientID, &cifrado, &c.Issuer)
+ WHERE upstream_id = ?`, upstreamID).Scan(
+		&c.ClientID, &cifrado, &c.Issuer, &c.RedirectLoopback)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ClienteOAuth{}, nil
 	}
@@ -204,11 +205,11 @@ func (r *RepositorioSQLite) EstadoOAuth(ctx context.Context, upstreamID int64) (
 	)
 	err := r.leitura.QueryRowContext(ctx, `
 SELECT client_id, client_secret_cifrado, issuer, client_id_efetivo, registro,
-       access_token_cifrado, expira_em, ultimo_refresh_em
+       access_token_cifrado, expira_em, ultimo_refresh_em, redirect_loopback
   FROM upstream_oauth
  WHERE upstream_id = ?`, upstreamID).Scan(
 		&e.ClientID, &segredo, &e.Issuer, &e.ClientIDEfetivo, &e.Registro,
-		&acesso, &expira, &refreshEm)
+		&acesso, &expira, &refreshEm, &e.RedirectLoopback)
 	if errors.Is(err, sql.ErrNoRows) {
 		return EstadoOAuth{}, nil
 	}
@@ -274,14 +275,16 @@ func (r *RepositorioSQLite) aplicarOAuth(ctx context.Context, tx *sql.Tx, upstre
 
 	agora := time.Now().Unix()
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO upstream_oauth (upstream_id, client_id, client_secret_cifrado, issuer, criado_em, atualizado_em)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO upstream_oauth (upstream_id, client_id, client_secret_cifrado, issuer,
+                            redirect_loopback, criado_em, atualizado_em)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (upstream_id) DO UPDATE SET
     client_id             = excluded.client_id,
     client_secret_cifrado = excluded.client_secret_cifrado,
     issuer                = excluded.issuer,
+    redirect_loopback     = excluded.redirect_loopback,
     atualizado_em         = excluded.atualizado_em`,
-		upstreamID, f.OAuthClientID, segredo, f.OAuthIssuer, agora, agora); err != nil {
+		upstreamID, f.OAuthClientID, segredo, f.OAuthIssuer, f.OAuthLoopback, agora, agora); err != nil {
 		return fmt.Errorf("upstream: gravar cliente OAuth de %d: %w", upstreamID, err)
 	}
 

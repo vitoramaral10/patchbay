@@ -78,6 +78,11 @@ func TestCatalogoDoRegistryEDescartadoNaAtualizacao(t *testing.T) {
 	//   - 00016: ALTER TABLE ... ADD COLUMN endpoints; desfeito abaixo com DROP
 	//     COLUMN (driver modernc.org/sqlite v1.58, SQLite recente — a própria
 	//     00014 já usa DROP COLUMN no Down).
+	//   - 00017: reconstrói upstream para alargar o CHECK de modo_credencial.
+	//     Nada a desfazer: reconstruir de novo uma tabela já reconstruída dá no
+	//     mesmo, e o CHECK novo aceita tudo que o velho aceitava.
+	//   - 00018: ALTER TABLE ... ADD COLUMN redirect_loopback; desfeito abaixo,
+	//     porque ADD COLUMN duas vezes é erro de coluna duplicada.
 	if _, err := st.Escrita().ExecContext(ctx,
 		"DELETE FROM goose_db_version WHERE version_id >= 15"); err != nil {
 		t.Fatalf("desfazer o registro das migrações >= 15: erro = %v, quer nil", err)
@@ -85,6 +90,10 @@ func TestCatalogoDoRegistryEDescartadoNaAtualizacao(t *testing.T) {
 	if _, err := st.Escrita().ExecContext(ctx,
 		"ALTER TABLE biblioteca_servidor DROP COLUMN endpoints"); err != nil {
 		t.Fatalf("desfazer a coluna endpoints (00016): erro = %v, quer nil", err)
+	}
+	if _, err := st.Escrita().ExecContext(ctx,
+		"ALTER TABLE upstream_oauth DROP COLUMN redirect_loopback"); err != nil {
+		t.Fatalf("desfazer a coluna redirect_loopback (00018): erro = %v, quer nil", err)
 	}
 	if err := st.Close(); err != nil {
 		t.Fatalf("fechar o banco de partida: erro = %v, quer nil", err)

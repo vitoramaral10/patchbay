@@ -68,6 +68,9 @@ func (a *Admin) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/reconectar", a.reconectar)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/sondar", a.sondar)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/autorizar", a.autorizar)
+	// A entrega manual do provedor que só aceita loopback (fatia 15): não há
+	// callback a receber, então o code volta colado da barra de endereços.
+	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}/autorizar/colar", a.colarRetornoOAuth)
 	// O callback é caminho literal de quatro segmentos, então não compete com o
 	// /{id} de três acima: o ServeMux resolve os dois sem ambiguidade.
 	mux.HandleFunc("GET "+webui.RotaCallbackOAuthUpstream, a.callback)
@@ -678,6 +681,7 @@ func lerForm(r *http.Request) (Form, error) {
 		OAuthSegredo:       cripto.Segredo(r.PostFormValue("oauth_segredo")),
 		OAuthSegredoLimpar: r.PostFormValue("oauth_segredo_limpar") != "",
 		OAuthIssuer:        r.PostFormValue("oauth_issuer"),
+		OAuthLoopback:      r.PostFormValue("oauth_loopback"),
 
 		SondaHabilitada:  r.PostFormValue("sonda_habilitada") != "",
 		SondaFerramenta:  r.PostFormValue("sonda_ferramenta"),

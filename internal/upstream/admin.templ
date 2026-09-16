@@ -626,6 +626,16 @@ templ cartaoOAuth(d Detalhe) {
 					<code class="font-mono text-xs break-all">{ d.OAuth.Issuer }</code>
 				}
 			}
+			@dado("Redirect em vigor") {
+				if d.OAuth.RedirectLoopback == "" {
+					<code class="font-mono text-xs break-all">{ webui.RotaCallbackOAuthUpstream }</code>
+				} else {
+					<div class="flex flex-wrap items-center gap-2">
+						<code class="font-mono text-xs break-all">{ d.OAuth.RedirectLoopback }</code>
+						@webui.Selo(webui.TomAlerta, "loopback")
+					</div>
+				}
+			}
 		</dl>
 		<div class="border-t border-borda px-4 py-4">
 			<p class="max-w-[75ch] text-sm text-conteudo-suave">
@@ -1133,11 +1143,25 @@ templ credenciaisOAuth(f Form) {
 			Monoespacado: true,
 			Placeholder:  "https://accounts.google.com",
 		})
-		<p class="max-w-[65ch] text-sm text-conteudo-tenue">
-			Registre no provedor exatamente este <code class="font-mono break-all">{ f.OAuthRedirectURI }</code>
-			como <code class="font-mono">redirect_uri</code>. Ele é contrato — mudar a URL pública depois
-			invalida o consentimento.
-		</p>
+		if f.OAuthLoopback == "" {
+			<p class="max-w-[65ch] text-sm text-conteudo-tenue">
+				Registre no provedor exatamente este <code class="font-mono break-all">{ f.OAuthRedirectURI }</code>
+				como <code class="font-mono">redirect_uri</code>. Ele é contrato — mudar a URL pública depois
+				invalida o consentimento.
+			</p>
+		}
+		@webui.Campo(webui.DadosCampo{
+			Nome:   "oauth_loopback",
+			Rotulo: "redirect de loopback (só para provedor que exige)",
+			Valor:  f.OAuthLoopback,
+			Ajuda: "Deixe em branco em todo provedor normal. Preencha só quando o provedor " +
+				"recusar o redirect_uri acima e aceitar apenas 127.0.0.1 — a Canva é o caso. " +
+				"Aí o valor aqui é o que você registrou lá, byte a byte, com porta: " +
+				"http://127.0.0.1:53682/callback. Nesse modo a última etapa da autorização " +
+				"é manual: você cola de volta a URL que o navegador receber.",
+			Erro:         f.Erros["oauth_loopback"],
+			Monoespacado: true,
+		})
 	</div>
 }
 

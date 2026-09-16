@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
@@ -77,6 +79,14 @@ func (a *Admin) autorizar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// O estado de OAuth, e não o cliente: aqui só interessa se este upstream usa
+	// redirect de loopback, e EstadoOAuth responde isso sem decifrar nada.
+	estado, err := a.repo.EstadoOAuth(r.Context(), reg.ID)
+	if err != nil {
+		webui.ErroInterno(w, r, a.log, err)
+		return
+	}
+
 	destino, err := a.oauth.Pedir(r.Context(), reg.Config())
 	if err != nil {
 		// Sem detalhe do provedor na tela e sem token em log nenhum: o que o
@@ -88,10 +98,148 @@ func (a *Admin) autorizar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.log.Info("autorização de upstream iniciada", "upstream", reg.Nome, "upstream_id", reg.ID)
+	a.log.Info("autorização de upstream iniciada",
+		"upstream", reg.Nome, "upstream_id", reg.ID,
+		"loopback", estado.RedirectLoopback != "")
+
+	if estado.RedirectLoopback != "" {
+		// Provedor que só aceita loopback: o navegador vai ser devolvido a um
+		// endereço da máquina de quem está autorizando, onde ninguém escuta. A
+		// página falha, e o que interessa fica na barra de endereços. Esta tela
+		// é o único lugar onde esse passo pode ser explicado antes de ele
+		// acontecer — depois, o admin está olhando um erro de conexão.
+		webui.Renderizar(w, r, http.StatusOK, a.log, TelaEntregaLoopback(DadosLoopback{
+			UpstreamID:   reg.ID,
+			UpstreamNome: reg.Nome,
+			URLProvedor:  destino,
+			Redirect:     estado.RedirectLoopback,
+		}))
+		return
+	}
+
 	// Redirecionar e não renderizar um link: o clique já é a decisão, e uma tela
 	// intermediária só acrescentaria um passo.
 	webui.Redirecionar(w, r, destino)
+}
+
+// DadosLoopback alimenta a tela de entrega manual do provedor loopback-only.
+//
+// URLProvedor é a URL de autorização já montada pelo SDK. Ela carrega o state e
+// o code_challenge, não uma credencial: é a mesma URL para onde o navegador
+// seria redirecionado no fluxo normal.
+type DadosLoopback struct {
+	UpstreamID   int64
+	UpstreamNome string
+	URLProvedor  string
+	Redirect     string
+	// Colado e Erro reexibem a tentativa recusada, para corrigir sem refazer o
+	// consentimento no provedor.
+	Colado string
+	Erro   string
+}
+
+// colarRetornoOAuth recebe a URL que ficou na barra de endereços do admin
+// depois de o provedor devolver o navegador ao loopback.
+//
+// O que ele extrai é o mesmo que o callback extrairia da query — state, code,
+// iss, error — e entrega pelo mesmo Entregar. Daqui para baixo os dois caminhos
+// são um só: a troca por token e a gravação cifrada acontecem na supervisão, com
+// o redirect_uri de loopback que o provedor registrou.
+//
+// Aceita a URL inteira ou só a query: quem copia da barra traz tudo, quem copia
+// da mensagem de erro de um navegador às vezes traz só um pedaço.
+func (a *Admin) colarRetornoOAuth(w http.ResponseWriter, r *http.Request) {
+	reg, ok := a.upstreamDaRota(w, r)
+	if !ok {
+		return
+	}
+	if a.oauth == nil || !reg.UsaOAuth() {
+		a.avisar(w, r, reg.ID, "oauth_indisponivel")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, tamanhoMaximoDoCorpo)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "O texto colado é grande demais ou o formulário veio malformado.",
+			http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	colado := strings.TrimSpace(r.PostFormValue("retorno"))
+	recusar := func(motivo string) {
+		a.log.Info("entrega manual de OAuth recusada",
+			"upstream", reg.Nome, "upstream_id", reg.ID, "motivo", motivo)
+		estado, err := a.repo.EstadoOAuth(r.Context(), reg.ID)
+		if err != nil {
+			webui.ErroInterno(w, r, a.log, err)
+			return
+		}
+		webui.Renderizar(w, r, http.StatusUnprocessableEntity, a.log,
+			TelaEntregaLoopback(DadosLoopback{
+				UpstreamID:   reg.ID,
+				UpstreamNome: reg.Nome,
+				URLProvedor:  r.PostFormValue("provedor"),
+				Redirect:     estado.RedirectLoopback,
+				Colado:       colado,
+				Erro:         motivo,
+			}))
+	}
+
+	if colado == "" {
+		recusar("Cole a URL que ficou na barra de endereços depois de autorizar.")
+		return
+	}
+	q, err := queryDoRetorno(colado)
+	if err != nil {
+		recusar(err.Error())
+		return
+	}
+
+	upstreamID, err := a.oauth.Entregar(
+		q.Get("state"), q.Get("code"), q.Get("iss"), q.Get("error"))
+	switch {
+	case errors.Is(err, ErrConsentimentoDesconhecido):
+		// O state não bate com tentativa nenhuma em curso: ou o prazo venceu, ou
+		// esta URL já foi entregue, ou ela é de outro consentimento. Nos três
+		// casos o caminho é recomeçar pelo botão Autorizar.
+		recusar("Esta URL não corresponde a uma autorização em curso — ou ela já foi " +
+			"usada, ou passou do tempo. Comece de novo pelo botão Autorizar.")
+		return
+	case err != nil:
+		a.log.Warn("entrega manual de OAuth recusada pelo provedor",
+			"upstream_id", upstreamID, "erro", err)
+		a.avisar(w, r, reg.ID, erroDeConsentimento(err))
+		return
+	}
+
+	a.log.Info("entrega manual de OAuth aceita", "upstream", reg.Nome, "upstream_id", reg.ID)
+	a.avisar(w, r, reg.ID, "autorizado")
+}
+
+// queryDoRetorno tira os parâmetros do que o admin colou.
+//
+// Três formas, porque são as três que aparecem na prática: a URL inteira da
+// barra de endereços, a query com o `?` na frente, e a query crua. O que não
+// pode é adivinhar — texto sem `code` nem `error` é recusado com a instrução,
+// em vez de virar um state vazio que o broker recusaria sem dizer por quê.
+func queryDoRetorno(colado string) (url.Values, error) {
+	bruta := colado
+	if i := strings.IndexByte(bruta, '?'); i >= 0 {
+		bruta = bruta[i+1:]
+	}
+	if i := strings.IndexByte(bruta, '#'); i >= 0 {
+		bruta = bruta[:i]
+	}
+	q, err := url.ParseQuery(bruta)
+	if err != nil {
+		return nil, errors.New("Não consegui ler esta URL. Cole-a inteira, como ela " +
+			"aparece na barra de endereços — de http://127.0.0.1 até o fim.")
+	}
+	if q.Get("code") == "" && q.Get("error") == "" {
+		return nil, errors.New("A URL colada não traz nem code nem error. Confira se " +
+			"você copiou a barra de endereços depois de autorizar no provedor, e não antes.")
+	}
+	return q, nil
 }
 
 // callback é onde o authorization server do upstream devolve o navegador do

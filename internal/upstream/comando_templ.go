@@ -93,12 +93,14 @@ func CaixaDeColar(d DadosColar) templ.Component {
 				Nome:   "comando",
 				Rotulo: "Comando",
 				Valor:  d.Texto,
-				Ajuda: "Uma linha de claude mcp add, com ou sem o executável na frente. " +
-					"Pode vir quebrada em várias linhas, como na documentação. " +
-					"O patchbay lê o transporte, a URL ou o processo, os headers e o token, " +
-					"e cria o MCP direto.",
+				Ajuda: "Uma linha de claude mcp add ou de npx add-mcp, com ou sem o " +
+					"executável na frente. Pode vir quebrada em várias linhas, como na " +
+					"documentação. O patchbay lê o transporte, a URL ou o processo, os " +
+					"headers e o token, e cria o MCP direto. No add-mcp, sem --name, o " +
+					"nome sai do endereço: mcp.canva.com vira canva.",
 				Placeholder: "claude mcp add --transport http exemplo https://exemplo.com/mcp " +
-					"--header \"Authorization: Bearer o-seu-token\"",
+					"--header \"Authorization: Bearer o-seu-token\"\n" +
+					"npx add-mcp https://exemplo.com/mcp",
 			}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
