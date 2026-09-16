@@ -13,8 +13,8 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 > servidor, opt-in), o authorization server completo (CIMD, DCR e redirect URI
 > de loopback incluídos), o **transporte SSE legado**, a observabilidade
 > (trilha por chamada, tela filtrável, log ao vivo por SSE e redação de
-> segredo), o export/import da configuração em YAML e o empacotamento (binário
-> multiplataforma por `goreleaser`, imagem Docker com Node e uv para MCP local).
+> segredo), o export/import da configuração em YAML e o empacotamento (imagem
+> Docker multi-arch com Node e uv para MCP local).
 >
 > Fora da v1: a **fatia 15** (provedor loopback-only, tipo Canva) foi adiada por
 > decisão do dono em 2026-09-08 — redirect só-loopback exigiria um binário
@@ -711,15 +711,14 @@ Três formas de rodar em produção, do mais simples ao mais isolado.
 
 ### Binário
 
-Baixe o arquivo da plataforma em
-[Releases](https://github.com/vitoramaral10/patchbay/releases) — `linux_amd64`,
-`linux_arm64`, `darwin_arm64` ou `windows_amd64` — e confira o checksum contra
-`patchbay_<versão>_checksums.txt`, publicado junto. O `.goreleaser.yaml`
-compila os quatro com `CGO_ENABLED=0`, então não há biblioteca nativa para
-instalar antes.
+**Não há binário publicado.** O projeto distribui a imagem e mais nada: o
+`goreleaser` e os arquivos em Releases saíram em 2026-09-16, por decisão do
+dono. Quem quiser binário compila — é um `go build`, sem biblioteca nativa para
+instalar antes, porque tudo é `CGO_ENABLED=0`:
 
 ```sh
-tar -xzf patchbay_<versão>_linux_amd64.tar.gz
+git clone https://github.com/vitoramaral10/patchbay && cd patchbay
+task build                            # ou: go build -o patchbay ./cmd/patchbay
 export PATCHBAY_MASTER_KEY=...        # ver "Chave mestra" abaixo
 export PATCHBAY_DATA_DIR=/var/lib/patchbay
 export PATCHBAY_PUBLIC_URL=https://patchbay.exemplo.com
@@ -1372,6 +1371,13 @@ task verifica   # go vet + golangci-lint + go test -race
 
 `-race` exige cgo; no Windows sem compilador C, rode os testes por WSL ou em
 Linux.
+
+**Isto não roda no CI.** Desde 2026-09-16 o único workflow é
+`.github/workflows/imagem.yml`, que compila a imagem e a publica no GHCR —
+nada de `vet`, de lint nem de teste lá. O portão é este comando, na máquina de
+quem escreve o código: um commit que quebra o teste só é barrado se alguém
+rodar. O `docker build` ainda falha quando o código não compila, e é o resto da
+rede que deixou de existir.
 
 Os testes de upstream STDIO sobem **processos de verdade**: o binário de teste se
 reexecuta como servidor MCP, como processo mudo e como neto, e prova que o neto
