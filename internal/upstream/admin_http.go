@@ -28,6 +28,10 @@ type Admin struct {
 	// MCP recém-criado. Vive em memória porque é recado de uma navegação
 	// (comando_http.go).
 	notas *guardaDeNotas
+	// detectarOAuth descobre o modo de credencial do MCP que chega por comando
+	// colado, que é o único caminho de cadastro sem campo de modo
+	// (deteccao.go).
+	detectarOAuth DetectorDeOAuth
 }
 
 // NovoAdmin monta o CRUD de upstream.
@@ -47,6 +51,10 @@ func NovoAdmin(
 		nomeExposto:    nomeExposto,
 		log:            log,
 		notas:          novaGuardaDeNotas(),
+		// Cliente próprio, com prazo próprio: a descoberta fala com um servidor
+		// de terceiro dentro do POST do admin, e herdar um cliente sem timeout
+		// faria a caixa de colar pendurar junto com ele.
+		detectarOAuth: novoDetectorPorMetadados(&http.Client{Timeout: PrazoDeDeteccao}),
 	}
 }
 

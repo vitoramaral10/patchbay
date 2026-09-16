@@ -184,6 +184,12 @@ func (a *Admin) colar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	form := imp.Form
+	// Antes de completar e validar: o comando de instalação não carrega modo de
+	// credencial nenhum, e sem esta descoberta todo MCP remoto colado nasceria
+	// em estática — inclusive o que só fala OAuth (deteccao.go).
+	if aviso := a.ajustarModoPorDescoberta(r.Context(), &form); aviso != "" {
+		imp.Avisos = append(imp.Avisos, aviso)
+	}
 	if err := a.completarForm(r.Context(), &form); err != nil {
 		webui.ErroInterno(w, r, a.log, err)
 		return
@@ -211,7 +217,7 @@ func (a *Admin) colar(w http.ResponseWriter, r *http.Request) {
 	a.aplicarNoAr(r.Context(), registroDoForm(id, form))
 	a.log.Info("upstream criado por comando colado",
 		"upstream", form.Nome, "upstream_id", id, "tipo", form.TipoEfetivo(),
-		"avisos", len(imp.Avisos))
+		"modo", form.ModoEfetivo(), "avisos", len(imp.Avisos))
 
 	destino := webui.RotaUpstreams + "/" + strconv.FormatInt(id, 10) + "?aviso=importado"
 	notas, err := a.notas.guardar(imp.Avisos)
