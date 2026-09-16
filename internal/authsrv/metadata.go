@@ -11,6 +11,28 @@ const (
 	// RotaMetadataAS é o documento RFC 8414. O caminho é obrigatório: o cliente
 	// o deriva do issuer, nunca o descobre.
 	RotaMetadataAS = "/.well-known/oauth-authorization-server"
+	// RotaMetadataASEndpoint é o mesmo documento RFC 8414 no caminho com
+	// inserção de caminho (RFC 8414 §3.1). O cliente que parte da URL do
+	// endpoint — /mcp/{slug} — monta a URL de metadata inserindo esse caminho
+	// depois do sufixo well-known, e não na raiz; sem esta rota ele recebe 404
+	// e só acha o AS se tentar a raiz depois. O documento servido é idêntico
+	// ao da raiz, inclusive o issuer: o authorization server é um só, e o slug
+	// aqui é só o rastro do caminho por onde o cliente chegou.
+	RotaMetadataASEndpoint = "/.well-known/oauth-authorization-server/mcp/{endpoint}"
+	// RotaMetadataOIDCRaiz, RotaMetadataOIDCEndpoint e RotaMetadataOIDCSufixo
+	// são os três caminhos de OpenID Connect Discovery, que parte dos clientes
+	// tenta antes de cair no RFC 8414: a raiz, a inserção de caminho e a forma
+	// canônica do OIDC, que anexa o sufixo depois do caminho do issuer.
+	//
+	// Os três servem o mesmo documento do RFC 8414 — são alias de descoberta,
+	// não uma promessa de OIDC. O patchbay não emite ID token nem tem userinfo,
+	// então o documento não traz os campos obrigatórios do OIDC Discovery e um
+	// cliente estritamente OIDC o recusaria; quem chega aqui é o cliente OAuth
+	// que varre os caminhos conhecidos, e para ele o alias é a diferença entre
+	// achar o AS e desistir.
+	RotaMetadataOIDCRaiz     = "/.well-known/openid-configuration"
+	RotaMetadataOIDCEndpoint = "/.well-known/openid-configuration/mcp/{endpoint}"
+	RotaMetadataOIDCSufixo   = "/mcp/{endpoint}/.well-known/openid-configuration"
 	// RotaMetadataRecurso é a metadata RFC 9728 de um endpoint, no caminho com
 	// sufixo. Cada endpoint é um protected resource distinto (seção 07): é isso
 	// que faz o aud do token carregar o endpoint e a verificação virar uma

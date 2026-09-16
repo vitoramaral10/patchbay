@@ -478,6 +478,40 @@ func TestMetadataBemFormada(t *testing.T) {
 		}
 	})
 
+	t.Run("aliases de descoberta do authorization server", func(t *testing.T) {
+		t.Parallel()
+
+		// Os caminhos que um cliente varre antes de desistir: a inserção de
+		// caminho do RFC 8414 §3.1, e os três de OIDC Discovery. Todos servem o
+		// mesmo documento da raiz, issuer incluído — o AS é um só, e o slug no
+		// caminho é só o rastro de por onde o cliente chegou.
+		for _, caminho := range []string{
+			"/.well-known/oauth-authorization-server/mcp/" + p.endpointPessoal,
+			"/.well-known/openid-configuration",
+			"/.well-known/openid-configuration/mcp/" + p.endpointPessoal,
+			"/mcp/" + p.endpointPessoal + "/.well-known/openid-configuration",
+		} {
+			t.Run(caminho, func(t *testing.T) {
+				t.Parallel()
+
+				res := p.enviar(t, http.MethodGet, p.urlPublica+caminho, nil, "", false)
+				if res.StatusCode != http.StatusOK {
+					t.Fatalf("status = %d, quer 200", res.StatusCode)
+				}
+				var meta oauthex.AuthServerMeta
+				if err := json.NewDecoder(res.Body).Decode(&meta); err != nil {
+					t.Fatalf("decodificar metadata: erro = %v, quer nil", err)
+				}
+				if meta.Issuer != p.urlPublica {
+					t.Errorf("issuer = %q, quer %q", meta.Issuer, p.urlPublica)
+				}
+				if quer := p.urlPublica + authsrv.RotaAutorizar; meta.AuthorizationEndpoint != quer {
+					t.Errorf("authorization_endpoint = %q, quer %q", meta.AuthorizationEndpoint, quer)
+				}
+			})
+		}
+	})
+
 	t.Run("protected resource (RFC 9728)", func(t *testing.T) {
 		t.Parallel()
 

@@ -43,7 +43,8 @@ func NovoHTTP(s *Servico, log *slog.Logger) *HTTP {
 	}
 }
 
-// Rotas registra o que é público: os três documentos de metadata (RFC 8414,
+// Rotas registra o que é público: os documentos de metadata (RFC 8414 na raiz,
+// no caminho com inserção de caminho e nos três caminhos de OIDC Discovery;
 // RFC 9728 por endpoint e o fallback dele na raiz), o token endpoint e o
 // revocation endpoint.
 //
@@ -52,6 +53,16 @@ func NovoHTTP(s *Servico, log *slog.Logger) *HTTP {
 // também a OPTIONS, que é o preflight de CORS.
 func (h *HTTP) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc(RotaMetadataAS, h.metadataAS)
+	// O mesmo handler no caminho com inserção de caminho: o documento não
+	// depende do slug, e o slug não é validado de propósito — quem bate aqui
+	// ainda está descobrindo o AS, e recusar por endpoint inexistente só
+	// trocaria uma descoberta que funciona por um 404.
+	mux.HandleFunc(RotaMetadataASEndpoint, h.metadataAS)
+	// E os três caminhos de OIDC Discovery, alias do mesmo documento — ver a
+	// constante.
+	mux.HandleFunc(RotaMetadataOIDCRaiz, h.metadataAS)
+	mux.HandleFunc(RotaMetadataOIDCEndpoint, h.metadataAS)
+	mux.HandleFunc(RotaMetadataOIDCSufixo, h.metadataAS)
 	mux.HandleFunc(RotaMetadataRecurso, h.metadataRecurso)
 	mux.HandleFunc(RotaMetadataRecursoRaiz, h.metadataRecursoRaiz)
 	mux.HandleFunc(RotaToken, h.token)

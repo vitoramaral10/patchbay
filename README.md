@@ -1127,6 +1127,8 @@ carregando o destino, e o clique do consentimento não se perde.
 | Rota | O que é |
 |---|---|
 | `/.well-known/oauth-authorization-server` | Metadata RFC 8414 |
+| `/.well-known/oauth-authorization-server/mcp/<slug>` | A mesma metadata RFC 8414, no caminho com inserção de caminho (§3.1) — para o cliente que descobre a partir da URL do endpoint |
+| `/.well-known/openid-configuration`, com `/mcp/<slug>` inserido ou anexado | Alias de descoberta: o mesmo documento RFC 8414, para o cliente que tenta OIDC Discovery primeiro. O patchbay não é um provedor OIDC — não há ID token nem userinfo |
 | `/.well-known/oauth-protected-resource/mcp/<slug>` | Metadata RFC 9728 do endpoint, mais o fallback na raiz |
 | `/oauth/authorize` | Consentimento, atrás da sessão de admin |
 | `/oauth/token` | `authorization_code` e `refresh_token`, em `application/x-www-form-urlencoded` |
