@@ -91,6 +91,22 @@ FROM ghcr.io/astral-sh/uv:bookworm-slim@sha256:22334efe746f1b69217d455049b484d7b
 # por um compilador na imagem de runtime. É o pior dos dois lados.
 FROM node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS runtime
 
+# Raízes de CA. A `node:*-slim` **não** tem o pacote `ca-certificates`: a base é
+# `debian:bookworm-slim`, que não o traz, e o Dockerfile do Node o instala só
+# para verificar a assinatura do tarball e depois o remove no
+# `apt-get purge -y --auto-remove` — nada em /usr/local liga contra biblioteca
+# dele, então ele não sobrevive ao `apt-mark auto '.*'`.
+#
+# A distroless "static" trazia /etc/ssl/certs/ca-certificates.crt de graça, e a
+# troca de base em 2026-09-09 o levou junto sem ninguém notar: npx e uvx
+# continuaram funcionando porque o Node embute as raízes no binário e o uv usa
+# as do webpki, mas o Go lê o arquivo do sistema — e com o pool vazio *todo*
+# TLS de saída do gateway morre em "x509: certificate signed by unknown
+# authority", em qualquer upstream HTTPS (visto no canva em 2026-09-16).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 # O usuário do patchbay é criado com UID 65532 e não reaproveita o "node" (1000)
 # da base: 65532 é o dono de /dados nas instalações que já existem, e trocar o
 # UID aqui faria o SQLite falhar com "unable to open database file (14)" no
