@@ -124,7 +124,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário.
 | `/admin/setup` | Cria o administrador único. Existe **só** no primeiro acesso |
 | `/admin/login` · `/admin/sair` | Entrada e saída |
 | `/admin/` | Painel: MCPs por estado, endpoints, ferramentas, chaves |
-| `/admin/mcps` | CRUD de MCP HTTP e SSE (bearer e headers estáticos, ou OAuth) e STDIO (comando, argumentos e ambiente), à mão ou colando a linha de `claude mcp add` que a documentação do servidor publica; detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora, e botão **Autorizar** no modo OAuth |
+| `/admin/mcps` | CRUD de MCP HTTP e SSE (sem autenticação, bearer e headers estáticos, ou OAuth) e STDIO (comando, argumentos e ambiente), à mão ou colando a linha de `claude mcp add` que a documentação do servidor publica; detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora, e botão **Autorizar** no modo OAuth |
 | `/admin/biblioteca` | Lista oficial do mcpservers.org em cópia local refeita a cada 12 horas: ~652 servidores com nome, descrição em português, site e (quando publicado) comando ou URL de conexão, e `OAuth` quando a página cita OAuth. Busca instantânea. **Adicionar** abre o formulário de MCP preenchido com os dados do servidor, um por endpoint quando o servidor publica mais de um. A idade do catálogo fica à vista, com o botão **Atualizar agora** ao lado |
 | `/admin/endpoints` | CRUD de endpoint com composição fina — quais MCPs entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada MCP dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
@@ -529,11 +529,19 @@ nu, e é por isso que a morte de árvore é obrigatória e não opcional.
 
 ## OAuth de upstream
 
-Upstream HTTP ou SSE tem dois **modos de credencial**, escolhidos na edição e
-excludentes: `estatica` — bearer e headers colados por você — e `oauth`. São
-excludentes porque os dois montam o mesmo header `Authorization`, e um servidor
-que recebe dois escolhe um sem dizer qual: o sintoma seria 401 intermitente que
-ninguém liga a um formulário salvo semanas antes.
+Upstream HTTP ou SSE tem três **modos de credencial**, escolhidos na edição e
+excludentes: `nenhum` — o MCP é aberto e nada sai daqui —, `estatica` — bearer e
+headers colados por você — e `oauth`. Estática e OAuth são excludentes porque os
+dois montam o mesmo header `Authorization`, e um servidor que recebe dois escolhe
+um sem dizer qual: o sintoma seria 401 intermitente que ninguém liga a um
+formulário salvo semanas antes.
+
+`nenhum` é uma declaração, não a ausência de preenchimento. Salvar nesse modo
+apaga o bearer e os headers estáticos gravados, e o gerente nem chega a ler a
+tabela de credenciais daquele upstream. A diferença entre "este MCP é aberto" e
+"o admin ainda não colou o token" é o que responde, na tela de detalhe, por que
+um 401 está vindo dali — e é por isso que ela é um modo persistido em vez de um
+formulário em branco.
 
 No modo OAuth o patchbay é um **cliente** OAuth 2.1 com PKCE. A descoberta
 (RFC 9728 e RFC 8414), a ordem de registro de cliente e o refresh são do
