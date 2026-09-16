@@ -34,7 +34,17 @@
 #
 # Base do builder fixada por digest (golang:1.26-bookworm em 2026-09-08);
 # atualize o digest ao trocar de versão do Go, não a esmo.
-FROM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS builder
+#
+# `--platform=$BUILDPLATFORM` prende o builder à arquitetura de quem compila, e
+# não à de destino. Sem ele, o arm64 rodava o compilador *inteiro* sob QEMU:
+# 386s contra 54s do amd64 nativo, 71% do tempo do job (medido em 2026-09-16).
+# Como o binário é CGO_ENABLED=0, o Go cross-compila por GOOS/GOARCH e não
+# precisa de toolchain do alvo — a emulação pagava para traduzir instrução por
+# instrução um trabalho que a máquina já fazia nativa.
+#
+# QEMU continua no workflow, mas só o estágio de runtime passa por ele: lá há
+# groupadd e chmod de verdade, que precisam rodar como o alvo.
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS builder
 WORKDIR /src
 
 # Só os manifestos primeiro: `go mod download` fica numa camada que só muda
@@ -49,9 +59,18 @@ ARG VERSAO=dev
 ARG COMMIT=desconhecido
 ARG DATA=desconhecida
 
+# Preenchidos pelo BuildKit; ARG automático só existe no estágio que o declara.
+# É o que faz um builder amd64 emitir binário arm64.
+#
+# De propósito depois do COPY e do `go mod download`: nenhum dos dois depende do
+# alvo, então as duas arquiteturas compartilham essas camadas e os módulos são
+# baixados uma vez só, não uma por arquitetura.
+ARG TARGETOS
+ARG TARGETARCH
+
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
       -ldflags="-s -w \
         -X github.com/vitoramaral10/patchbay/internal/platform/versao.Numero=${VERSAO} \
         -X github.com/vitoramaral10/patchbay/internal/platform/versao.Commit=${COMMIT} \
