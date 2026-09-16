@@ -45,9 +45,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # QEMU para o alvo arm64: o build é CGO_ENABLED=0 e não precisa de
-      # toolchain nativo, então um só passo multi-plataforma resolve os dois a
-      # partir do Dockerfile único.
+      # QEMU só para o estágio de runtime do arm64, onde há groupadd e chmod
+      # que precisam rodar como o alvo. O compilador não passa mais por aqui:
+      # o builder é --platform=$BUILDPLATFORM e cross-compila por GOARCH, que
+      # é o que tirou 386s de um job de ~8min30 (ver o Dockerfile).
       - uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -85,7 +86,11 @@ jobs:
             DATA=${{ steps.data.outputs.iso }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Cache entre execuções no próprio GitHub Actions: sem ele todo push
-          # recompila o mundo, e sob QEMU o arm64 domina o tempo do job.
+          # Cache de camadas entre execuções no próprio GitHub Actions.
+          #
+          # Ele não cobre o compilador: o `go build` carimba o COMMIT no
+          # ldflags, então aquela camada muda a cada push por definição, e os
+          # cache mount do BuildKit (/go/pkg/mod, go-build) não são exportados
+          # por type=gha. O que ele salva são as bases e o `go mod download`.
           cache-from: type=gha
           cache-to: type=gha,mode=max
