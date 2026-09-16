@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -245,6 +246,15 @@ type Form struct {
 	// tools/list que ainda não chegou, e bloquear o salvamento por isso
 	// impediria configurar a sonda antes da primeira conexão.
 	AvisoSondaFerramenta string
+	// AvisoComando é um alerta não bloqueante: o comando deste upstream STDIO
+	// não foi encontrado no PATH do processo patchbay, então ele não vai subir.
+	//
+	// Aviso e não erro de validação, de propósito: o PATH pode mudar sem o
+	// upstream mudar — alguém monta um volume, troca a imagem, instala o
+	// runtime — e recusar o salvamento impediria cadastrar hoje o que só vai
+	// existir no próximo deploy. O que não dá é deixar o admin descobrir pelo
+	// log, que é o modo de falha que este projeto passa o tempo todo evitando.
+	AvisoComando string
 
 	Erros map[string]string
 }
@@ -398,6 +408,28 @@ func avisoFerramentaForaDoCatalogo(ferramenta string, descobertas []*mcp.Tool) s
 	}
 	return `A ferramenta "` + ferramenta + `" não aparece no último tools/list deste MCP. ` +
 		"Confira o nome — é o nome no MCP, sem prefixo de endpoint."
+}
+
+// avisoComandoForaDoPath confere se o comando de um upstream STDIO existe.
+//
+// Vale a pena dizer por que este aviso existe: a imagem oficial do patchbay é
+// distroless static — sem shell, sem Node, sem Python. Nenhum MCP de processo
+// local sobe nela, e a biblioteca passou a oferecer milhares deles a um clique.
+// Sem este aviso, o cadastro parece dar certo e o upstream entra em backoff
+// eterno com "executable file not found in $PATH" no log.
+func avisoComandoForaDoPath(comando string) string {
+	comando = strings.TrimSpace(comando)
+	if comando == "" {
+		return ""
+	}
+	if _, err := exec.LookPath(comando); err == nil {
+		return ""
+	}
+	return "O comando \"" + comando + "\" não está no PATH deste patchbay, então " +
+		"este MCP não vai subir. A imagem oficial é distroless e não traz npx, uvx " +
+		"nem node: MCP de processo local pede o patchbay rodando como binário no " +
+		"host, ou uma imagem própria com o runtime. Dá para salvar assim mesmo — o " +
+		"PATH pode mudar antes de ele conectar."
 }
 
 // dentroDaFaixa devolve v quando ele cabe em [minimo, maximo], e padrao quando

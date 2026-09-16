@@ -14,7 +14,7 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 > de loopback incluídos), o **transporte SSE legado**, a observabilidade
 > (trilha por chamada, tela filtrável, log ao vivo por SSE e redação de
 > segredo), o export/import da configuração em YAML e o empacotamento (binário
-> multiplataforma por `goreleaser`, imagem Docker distroless).
+> multiplataforma por `goreleaser`, imagem Docker com Node e uv para MCP local).
 >
 > Fora da v1: a **fatia 15** (provedor loopback-only, tipo Canva) foi adiada por
 > decisão do dono em 2026-09-08 — redirect só-loopback exigiria um binário
@@ -46,9 +46,10 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
   MCP no meio. `(*os.Process).Kill` mata só o filho direto e deixa o **neto**
   vivo — `npx` lança `node`, `uvx` lança `python` —, e é esse neto que vazava um
   processo por reconexão até esgotar os PIDs da máquina no gateway anterior.
-- `internal/biblioteca` — a tela que lê o catálogo de servidores MCP remotos do
-  mcpservers.org **a cada uso** e transforma um deles num upstream preenchido. Sem
-  catálogo embutido e sem tabela: o que aparece é o que a origem respondeu agora.
+- `internal/biblioteca` — a tela que transforma um servidor da lista oficial do
+  mcpservers.org num upstream preenchido. Cópia local em SQLite, refeita a cada 12
+  horas por uma goroutine de fundo: a tela lê o banco e nunca a rede, e é a
+  única parte do pacote que sai para a internet que fala com a origem.
 - `internal/upstream` — uma sessão MCP por servidor configurado, conectada
   em goroutine de supervisão. Nenhuma operação de upstream no caminho da
   requisição do cliente. **Adicionar, reconfigurar e remover upstream valem em
@@ -124,7 +125,7 @@ Toda a configuração é feita em `/admin/...`, servida pelo mesmo binário.
 | `/admin/login` · `/admin/sair` | Entrada e saída |
 | `/admin/` | Painel: MCPs por estado, endpoints, ferramentas, chaves |
 | `/admin/mcps` | CRUD de MCP HTTP e SSE (bearer e headers estáticos, ou OAuth) e STDIO (comando, argumentos e ambiente), à mão ou colando a linha de `claude mcp add` que a documentação do servidor publica; detalhe com estado, último erro, próxima tentativa, falhas consecutivas, connects abandonados e as ferramentas descobertas (nome exposto, nome original, descrição); botão **Reconectar** que descarta a sessão e rearma a supervisão na hora, e botão **Autorizar** no modo OAuth |
-| `/admin/biblioteca` | Catálogo de servidores MCP remotos **lido do mcpservers.org na hora**, com busca por nome e resumo. **Adicionar** busca o endpoint e a forma de autenticação naquele servidor e abre o formulário de MCP preenchido. Nada é guardado: sem saída para a internet, a tela explica e aponta para o cadastro à mão |
+| `/admin/biblioteca` | Lista oficial do mcpservers.org em cópia local refeita a cada 12 horas: ~652 servidores com nome, descrição em português, site e (quando publicado) comando ou URL de conexão, e `OAuth` quando a página cita OAuth. Busca instantânea. **Adicionar** abre o formulário de MCP preenchido com os dados do servidor, um por endpoint quando o servidor publica mais de um. A idade do catálogo fica à vista, com o botão **Atualizar agora** ao lado |
 | `/admin/endpoints` | CRUD de endpoint com composição fina — quais MCPs entram, com que prefixo e com que regras de filtro/renomeação — e a contagem de ferramentas do endpoint e de cada MCP dentro dele |
 | `/admin/chaves` | Emissão de chave com escopo, comando `claude mcp add` pronto, revogação |
 | `/admin/oauth` | Clientes do authorization server: cadastro à mão, e as linhas que aparecem sozinhas por **CIMD** ou **DCR** — a coluna Origem diz qual é qual. Detalhe com a allowlist de redirect, o escopo, as sessões vivas e a revogação de cliente ou de sessão |
@@ -160,78 +161,158 @@ na primeira tentativa — três campos em que errar não dá erro de formulário
 um upstream degradado horas depois. A biblioteca troca isso por escolher um nome
 de uma lista.
 
-`/admin/biblioteca` lista os **servidores MCP remotos** que o
-[mcpservers.org](https://mcpservers.org/pt-BR/remote-mcp-servers) publica —
-Notion, Linear, Atlassian, GitHub, Cloudflare, Figma, Stripe… — com busca por
-nome e resumo, vários termos exigindo todos, em qualquer ordem.
+`/admin/biblioteca` oferece a lista oficial do
+[mcpservers.org/pt-BR/official](https://mcpservers.org/pt-BR/official)
+— **~652 servidores** em 22 páginas de índice. Busca por nome e descrição, vários
+termos exigindo todos em qualquer ordem. A origem publica cada servidor com seu
+título, descrição em português, site e — quando a página o especifica — comando
+(para STDIO) ou URL de conexão (para HTTP/SSE).
 
-**Adicionar não cadastra nada.** Ele busca a página daquele servidor na origem,
-lê endpoint, transporte e forma de autenticação, e redireciona para
-`/admin/upstreams/novo` com os campos preenchidos. O admin revisa e salva. É
-deliberado em dois níveis: a URL vem de um site de terceiro e ninguém deveria
-cadastrá-la sem olhar, e o formulário preenchido é o único contrato possível
-entre duas features que a regra de arquitetura proíbe de se importarem — quem
-guarda esse contrato é um teste de integração em `cmd/patchbay`, que segue o
-botão e confere que o formulário volta preenchido. Nenhum campo de credencial
-viaja nessa URL: query entra em histórico do navegador, log de proxy e `Referer`.
+**Adicionar não cadastra nada.** Ele lê o servidor no catálogo local e
+redireciona para `/admin/upstreams/novo` com os campos preenchidos: endpoint e
+transporte, nos remotos; comando e argumentos, nos locais. O admin revisa e
+salva. É deliberado em dois níveis: a URL vem de um catálogo de terceiro e
+ninguém deveria cadastrá-la sem olhar, e o formulário preenchido é o único
+contrato possível entre duas features que a regra de arquitetura proíbe de se
+importarem — quem guarda esse contrato é um teste de integração em
+`cmd/patchbay`, que segue o botão e confere que o formulário volta preenchido.
+Nenhum campo de credencial viaja nessa URL: query entra em histórico do
+navegador, log de proxy e `Referer`.
 
-### Nada é guardado, e o que isso custa
+Servidor com mais de um endpoint publicado (caso do Cloudflare, com 17) lista
+cada um no cartão com um **Adicionar** próprio, que abre o formulário já com
+aquela URL. Servidor sem comando nem URL reconhecível não some da lista: o
+cartão diz que a página não publica comando nem endpoint reconhecível, com
+link para abrir a página do servidor no mcpservers.org e para o site, e
+**Adicionar** abre o formulário só com o nome.
 
-Não há catálogo embutido no binário nem tabela no banco. Toda vez que a tela
-abre, ela busca a lista na origem, e o que ela mostra é o que o site publica
-naquele momento — nunca um servidor que já saiu do ar, nunca a ausência de um
-que acabou de entrar. Não existe versão velha para ficar velha, e não existe
-`task` para rodar nem release para esperar.
+### Origem: lista oficial do mcpservers.org
 
-O preço é explícito: **sem rede para o mcpservers.org, a tela não funciona.**
-Ela diz isso com todas as letras e aponta para o cadastro à mão, em vez de
-mostrar uma lista vazia que parece defeito. E ela distingue dois casos, porque
-a ação é diferente em cada um: *origem indisponível* (rede, tempo esgotado ou
-desafio de bot — tentar de novo pode resolver) e *formato mudou* (a página
-chegou e a marcação não é mais a que o patchbay sabe ler — tentar de novo não
-resolve, e o log tem o detalhe).
+O patchbay raspa as 22 páginas de índice e as ~651 páginas de detalhe de
+`/pt-BR/official`, cada uma com pausa de 2 segundos. A varredura toma cerca de 30
+minutos — 29m26s na varredura real de 2026-09-11, dentro do prazo de 1
+hora. Roda no boot (quando a cópia anterior venceu ou não existe), de 12 em 12
+horas durante o funcionamento, e a pedido pelo botão "Atualizar agora" na tela.
 
-O resto do patchbay não depende disto. O gateway sobe, serve e roteia igual com
-a origem fora do ar; a biblioteca é a única tela que sai para a internet, e ela
-sai só quando alguém a abre.
+**O que cada servidor traz na lista:**
 
-Entre duas idas à origem há um intervalo mínimo de um minuto. Não é estoque: é
-o que impede uma pessoa digitando "notion" de mandar uma rajada ao site — que é
-justamente o que faz o Cloudflare de lá responder com desafio de bot. Lista
-vencida nunca é servida: se a origem cair, a tela dá erro, e não a lista de um
-minuto atrás mostrada calada como se fosse de agora.
+- Nome em `mcpservers.org/<slug>`.
+- Título e descrição completos em português.
+- Site da origem: o primeiro link externo da página (quando há).
+- Comando (para STDIO): quando publicado, com o interpretador explícito
+  (`npx`, `uvx`) ou um caminho. Servidor sem comando entra mesmo assim — o
+  formulário de cadastro abre com o nome preenchido e o comando vazio.
+- URL de conexão (para HTTP/SSE): quando publicada, a URL `https` que termina em
+  `/mcp` ou `/sse`. De autenticação sai uma coisa só — `OAuth`, e **só** quando a
+  página cita OAuth na mesma região do texto. Nenhuma outra forma de
+  autenticação é lida: não se deduz token, chave nem "servidor aberto" da prosa
+  da página.
 
-### Por que a busca é filtrada aqui, e não delegada
+**O que a lista não é:**
 
-A origem tem busca própria (`/search?query=`), renderizada no servidor. Só que
-ela casa **apenas pelo nome** do servidor remoto: medido em 2026-09-09, `jira`
-devolve zero remotos — não acha o Atlassian, cujo resumo é literalmente "Jira,
-Confluence, Compass" —, e `database` e `kubernetes` também devolvem zero.
+- Não é o `/all` do site (12 mil servidores de cauda longa, sem transporte
+  declarado, varredura de 7 horas). Nem a lista de remotos curados (`/remote-mcp-servers`).
+- Não consulta nenhuma outra origem além da lista oficial do mcpservers.org.
+- Não faz curadoria local: entra o que o mcpservers.org publica como oficial.
 
-Então a tela pede a lista de remotos (uma requisição) e filtra o que veio, sobre
-nome e resumo. Os dados continuam sendo, byte a byte, o que a origem respondeu
-naquele momento; o que muda é só onde a comparação de texto roda.
+**Tolerância e falha:**
 
-### Só remotos, e por quê
+Detalhe fora do ar (URL do servidor indisponível, página de detalhe com erro)
+conta e é pulado; até 10% de perda é tolerado. Acima de 10%, a varredura falha e
+o catálogo anterior fica em vigor, com a hora da tentativa falhada visível na
+tela. Qualquer problema de rede — site fora, 403, marcação de página mudada —
+preserva o catálogo que estava.
 
-A origem também lista milhares de servidores **locais**, e eles ficam de fora. As
-páginas de servidor remoto declaram endpoint, transporte e autenticação em campos
-próprios — exatamente o que o formulário de upstream precisa. As de servidor
-local são prosa de README, de onde um comando executável só sairia por
-adivinhação, e comando adivinhado vira processo filho que não sobe. Para STDIO,
-o cadastro continua sendo à mão.
+### Instalação nova nasce com catálogo
 
-### Ler HTML de terceiro
+A primeira varredura leva cerca de 30 minutos — o tempo das ~651 páginas de
+detalhe com pausa de 2 segundos; a tela estima "de 20 a 35 minutos" enquanto ela
+corre. Até ter o primeiro catálogo pronto, a tela poderia ficar bloqueada.
 
-A origem não tem API: o `robots.txt` bloqueia `/api/`, e o que sobra são as
-páginas públicas. `internal/biblioteca/origem.go` é onde essa tradução mora, e
-ela assume a própria fragilidade: cada expressão está amarrada a um pedaço
-nomeado da página, e quando uma delas para de casar o pacote devolve erro de
-formato — **nunca um item pela metade**, que viraria um botão levando a um
-formulário errado. As amostras em `internal/biblioteca/testdata/` são páginas de
-verdade do site, e são elas que dizem, no `go test`, que a marcação ainda é a
-que o código espera. Só URL `https` é aceita: um endpoint em texto claro
-carregaria o bearer do upstream sem cifra.
+Em vez disso, o binário carrega uma **semente**: o catálogo versionado em
+`internal/biblioteca/semente.json.gz`, embutido por `go:embed`. No primeiro boot,
+e **só** quando nenhuma varredura terminou ainda, ele entra no banco. A semente
+traz toda a lista oficial — 651 servidores em ~56 kB — gerada na hora do corte
+de versão. Ela entra com a data em que foi gerada, e é justamente essa data que
+faz o sincronizador considerá-lo vencido e sair varrendo em seguida. Meia hora
+depois de subir, o que está na tela veio da rede — e enquanto isso a tela mostra
+a idade de verdade, não "atualizado agora".
+
+Regerar a semente antes de cortar versão:
+
+```sh
+task biblioteca:semente                   # gera com a lista oficial
+```
+
+A primeira instalação vê a idade da semente até a varredura terminar; regerar
+perto do corte de versão é o que mantém isso honesto.
+
+
+### O catálogo é copiado, e o que isso custa
+
+A tela **não** lê a origem a cada abertura. Raspar sob demanda traz latência e
+instabilidade de quem consultaria um terceiro a cada busca. Em vez disso, existe
+cópia local em SQLite, refeita **a cada 12 horas** por uma goroutine de fundo
+(`internal/biblioteca/sincronizador.go`) — a única parte do pacote que fala com
+a rede. A tela lê o banco, e é por isso que a busca responde na hora e continua
+funcionando com a internet fora: o catálogo tem ~650 linhas, não os milhares de
+uma origem sem curadoria.
+
+O preço é explícito, e está escrito na tela: **o catálogo tem idade**. Um
+servidor publicado hoje não aparece até a próxima varredura. A idade fica visível
+acima da lista — junto com o botão **Atualizar agora**, que dispara uma varredura
+fora de hora —, porque esconder a idade é o que faria o admin procurar um
+servidor que existe e concluir que o patchbay está quebrado.
+
+Três garantias do lado da escrita:
+
+- Varredura que volta **vazia não apaga** o catálogo. Zero servidor é sempre
+  defeito.
+- Varredura que **falha no meio não toca** no catálogo: a cópia anterior continua
+  servindo, e a tela mostra a idade dela junto com o erro da última tentativa.
+- A troca é uma transação só, e é **troca, não soma**: quem estiver com a tela
+  aberta vê o catálogo anterior inteiro e passa a ver o novo inteiro.
+
+A primeira varredura só acontece no boot quando o que está no banco venceu ou não
+existe.
+
+### O que entra na cópia, e o que fica de fora
+
+Todo item que a página de índice lista entra no catálogo — a biblioteca não
+recusa servidor por transporte desconhecido ou por faltar comando.
+
+- **Servidor cuja página não publica comando** entra como STDIO com comando vazio: o
+  cartão mostra "a página deste servidor não publica comando nem endpoint reconhecível — abra a página e cadastre à mão" e "Adicionar" abre o formulário com o
+  nome preenchido e o comando em branco, para o admin completar ou descartar.
+  Snippet que traz `command` sem `args` também é aceito.
+- **Site** é o primeiro link externo (`target="_blank"`) que aparece até 4 KB
+  depois da descrição — não o campo `url:` do payload da página, que costuma
+  apontar para o site do fornecedor, não para o servidor.
+- **Descrição** continua opcional: item sem descrição entra com o campo vazio
+  e é contado, não recusado.
+- **Remoto** exige sempre uma URL `https` terminando em `/mcp` ou `/sse`, e o
+  servidor tem de se anunciar como remoto por um destes dois caminhos — o
+  rótulo sozinho já basta, sem depender da descrição usar palavras de sinal:
+  (a) a URL vem precedida, em até 120 caracteres, por um rótulo de conexão
+  (por exemplo "endpoint", "conecte-se em", "URL de conexão"), **ou** (b) a
+  descrição do próprio servidor sinaliza transporte remoto (menções a
+  "servidor remoto", "streamable HTTP" e afins) **e** cita essa mesma URL. Um
+  endpoint citado como removido, legado ou descontinuado é descartado mesmo
+  batendo com essas regras. Sem URL válida, o item entra como STDIO sem
+  comando (regra acima). Transporte vira `sse` quando o caminho termina em
+  `/sse`, senão `http`; `OAuth` só é marcado quando a mesma região do texto
+  cita OAuth.
+- **Tabela de conexão tem precedência sobre rótulo e descrição.** Quando a
+  página de detalhe traz uma tabela cujo cabeçalho tem uma coluna "URL" ou
+  "endpoint", as URLs `https` terminadas em `/mcp` ou `/sse` dessa coluna já
+  ancoram o servidor como remoto — sem precisar de rótulo nem de sinal na
+  descrição. Link de `github.com`, `gitlab.com` ou `bitbucket.org` nunca vira
+  endpoint, mesmo em outra coluna da mesma tabela, e a guarda de
+  removido/legado vale célula a célula. Com várias linhas, a URL do servidor é
+  a da linha marcada "recomendado" (ou a primeira), e **todos** os endpoints
+  da tabela ficam guardados, na ordem da página. Caso medido: a página do
+  Cloudflare publica 17 endpoints numa tabela dessas, e a URL escolhida é
+  `https://mcp.cloudflare.com/mcp`.
 
 ## Adicionar colando o comando de instalação
 
@@ -372,6 +453,11 @@ Um servidor MCP que não fala HTTP: o patchbay o executa como processo filho e
 conversa com ele pelo stdin e stdout. É o caso de `@modelcontextprotocol/server-filesystem`,
 dos servidores lançados por `npx` e `uvx`, e de qualquer binário local.
 
+**A imagem Docker traz `node`, `npm`/`npx` e `uv`/`uvx`** — foi para isso que ela
+deixou de ser distroless (ver a seção Docker). Rodando o patchbay como binário no
+host, vale o `PATH` do host: o que não estiver lá não sobe, e o formulário avisa
+antes de salvar em vez de deixar o upstream em backoff eterno.
+
 **Um processo por upstream, compartilhado por todas as sessões de cliente.** Não
 um por sessão: spawn por sessão é o que vazava um processo vivo por reconexão até
 esgotar os PIDs da máquina no gateway anterior. O `jsonrpc2` do go-sdk já
@@ -384,7 +470,7 @@ Em `/admin/mcps`, botão **Novo processo STDIO**. O formulário pede:
 
 | Campo | O quê |
 |---|---|
-| **Comando** | O programa, resolvido pelo `PATH` do processo patchbay: `npx`, `uvx`, `node`, ou um caminho completo |
+| **Comando** | O programa, resolvido pelo `PATH` do processo patchbay: `npx`, `uvx`, `node`, ou um caminho completo. Fora do `PATH`, o formulário avisa — sem bloquear, porque o `PATH` pode mudar antes de o upstream conectar |
 | **Argumentos** | **Um por linha.** Nada de linha de comando partida por espaço — argumento com espaço dentro é normal (`C:\Arquivos de Programas\a.js`), e um separador aqui viraria uma regra de escape para você descobrir errando |
 | **Variáveis de ambiente** | `NOME=valor`, uma por linha. Vão **em claro** no banco e aparecem na tela: é o lugar de `NODE_ENV`, nível de log, `PATH` extra |
 | **Variáveis sensíveis** | Mesmo formato dos headers estáticos de um upstream HTTP: cifradas em repouso, nunca reexibidas, campo em branco mantém o gravado, apagar é explícito pelo *limpar* |
@@ -640,8 +726,34 @@ host públicos — é o que a UI mostra ao cliente MCP e o que decide o atributo
 ### Docker
 
 A imagem publicada é `ghcr.io/vitoramaral10/patchbay`, multi-arch
-(`linux/amd64`, `linux/arm64`), a partir de `gcr.io/distroless/static-debian12:nonroot`
-— sem shell, sem gerenciador de pacotes, processo como usuário não-root.
+(`linux/amd64`, `linux/arm64`), a partir de `node:24-bookworm-slim` com os
+binários do `uv` copiados de `ghcr.io/astral-sh/uv` — as duas bases fixadas por
+digest. Processo como usuário não-root (UID 65532), arquivos da aplicação
+pertencendo a root, bits setuid removidos.
+
+**Ela deixou de ser distroless em 2026-09-09, e isso tem preço.** A base saiu de
+~2 MB para ~332 MB (imagem final: **30 MB → 429 MB**), e entraram um shell e um
+gerenciador de pacotes — as duas coisas que a distroless existia para não ter.
+O que se comprou com isso: **MCP de processo local passa a funcionar no
+container**. Antes, `npx` e `uvx` não existiam ali, e todo upstream STDIO
+entrava em backoff eterno com `executable file not found in $PATH`; enquanto a
+biblioteca só listava servidores remotos ninguém tropeçava nisso, mas ela passou
+a oferecer centenas de servidores que só existem como pacote npm/PyPI.
+
+Dois custos que ficam, ditos aqui e não descobertos depois:
+
+- `npx -y` **baixa e executa código de terceiro em tempo de execução**. Aquilo
+  não passou por build nosso, não está no SBOM da imagem e não é varrido pelo
+  `trivy`. Cadastrar um MCP de processo local é escolher rodar aquele pacote.
+- O `npm` que vem na base carrega 4 CVEs HIGH nas dependências que ele embute
+  (`brace-expansion`, `ip-address`, `tar` — negação de serviço e SSRF).
+  Atualizar o `npm` **não** resolve: medido em 2026-09-09, o `npm` 12.0.2
+  carrega as mesmas versões. São CVEs no ferramental que só roda quando o `npx`
+  instala um pacote; revisar quando a base do Node atualizar.
+
+Não há `dnx`: MCP publicado como pacote NuGet continua sem rodar aqui, e o
+formulário avisa quando o comando não está no `PATH` em vez de deixar o upstream
+falhar horas depois.
 
 ```sh
 docker run --rm \
@@ -652,8 +764,7 @@ docker run --rm \
   ghcr.io/vitoramaral10/patchbay:latest
 ```
 
-Sem `HEALTHCHECK` no `Dockerfile`: a base distroless não tem `curl` nem shell
-para escrevê-lo. O Kubernetes ignora `HEALTHCHECK` de qualquer forma — a sonda
+Sem `HEALTHCHECK` no `Dockerfile`: o Kubernetes o ignora de qualquer forma — a sonda
 de vida/prontidão é HTTP direta contra o gateway; em Compose, veja o exemplo
 abaixo, que não depende de sonda alguma para subir.
 

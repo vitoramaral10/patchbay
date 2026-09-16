@@ -134,7 +134,12 @@ func subirPatchbay(t *testing.T, urlUpstream string, timeoutMS int64) patchbayDe
 		t.Fatalf("fechar banco do seed: erro = %v, quer nil", err)
 	}
 
-	app, err := montar(ctx, cfg, cofreDeTeste(t), log)
+	// A origem da biblioteca aponta para um acervo oficial local e mudo: sem
+	// isto, Iniciar dispararia uma varredura do mcpservers.org de verdade só
+	// por subir o patchbay. Ver curadoriaMudaDeTeste, em ui_test.go.
+	app, err := montar(ctx, cfg, cofreDeTeste(t), log,
+		ComCuradoriaDaBiblioteca(curadoriaMudaDeTeste(t)),
+		SemSementeDaBiblioteca())
 	if err != nil {
 		t.Fatalf("montar: erro = %v, quer nil", err)
 	}

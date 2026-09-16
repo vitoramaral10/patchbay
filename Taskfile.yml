@@ -60,6 +60,16 @@ tasks:
     cmds:
       - ./{{.BINARIO}} seed {{.CLI_ARGS}}
 
+  biblioteca:semente:
+    desc: regrava o catálogo embutido varrendo a lista oficial do mcpservers.org (cerca de 30 minutos)
+    deps: [build]
+    # Não depende do banco nem da chave mestra: varre a lista oficial do
+    # mcpservers.org e escreve o arquivo que o go:embed leva para o binário.
+    # Rode antes de cortar versão — a data que ele grava é a idade que toda
+    # instalação nova vai mostrar.
+    cmds:
+      - ./{{.BINARIO}} biblioteca-semente {{.CLI_ARGS}}
+
   # --- front-end -------------------------------------------------------------
 
   ui:

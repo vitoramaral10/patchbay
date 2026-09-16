@@ -102,7 +102,9 @@ func TestMontar_CanarioComChaveTrocadaNaoSobe(t *testing.T) {
 	t.Cleanup(cancelar)
 
 	// Primeiro boot: grava o canário e sobe.
-	app, err := montar(ctx, cfg, cofreDeTeste(t), log)
+	app, err := montar(ctx, cfg, cofreDeTeste(t), log,
+		ComCuradoriaDaBiblioteca(curadoriaMudaDeTeste(t)),
+		SemSementeDaBiblioteca())
 	if err != nil {
 		t.Fatalf("primeiro boot: erro = %v, quer nil", err)
 	}
@@ -111,7 +113,9 @@ func TestMontar_CanarioComChaveTrocadaNaoSobe(t *testing.T) {
 	}
 
 	// Segundo boot com a chave trocada: falha dura.
-	if _, err := montar(ctx, cfg, cofreDeTeste(t), log); err == nil {
+	if _, err := montar(ctx, cfg, cofreDeTeste(t), log,
+		ComCuradoriaDaBiblioteca(curadoriaMudaDeTeste(t)),
+		SemSementeDaBiblioteca()); err == nil {
 		t.Fatal("erro = nil, quer recusa por canário que não confere")
 	} else {
 		if !errors.Is(err, cripto.ErrCanarioNaoConfere) {

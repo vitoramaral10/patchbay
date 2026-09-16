@@ -11,6 +11,7 @@
 services:
   patchbay:
     image: ghcr.io/vitoramaral10/patchbay:latest
+    build: .
     container_name: patchbay
     restart: unless-stopped
     env_file:
@@ -33,11 +34,16 @@ services:
     # trocar por `./dados:/dados` exige um `chown 65532:65532 ./dados` antes do
     # primeiro `up` — sem isso o SQLite falha com "unable to open database
     # file (14)".
+    #
+    # Além do banco, /dados guarda o cache de npx e uvx (`/dados/cache`). É de
+    # propósito: com o rootfs somente leitura, ele é o único lugar gravável, e
+    # cache em volume é o que impede cada reinício de rebaixar todo pacote de
+    # MCP de processo local de novo.
     volumes:
       - patchbay-dados:/dados
     # Rootfs somente leitura: o único diretório que o processo escreve é o
-    # data dir, montado à parte como volume. /tmp entra por tmpfs porque a
-    # imagem distroless não tem onde criar um mesmo sem ele.
+    # data dir, montado à parte como volume. /tmp entra por tmpfs porque npx e
+    # uvx descompactam pacote ali antes de mover para o cache.
     read_only: true
     tmpfs:
       - /tmp
@@ -45,8 +51,13 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 200
-    mem_limit: 512m
+    # Os dois limites subiram quando a imagem passou a rodar MCP de processo
+    # local. Cada um desses MCPs é um processo Node ou Python vivo ao lado do
+    # gateway: com 512m e 200 PIDs, três deles já derrubavam o container por
+    # OOM, e o modo de falha (morte do PID 1) é bem pior que a lentidão que os
+    # limites evitam. Quem só usa MCP remoto pode voltar aos valores antigos.
+    pids_limit: 512
+    mem_limit: 2g
 
 volumes:
   patchbay-dados:

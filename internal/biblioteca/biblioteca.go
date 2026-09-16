@@ -1,61 +1,88 @@
-// Package biblioteca é a tela que lê o catálogo de servidores MCP remotos do
-// mcpservers.org e transforma um deles num upstream preenchido.
+// Package biblioteca é a tela que lê o catálogo oficial de servidores MCP e
+// transforma um deles num upstream preenchido.
 //
 // Existe porque cadastrar um upstream à mão é acertar URL, transporte e modo de
 // credencial na primeira tentativa — três campos em que errar não dá erro de
 // formulário, dá um upstream degradado horas depois. A biblioteca troca isso por
 // escolher um nome de uma lista.
 //
-// # Nada é guardado
+// # Origem única: a lista oficial do mcpservers.org
 //
-// Não há catálogo embutido no binário nem tabela no banco: toda vez que a tela
-// abre, ela busca a lista na origem. É decisão do dono (2026-09-09), e o que se
-// ganha com ela é que a biblioteca nunca mostra um servidor que saiu do ar nem
-// esconde um que entrou — não existe versão velha para ficar velha.
+// A biblioteca lê só https://mcpservers.org/pt-BR/official: um índice paginado
+// (652 servidores em 22 páginas, medido em 2026-09-11) e, para cada servidor
+// listado, a página de detalhe. O nome do item é "mcpservers.org/<slug>" — sem
+// namespace de fornecedor nem barra dupla, ao contrário do formato de origens
+// já descartadas (ver REMOVED em proposal.md).
 //
-// O preço, explícito: **sem rede para o mcpservers.org, a tela não funciona**.
-// Ela diz isso com todas as letras e aponta para o cadastro à mão, em vez de
-// mostrar uma lista vazia que parece defeito. O resto do patchbay não depende
-// disto: o gateway sobe, serve e roteia igual com a origem fora do ar.
+// Nem toda página de detalhe publica um comando de instalação limpo, e o item
+// entra assim mesmo, sem comando, com nome, descrição e site preenchidos, para
+// "Adicionar" abrir o formulário com o que existe — ver lerOficial, em
+// curadoria.go. Quando a descrição ou o bloco de conexão da página expõe uma
+// URL de MCP (HTTP streamable ou SSE), o item entra como remoto, com a URL
+// preenchida e sem comando — ver D-02 em design.md.
 //
-// # Por que a busca é filtrada aqui e não delegada
+// Página de detalhe que não pôde ser lida — 5xx, 404 ou 200 sem título — é
+// contada como indisponível e a varredura segue; acima de 10% de detalhes
+// indisponíveis num índice, ela falha e preserva o catálogo anterior.
 //
-// A origem tem busca própria (/search?query=), e ela é renderizada no servidor.
-// Só que ela casa **apenas pelo nome** do servidor remoto: medido em 2026-09-09,
-// "jira" devolve zero remotos — não acha o Atlassian, cujo resumo é literalmente
-// "Jira, Confluence, Compass" —, e "database" e "kubernetes" também devolvem
-// zero. Delegar a busca deixaria a tela pior do que ela precisa ser.
+// # A semente
 //
-// Então a tela pede a lista de remotos da origem (uma requisição) e filtra o que
-// veio, sobre nome e resumo. Os dados continuam sendo, byte a byte, o que a
-// origem respondeu naquele momento — o que muda é só onde a comparação de texto
-// roda.
+// A primeira varredura leva de 20 a 35 minutos, e a tela passava esse tempo sem
+// servir para nada. Por isso o binário carrega um catálogo versionado — ver
+// semente.go —, regerado pela task `biblioteca:semente`, que entra no banco no
+// primeiro boot com a data em que foi gerado. Essa data é o que faz o
+// sincronizador considerá-lo vencido e varrer em seguida: a semente é ponto de
+// partida, nunca o catálogo em vigor. Instalação que já tinha catálogo de uma
+// origem anterior tem esse catálogo descartado pela migração 00015, antes desse
+// primeiro boot.
 //
-// # A tradução do HTML
+// # O catálogo é copiado, não lido ao vivo
 //
-// A origem não tem API: o robots.txt bloqueia /api/, e o que sobra é o HTML das
-// páginas públicas. Ler HTML de terceiro é frágil por natureza, e o pacote assume
-// isso em vez de fingir o contrário — ver origem.go, onde cada expressão está
-// amarrada a um pedaço da página e a falha de extração vira erro visível, nunca
-// um item pela metade.
+// Existe cópia local em SQLite, refeita de tempos em tempos pelo
+// Sincronizador — a única parte deste pacote que fala com a rede, respeitando a
+// pausa de 2 s entre páginas que a origem exige e concluindo dentro do prazo de
+// 1 h (PrazoDaVarredura). A tela lê o banco, nunca a origem: e continua
+// funcionando com a internet fora.
+//
+// O que se paga por isso, e está escrito na tela: **o catálogo tem idade**. Um
+// servidor publicado hoje não aparece até a próxima varredura. A idade fica
+// visível acima da lista, junto com o botão que refaz a varredura na hora —
+// esconder a idade é o que faria o admin procurar um servidor que existe e
+// concluir que o patchbay está quebrado.
+//
+// Varredura que volta vazia não apaga o que existe, e varredura que falha no
+// meio não toca no catálogo: a cópia anterior continua servindo, com a idade
+// dizendo o que ela é.
+//
+// # O modo de credencial só vai quando a origem declarou
+//
+// O link que abre o formulário de upstream leva modo=oauth **só** quando a
+// página de detalhe declarou a autenticação daquele servidor. Sem essa
+// declaração o formulário fica no padrão dele: adivinhar OAuth a partir do nada
+// produziria um fluxo de consentimento que não fecha, e adivinhar estática
+// produziria um upstream que nasce com 401.
 package biblioteca
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"regexp"
+)
 
 // Transportes possíveis. São os mesmos rótulos que o formulário de upstream usa
 // em ?tipo=, de propósito: o valor viaja daqui para lá sem tradução, e uma
 // tabela de conversão no meio é onde os dois lados divergem.
 const (
-	TransporteHTTP = "http"
-	TransporteSSE  = "sse"
+	TransporteHTTP  = "http"
+	TransporteSSE   = "sse"
+	TransporteSTDIO = "stdio"
 )
 
-// Formas de autenticação que a origem declara.
+// Formas de autenticação que a página de detalhe pode declarar.
 //
-// Não é o modo de credencial do upstream — é o que o servidor exige. A tradução
-// para o modo está em ModoDeCredencial, e é de mão única: oauth vira oauth, todo
-// o resto vira estática. Estática com bearer em branco é um formulário que o
-// admin completa; oauth errado é um fluxo de consentimento que não fecha.
+// Não é o modo de credencial do upstream — é o que o servidor exige. Nem toda
+// página de detalhe cita autenticação, e por isso um item pode chegar com
+// Autenticacao vazia e o formulário fica no padrão dele.
 const (
 	// AutOAuth é consentimento por navegador.
 	AutOAuth = "oauth"
@@ -67,53 +94,94 @@ const (
 
 // Erros sentinela do pacote.
 var (
-	// ErrOrigemIndisponivel é rede fora, tempo esgotado, ou a origem
-	// respondendo com desafio de bot. É o erro que a tela traduz em "não
-	// consegui falar com o mcpservers.org".
+	// ErrOrigemIndisponivel é rede fora, tempo esgotado ou a origem respondendo
+	// o que não devia. É o erro que a tela traduz em "não consegui falar com o
+	// mcpservers.org".
 	ErrOrigemIndisponivel = errors.New("biblioteca: origem indisponível")
-	// ErrFormatoDaOrigem é a página tendo chegado, e o que estava nela não ser
-	// o que este pacote sabe ler — quase sempre o site mudou de marcação. É
-	// separado de ErrOrigemIndisponivel porque a ação é outra: um pede para
-	// tentar de novo, o outro pede um commit aqui.
+	// ErrFormatoDaOrigem é a resposta tendo chegado e não ser o que este pacote
+	// sabe ler — a marcação do mcpservers.org mudou. É separado de
+	// ErrOrigemIndisponivel porque a ação é outra: um pede para tentar de novo,
+	// o outro pede um commit aqui.
 	ErrFormatoDaOrigem = errors.New("biblioteca: formato da origem mudou")
-	// ErrNaoEncontrado é o slug não existir mais na origem.
+	// ErrTaxaExcedida é a origem ter respondido 429.
+	//
+	// Separado de ErrOrigemIndisponivel porque a ação é outra: aqui esperar
+	// resolve, e a varredura insiste na mesma página em vez de descartá-la. É
+	// ErrOrigemIndisponivel para quem só quer saber se deu ou não deu.
+	ErrTaxaExcedida = fmt.Errorf("%w: taxa excedida", ErrOrigemIndisponivel)
+	// ErrNaoEncontrado é o servidor não existir mais na origem.
 	ErrNaoEncontrado = errors.New("biblioteca: servidor não está mais no catálogo")
 )
 
-// Item é a linha da lista: o que a página índice da origem sabe dizer.
+// Item é um servidor do catálogo, já traduzido no que o cadastro precisa.
 //
-// Não tem URL nem transporte de propósito — a página índice não os traz, e
-// inventá-los aqui seria um botão "adicionar" que leva a um formulário errado.
-// Eles vêm do Detalhe, buscado quando o admin escolhe um servidor.
+// A listagem do índice não basta: endpoint, transporte e autenticação, quando
+// existem, só aparecem na página de detalhe, e é por isso que a varredura faz
+// uma segunda requisição por servidor — ver lerOficial, em curadoria.go. Um
+// item sem comando aproveitável entra do mesmo jeito, como stdio com Comando
+// vazio (D-03): recusar o item inteiro custaria mais do que um formulário que
+// o admin completa.
 type Item struct {
-	// Slug identifica o servidor na origem.
-	Slug string
-	// Nome é como o servidor se chama.
+	// Nome é o identificador no catálogo: "mcpservers.org/<slug>". É ele que
+	// volta pela URL quando o admin clica em adicionar.
 	Nome string
-	// Resumo é a linha curta, já no idioma da origem que pedimos (pt-BR).
-	Resumo string
-}
-
-// Detalhe é a página de um servidor: o que o cadastro precisa.
-type Detalhe struct {
-	Item
-	// Descricao é o parágrafo "Sobre".
+	// Titulo é o nome de exibição. Cai para Nome quando a origem não declara um.
+	Titulo string
+	// Descricao é a linha do catálogo.
 	Descricao string
-	// URL é o endpoint MCP.
-	URL string
-	// Transporte é http ou sse.
+
+	// Transporte é http, sse ou stdio.
 	Transporte string
-	// Autenticacao é oauth, token ou aberta.
+	// URL é o endpoint, nos transportes remotos. Vazio no stdio.
+	URL string
+	// Endpoints são todos os endereços que a página publicou numa tabela de
+	// endpoints, na ordem em que aparecem (D-07). A Cloudflare publica 17;
+	// quase todo mundo publica um só, e a maioria não publica nenhum, e aí
+	// fica vazio. Quando não é vazio, URL é um deles — é o escolhido, a linha
+	// marcada "recomendado" ou a primeira.
+	Endpoints []string
+	// Comando e Args são a execução, no stdio. Vazios nos remotos.
+	Comando string
+	Args    []string
+
+	// Autenticacao é o que o servidor exige: AutOAuth, AutToken ou AutAberta.
+	// Vazia quando ninguém declarou — só entra quando a página de detalhe
+	// cita a forma de autenticação (ver D-02 em design.md).
 	Autenticacao string
-	// Docs é a documentação oficial do servidor, quando a origem a declara.
-	Docs string
+	// PedeCredencial é a página de detalhe ter declarado que o servidor exige
+	// credencial: autenticação não-aberta.
+	PedeCredencial bool
+	// Site é o repositório ou a página do servidor, quando a origem declara um.
+	// É o "ver na origem" da tela, e pode ser vazio.
+	Site string
 }
 
 // ModoDeCredencial traduz a autenticação declarada no modo que o formulário de
 // upstream entende.
-func (d Detalhe) ModoDeCredencial() string {
-	if d.Autenticacao == AutOAuth {
+//
+// De mão única e conservadora: só oauth vira oauth. Estática com bearer em
+// branco é um formulário que o admin completa; oauth errado é um fluxo de
+// consentimento que não fecha. Vazio significa "ninguém declarou" e devolve
+// vazio, para o link não carregar palpite nenhum.
+func (i Item) ModoDeCredencial() string {
+	if i.Autenticacao == AutOAuth {
 		return "oauth"
 	}
-	return "estatica"
+	return ""
 }
+
+// Remoto diz se o item vira upstream de rede, em vez de processo local.
+func (i Item) Remoto() bool { return i.Transporte != TransporteSTDIO }
+
+// padraoDoNome é a forma de um nome do catálogo: um primeiro segmento, barra, e
+// mais um ou dois. Maiúscula entra porque a origem publica assim
+// (mcpservers.org/AudienseCo/mcp-audiense-insights) — o slug do acervo pode ter
+// uma barra no meio, e encurtá-lo criaria colisão entre dois servidores da mesma
+// organização.
+const padraoDoNome = "^[A-Za-z0-9][A-Za-z0-9._-]{0,120}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,120}){1,2}$"
+
+var reNome = regexp.MustCompile(padraoDoNome)
+
+// nomeValido barra o que nunca poderia ser um nome da origem antes de virar
+// busca. É higiene de borda: o nome chega pela URL da tela.
+func nomeValido(s string) bool { return reNome.MatchString(s) }
