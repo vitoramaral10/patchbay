@@ -452,3 +452,34 @@ func TestHandlerLog_SemHubContinuaRedigindo(t *testing.T) {
 		t.Errorf("log = %q, quer o valor redigido", destino.String())
 	}
 }
+
+func TestRedigirQuery(t *testing.T) {
+	t.Parallel()
+
+	casos := map[string]struct {
+		bruta     string
+		quer      string
+		querMudou bool
+	}{
+		"vazia":                   {"", "", false},
+		"sem parâmetro sensível":  {"client_id=pbc_teste&slug=pessoal", "client_id=pbc_teste&slug=pessoal", false},
+		"code e state redigidos":  {"code=abc123&state=xyz", "code=" + trilha.Redigido + "&state=" + trilha.Redigido, true},
+		"preserva o que não é":    {"code=abc123&client_id=pbc_teste", "code=" + trilha.Redigido + "&client_id=pbc_teste", true},
+		"primeiro parâmetro pega": {"token=abc123", "token=" + trilha.Redigido, true},
+		"valor vazio passa":       {"code=", "code=", false},
+	}
+
+	for nome, tc := range casos {
+		t.Run(nome, func(t *testing.T) {
+			t.Parallel()
+
+			got, mudou := trilha.RedigirQuery(tc.bruta)
+			if got != tc.quer {
+				t.Errorf("RedigirQuery(%q) = %q, quer %q", tc.bruta, got, tc.quer)
+			}
+			if mudou != tc.querMudou {
+				t.Errorf("mudou = %v, quer %v", mudou, tc.querMudou)
+			}
+		})
+	}
+}

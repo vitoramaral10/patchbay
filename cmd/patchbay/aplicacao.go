@@ -558,7 +558,9 @@ func (a *Aplicacao) Handler() http.Handler {
 	for _, padrao := range authsrv.PadroesSemProtecaoDeOrigem {
 		protecao.AddInsecureBypassPattern(padrao)
 	}
-	return protecao.Handler(mux)
+	// O log de acesso é o de fora de todos: assim a linha registra também o 403
+	// da proteção de origem, que de dentro do mux ninguém veria.
+	return registrarAcesso(protecao.Handler(mux), a.log)
 }
 
 // painel é a tela inicial da administração.

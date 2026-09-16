@@ -131,6 +131,33 @@ func redigirURL(valor string) (string, bool) {
 	return fora, mudou
 }
 
+// RedigirQuery redige o valor de todo parâmetro sensível de uma query string
+// solta — "client_id=x&code=SEGREDO" —, preservando a ordem e os parâmetros
+// que são diagnóstico legítimo.
+//
+// Existe separada de redigirURL porque o que chega ao log de acesso é só
+// r.URL.RawQuery: não há esquema nem autoridade para reURLComQuery casar, e
+// sem isto o code e o state de um fluxo OAuth entrariam inteiros na linha de
+// log — justamente o que a redação da trilha existe para impedir.
+func RedigirQuery(bruta string) (string, bool) {
+	if bruta == "" || strings.Contains(bruta, Redigido) {
+		return bruta, false
+	}
+	mudou := false
+	// O "&" da frente existe só para dar a reParamDeQuery o separador que ela
+	// exige no primeiro parâmetro; sai logo depois.
+	fora := reParamDeQuery.ReplaceAllStringFunc("&"+bruta, func(par string) string {
+		m := reParamDeQuery.FindStringSubmatch(par)
+		prefixo, chave, valor := m[1], m[2], m[3]
+		if valor == "" || !paramDeURLSensivel(chave) {
+			return par
+		}
+		mudou = true
+		return prefixo + chave + "=" + Redigido
+	})
+	return strings.TrimPrefix(fora, "&"), mudou
+}
+
 // reCampoSensivel casa "chave: valor" ou "chave=valor" dentro de um texto
 // renderizado por struct ou mapa — a forma que "%+v" produz.
 //
