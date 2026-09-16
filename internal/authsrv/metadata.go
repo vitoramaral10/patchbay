@@ -54,6 +54,24 @@ const (
 	// RotaRegistrar é o registration endpoint do RFC 7591 (DCR). Aberto por
 	// desenho — é o que "dynamic" quer dizer —, com teto por origem e por hora.
 	RotaRegistrar = "/oauth/register"
+	// RotaAutorizarPadrao, RotaTokenPadrao, RotaRevogarPadrao e
+	// RotaRegistrarPadrao são os caminhos padrão que a spec do MCP manda o
+	// cliente usar quando a descoberta de metadata falha: a raiz do servidor
+	// mais /authorize, /token e /register. Servem os mesmos handlers dos
+	// caminhos canônicos.
+	//
+	// Não é redundância decorativa: o cliente que já registrou antes guarda o
+	// client_id e volta direto no authorize, e se nessa volta a descoberta
+	// falhar ele monta /authorize na raiz — ignorando o authorization_endpoint
+	// que a metadata publica. Sem estas rotas isso é 404 no meio de um fluxo
+	// que estava funcionando. O /revoke entra por simetria, embora a spec só
+	// nomeie os outros três.
+	RotaAutorizarPadrao = "/authorize"
+	//
+	//nolint:gosec // G101: é o caminho da rota, não uma credencial embutida
+	RotaTokenPadrao     = "/token"
+	RotaRevogarPadrao   = "/revoke"
+	RotaRegistrarPadrao = "/register"
 )
 
 // MetadataServidor é o documento de metadata do authorization server

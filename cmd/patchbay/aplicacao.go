@@ -537,6 +537,7 @@ func (a *Aplicacao) Handler() http.Handler {
 	autorizar := http.NewServeMux()
 	a.oauthHTTP.RotasAutorizacao(autorizar)
 	mux.Handle(authsrv.RotaAutorizar, a.admHTTP.Proteger(autorizar))
+	mux.Handle(authsrv.RotaAutorizarPadrao, a.admHTTP.Proteger(autorizar))
 
 	// Proteção de Origin nativa do net/http: requisição de navegador
 	// cross-origin com método não seguro é recusada com 403. Cliente que não é

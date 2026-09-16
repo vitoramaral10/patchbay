@@ -1134,6 +1134,7 @@ carregando o destino, e o clique do consentimento não se perde.
 | `/oauth/token` | `authorization_code` e `refresh_token`, em `application/x-www-form-urlencoded` |
 | `/oauth/revoke` | Revogação RFC 7009 |
 | `/oauth/register` | Registro dinâmico RFC 7591 (DCR), aberto e com teto |
+| `/authorize`, `/token`, `/revoke`, `/register` | Os mesmos handlers nos caminhos padrão da spec do MCP, para o cliente que caiu no fallback por falha de descoberta |
 
 **O token vale para um endpoint só.** O `resource` do RFC 8707 é obrigatório na
 autorização e vira o `aud` do token; apresentá-lo em outro endpoint devolve 403,

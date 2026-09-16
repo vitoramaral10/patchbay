@@ -425,6 +425,45 @@ func TestOAuthPontaAPonta(t *testing.T) {
 	}
 }
 
+// TestCaminhosPadraoDoMCP cobre os aliases na raiz — /authorize, /token,
+// /revoke e /register —, que são o fallback da spec do MCP para o cliente que
+// não conseguiu ler a metadata. Cada um tem de se comportar igual ao caminho
+// canônico; antes deles, o cliente nesse fallback recebia 404.
+func TestCaminhosPadraoDoMCP(t *testing.T) {
+	t.Parallel()
+
+	p := subirPatchbayOAuth(t, upstreamFalso(t))
+
+	casos := []struct {
+		metodo    string
+		canonico  string
+		padrao    string
+		tipo      string
+		corpo     url.Values
+		comSessao bool
+	}{
+		{http.MethodGet, authsrv.RotaAutorizar, authsrv.RotaAutorizarPadrao, "", nil, false},
+		{http.MethodPost, authsrv.RotaToken, authsrv.RotaTokenPadrao, "application/x-www-form-urlencoded", url.Values{}, false},
+		{http.MethodPost, authsrv.RotaRevogar, authsrv.RotaRevogarPadrao, "application/x-www-form-urlencoded", url.Values{}, false},
+		{http.MethodPost, authsrv.RotaRegistrar, authsrv.RotaRegistrarPadrao, "application/json", nil, false},
+	}
+	for _, c := range casos {
+		t.Run(c.padrao, func(t *testing.T) {
+			t.Parallel()
+
+			canonico := p.enviar(t, c.metodo, p.urlPublica+c.canonico, c.corpo, c.tipo, c.comSessao)
+			padrao := p.enviar(t, c.metodo, p.urlPublica+c.padrao, c.corpo, c.tipo, c.comSessao)
+			if padrao.StatusCode == http.StatusNotFound {
+				t.Fatalf("%s %s = 404, quer a rota servida", c.metodo, c.padrao)
+			}
+			if padrao.StatusCode != canonico.StatusCode {
+				t.Errorf("%s %s = %d, quer %d, igual a %s",
+					c.metodo, c.padrao, padrao.StatusCode, canonico.StatusCode, c.canonico)
+			}
+		})
+	}
+}
+
 // --- metadata ---
 
 // TestMetadataBemFormada decodifica os dois documentos dentro das structs do

@@ -68,6 +68,11 @@ func (h *HTTP) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc(RotaToken, h.token)
 	mux.HandleFunc(RotaRevogar, h.revogar)
 	mux.HandleFunc(RotaRegistrar, h.registrar)
+	// Os mesmos três nos caminhos padrão da spec do MCP, para o cliente que
+	// caiu no fallback por falha de descoberta — ver as constantes.
+	mux.HandleFunc(RotaTokenPadrao, h.token)
+	mux.HandleFunc(RotaRevogarPadrao, h.revogar)
+	mux.HandleFunc(RotaRegistrarPadrao, h.registrar)
 }
 
 // RotasAutorizacao registra o authorize endpoint.
@@ -78,6 +83,11 @@ func (h *HTTP) Rotas(mux *http.ServeMux) {
 func (h *HTTP) RotasAutorizacao(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+RotaAutorizar, h.autorizarForm)
 	mux.HandleFunc("POST "+RotaAutorizar, h.autorizarDecidir)
+	// O caminho padrão da spec do MCP, atrás do mesmo portão. O formulário de
+	// consentimento posta sempre no caminho canônico, então quem entra por aqui
+	// sai pelo mesmo POST de sempre.
+	mux.HandleFunc("GET "+RotaAutorizarPadrao, h.autorizarForm)
+	mux.HandleFunc("POST "+RotaAutorizarPadrao, h.autorizarDecidir)
 }
 
 // PadroesSemProtecaoDeOrigem são as rotas que não podem passar pela proteção de
@@ -89,7 +99,10 @@ func (h *HTTP) RotasAutorizacao(mux *http.ServeMux) {
 // 403. A defesa deles é a autenticação de cliente e o PKCE, não o Origin.
 // O registration endpoint entra na lista pelo mesmo motivo: é API de protocolo,
 // e o cliente que faz DCR de dentro de um navegador manda Origin.
-var PadroesSemProtecaoDeOrigem = []string{RotaToken, RotaRevogar, RotaRegistrar}
+var PadroesSemProtecaoDeOrigem = []string{
+	RotaToken, RotaRevogar, RotaRegistrar,
+	RotaTokenPadrao, RotaRevogarPadrao, RotaRegistrarPadrao,
+}
 
 // --- metadata ---
 
