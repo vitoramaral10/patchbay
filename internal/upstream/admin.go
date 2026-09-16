@@ -42,8 +42,9 @@ type Registro struct {
 	TimeoutMS  int64
 	Habilitado bool
 	UltimoErro string
-	// Modo é como o patchbay se apresenta ao upstream: estatica ou oauth. Vazio
-	// é estatica. Nenhum segredo passa por aqui — Registro alimenta a tela.
+	// Modo é como o patchbay se apresenta ao upstream: nenhum, estatica ou
+	// oauth. Vazio é estatica. Nenhum segredo passa por aqui — Registro alimenta
+	// a tela.
 	Modo string
 	// Sonda é a configuração da sonda funcional. Só a configuração: o resultado
 	// da última sondagem vive em memória, no gerente, e nunca no banco.
@@ -55,15 +56,24 @@ func (r Registro) STDIO() bool { return r.Tipo == TipoSTDIO }
 
 // ModoEfetivo normaliza o modo de credencial. Vazio é estatica.
 func (r Registro) ModoEfetivo() string {
-	if r.Modo == ModoOAuth {
+	switch r.Modo {
+	case ModoOAuth:
 		return ModoOAuth
+	case ModoNenhum:
+		return ModoNenhum
+	default:
+		return ModoEstatica
 	}
-	return ModoEstatica
 }
 
 // UsaOAuth informa se o upstream se autentica por consentimento OAuth.
 func (r Registro) UsaOAuth() bool {
 	return r.ModoEfetivo() == ModoOAuth && (r.Tipo == TipoHTTP || r.Tipo == TipoSSE)
+}
+
+// SemAutenticacao informa se o upstream foi declarado aberto.
+func (r Registro) SemAutenticacao() bool {
+	return r.ModoEfetivo() == ModoNenhum && (r.Tipo == TipoHTTP || r.Tipo == TipoSSE)
 }
 
 // Descricao é a linha de identificação do upstream na lista: a URL para HTTP, a
@@ -196,7 +206,7 @@ type Form struct {
 
 	Headers []CampoHeader
 
-	// Modo é estatica ou oauth. Só vale para http e sse.
+	// Modo é nenhum, estatica ou oauth. Só vale para http e sse.
 	Modo string
 	// OAuthClientID é o client_id do cliente pré-registrado. Vazio deixa a ordem
 	// do SDK cair em CIMD ou em registro dinâmico.
@@ -288,17 +298,45 @@ func (f Form) TipoEfetivo() string {
 func (f Form) STDIO() bool { return f.TipoEfetivo() == TipoSTDIO }
 
 // ModoEfetivo normaliza o modo de credencial. Vazio é estatica, e STDIO nunca
-// tem modo: o processo filho recebe credencial por variável de ambiente, e um
-// fluxo de redirect de navegador não tem onde encaixar ali.
+// tem modo: o processo filho recebe credencial por variável de ambiente, e nem
+// um fluxo de redirect de navegador nem a declaração "este servidor é aberto"
+// têm onde encaixar ali.
 func (f Form) ModoEfetivo() string {
-	if f.Modo == ModoOAuth && !f.STDIO() {
-		return ModoOAuth
+	if f.STDIO() {
+		return ModoEstatica
 	}
-	return ModoEstatica
+	switch f.Modo {
+	case ModoOAuth:
+		return ModoOAuth
+	case ModoNenhum:
+		return ModoNenhum
+	default:
+		return ModoEstatica
+	}
 }
 
 // UsaOAuth informa se o formulário descreve um upstream com consentimento OAuth.
 func (f Form) UsaOAuth() bool { return f.ModoEfetivo() == ModoOAuth }
+
+// SemAutenticacao informa se o formulário declara um MCP aberto.
+func (f Form) SemAutenticacao() bool { return f.ModoEfetivo() == ModoNenhum }
+
+// TemCredencialDeHeader informa se há bearer ou header estático gravado.
+//
+// É o que a tela precisa para avisar, antes do clique, que salvar em "sem
+// autenticação" apaga o que está lá: apagar em silêncio uma credencial que o
+// admin colou semanas atrás seria a pior forma de ele descobrir a troca de modo.
+func (f Form) TemCredencialDeHeader() bool {
+	if f.BearerDefinido {
+		return true
+	}
+	for _, h := range f.Headers {
+		if h.Definido {
+			return true
+		}
+	}
+	return false
+}
 
 // Validar preenche Erros e informa se o formulário passa.
 func (f *Form) Validar() bool {
@@ -452,8 +490,9 @@ func (f *Form) validarOAuth() {
 	f.OAuthIssuer = strings.TrimSpace(f.OAuthIssuer)
 
 	if !f.UsaOAuth() {
-		if f.Modo == ModoOAuth && f.STDIO() {
-			f.Erros["modo"] = "MCP STDIO não usa OAuth: a credencial dele vai por variável de ambiente."
+		if f.STDIO() && (f.Modo == ModoOAuth || f.Modo == ModoNenhum) {
+			f.Erros["modo"] = "MCP STDIO não tem modo de credencial: o processo filho recebe " +
+				"o que recebe por variável de ambiente, e não por header."
 		}
 		return
 	}
@@ -915,6 +954,9 @@ func (d Detalhe) PodeSondar() bool {
 
 // UsaOAuth informa se o upstream se autentica por consentimento OAuth.
 func (d Detalhe) UsaOAuth() bool { return d.Registro.UsaOAuth() }
+
+// SemAutenticacao repete o do registro para a tela não alcançar o campo cru.
+func (d Detalhe) SemAutenticacao() bool { return d.Registro.SemAutenticacao() }
 
 // PodeAutorizar informa se o botão "Autorizar" faz sentido agora.
 //

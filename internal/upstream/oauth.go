@@ -14,6 +14,14 @@ import (
 // concessão, e um bearer estático gravado ao lado só produziria dois headers de
 // autorização com o servidor escolhendo um em silêncio.
 const (
+	// ModoNenhum é o MCP aberto: o patchbay não apresenta credencial nenhuma.
+	//
+	// Existe como modo, e não como "estatica com tudo em branco", porque as duas
+	// coisas não são a mesma. Estática sem bearer é um cadastro que o admin ainda
+	// não terminou; nenhum é uma declaração de que não há o que preencher — e é
+	// essa diferença que responde "por que este MCP devolve 401" sem ninguém ter
+	// de adivinhar a intenção de quem cadastrou.
+	ModoNenhum = "nenhum"
 	// ModoEstatica é bearer e headers colados pelo admin, sem consentimento.
 	ModoEstatica = "estatica"
 	// ModoOAuth é authorization code com PKCE contra o AS do upstream.

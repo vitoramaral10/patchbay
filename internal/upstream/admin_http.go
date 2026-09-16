@@ -157,8 +157,8 @@ const limiteDePreenchimento = 512
 //
 // Só nome, URL e modo, e só o que faz sentido para o tipo: preencher URL num
 // formulário STDIO deixaria na tela um campo que aquele transporte ignora, e o
-// admin leria isso como configuração em vigor. Modo só é aceito nos dois
-// valores conhecidos — qualquer outra coisa cai no padrão de ModoEfetivo, em
+// admin leria isso como configuração em vigor. Modo só é aceito nos valores
+// conhecidos — qualquer outra coisa cai no padrão de ModoEfetivo, em
 // vez de gravar um modo que nenhum caminho do código entende.
 func preencherDaQuery(form *Form, q url.Values) {
 	if nome := cortar(q.Get("nome")); nome != "" {
@@ -183,8 +183,11 @@ func preencherDaQuery(form *Form, q url.Values) {
 	if bruta := cortar(q.Get("url")); bruta != "" {
 		form.URL = bruta
 	}
-	if q.Get("modo") == ModoOAuth {
+	switch q.Get("modo") {
+	case ModoOAuth:
 		form.Modo = ModoOAuth
+	case ModoNenhum:
+		form.Modo = ModoNenhum
 	}
 }
 

@@ -159,13 +159,22 @@ type Item struct {
 // ModoDeCredencial traduz a autenticação declarada no modo que o formulário de
 // upstream entende.
 //
-// De mão única e conservadora: só oauth vira oauth. Estática com bearer em
-// branco é um formulário que o admin completa; oauth errado é um fluxo de
-// consentimento que não fecha. Vazio significa "ninguém declarou" e devolve
-// vazio, para o link não carregar palpite nenhum.
+// Conservadora nos dois valores que devolve: oauth e nenhum são o que a origem
+// declarou explicitamente — AutOAuth e AutAberta —, e AutToken continua vazio
+// porque "exige token" é o padrão do formulário e não um modo a forçar. Vazio
+// significa "ninguém declarou", e o link não carrega palpite nenhum.
+//
+// Só para servidor remoto: STDIO não tem modo de credencial, e mandar um na
+// query faria o formulário recusar o que a biblioteca acabou de sugerir.
 func (i Item) ModoDeCredencial() string {
-	if i.Autenticacao == AutOAuth {
+	if !i.Remoto() {
+		return ""
+	}
+	switch i.Autenticacao {
+	case AutOAuth:
 		return "oauth"
+	case AutAberta:
+		return "nenhum"
 	}
 	return ""
 }

@@ -360,51 +360,63 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 			}
 			@webui.Cartao("Credenciais apresentadas ao MCP") {
 				<div class="flex flex-col gap-4 px-4 py-4">
-					<p class="max-w-[65ch] text-sm text-conteudo-suave">
-						O que o patchbay apresenta ao MCP fica cifrado em repouso (AES-256-GCM, chave
-						derivada da chave mestra). O valor não volta para esta tela nem para o log — o que
-						aparece aqui é só se ele está definido. Para trocar, edite o MCP.
-					</p>
-					<dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2">
-						if d.STDIO() {
-							@dado("Variáveis de ambiente cifradas") {
-								if len(d.VariaveisSecretas()) == 0 {
-									<span class="text-conteudo-tenue">nenhuma</span>
-								} else {
-									<ul class="flex flex-wrap gap-2">
-										for _, v := range d.VariaveisSecretas() {
-											<li class="flex items-center gap-2 rounded-md bg-superficie-alta px-2 py-1">
-												<code class="font-mono text-xs">{ v.Nome }</code>
-												@webui.Selo(webui.TomSucesso, "definida")
-											</li>
-										}
-									</ul>
+					if d.SemAutenticacao() {
+						<p class="max-w-[65ch] text-sm text-conteudo-suave">
+							Nenhuma: este MCP está cadastrado como <strong>sem autenticação</strong>, e o
+							patchbay fala com ele sem <code class="font-mono">Authorization</code> e sem
+							header nenhum. Não é "ninguém preencheu ainda" — é o modo escolhido no
+							cadastro, e é ele que explica um 401 vindo daqui: o servidor quer credencial e
+							este MCP foi declarado aberto. Para apresentar uma, edite o MCP e troque o modo.
+						</p>
+					} else {
+						<p class="max-w-[65ch] text-sm text-conteudo-suave">
+							O que o patchbay apresenta ao MCP fica cifrado em repouso (AES-256-GCM, chave
+							derivada da chave mestra). O valor não volta para esta tela nem para o log — o que
+							aparece aqui é só se ele está definido. Para trocar, edite o MCP.
+						</p>
+					}
+					if !d.SemAutenticacao() {
+						<dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+							if d.STDIO() {
+								@dado("Variáveis de ambiente cifradas") {
+									if len(d.VariaveisSecretas()) == 0 {
+										<span class="text-conteudo-tenue">nenhuma</span>
+									} else {
+										<ul class="flex flex-wrap gap-2">
+											for _, v := range d.VariaveisSecretas() {
+												<li class="flex items-center gap-2 rounded-md bg-superficie-alta px-2 py-1">
+													<code class="font-mono text-xs">{ v.Nome }</code>
+													@webui.Selo(webui.TomSucesso, "definida")
+												</li>
+											}
+										</ul>
+									}
+								}
+							} else {
+								@dado("Bearer") {
+									if d.TemBearer() {
+										@webui.Selo(webui.TomSucesso, "definido")
+									} else {
+										@webui.Selo(webui.TomNeutro, "não definido")
+									}
+								}
+								@dado("Headers estáticos") {
+									if len(d.HeadersEstaticos()) == 0 {
+										<span class="text-conteudo-tenue">nenhum</span>
+									} else {
+										<ul class="flex flex-wrap gap-2">
+											for _, h := range d.HeadersEstaticos() {
+												<li class="flex items-center gap-2 rounded-md bg-superficie-alta px-2 py-1">
+													<code class="font-mono text-xs">{ h.Nome }</code>
+													@webui.Selo(webui.TomSucesso, "definido")
+												</li>
+											}
+										</ul>
+									}
 								}
 							}
-						} else {
-							@dado("Bearer") {
-								if d.TemBearer() {
-									@webui.Selo(webui.TomSucesso, "definido")
-								} else {
-									@webui.Selo(webui.TomNeutro, "não definido")
-								}
-							}
-							@dado("Headers estáticos") {
-								if len(d.HeadersEstaticos()) == 0 {
-									<span class="text-conteudo-tenue">nenhum</span>
-								} else {
-									<ul class="flex flex-wrap gap-2">
-										for _, h := range d.HeadersEstaticos() {
-											<li class="flex items-center gap-2 rounded-md bg-superficie-alta px-2 py-1">
-												<code class="font-mono text-xs">{ h.Nome }</code>
-												@webui.Selo(webui.TomSucesso, "definido")
-											</li>
-										}
-									</ul>
-								}
-							}
-						}
-					</dl>
+						</dl>
+					}
 				</div>
 			}
 			@webui.Cartao("Endpoints que incluem este MCP") {
@@ -943,25 +955,34 @@ templ cartaoDaSonda(f Form) {
 
 // credenciaisHTTP é o bloco de credencial de um upstream HTTP ou SSE.
 //
-// Os dois modos não aparecem juntos, e é decisão e não limitação: bearer estático
+// Os modos não aparecem juntos, e é decisão e não limitação: bearer estático
 // e OAuth montam o mesmo header Authorization, e uma tela que oferece os dois ao
 // mesmo tempo convida a preencher os dois — o servidor então escolhe um sem dizer
 // qual, e o sintoma é 401 intermitente que ninguém liga a este formulário.
 // Trocar o modo e salvar recarrega a tela com os campos do outro, sem JavaScript.
+//
+// O seletor aparece sempre, inclusive sem broker de OAuth: é ele que diz, para
+// quem está cadastrando um MCP público, que existe a opção de não preencher
+// credencial nenhuma. Sem ele, a tela abria direto no campo de bearer e a única
+// saída visível era inventar um token.
 templ credenciaisHTTP(f Form) {
 	<div class="flex flex-col gap-6">
-		if f.OAuthDisponivel {
-			@seletorDeModo(f)
-		}
-		if f.UsaOAuth() {
-			@credenciaisOAuth(f)
-		} else {
-			@credenciaisEstaticas(f)
+		@seletorDeModo(f)
+		switch f.ModoEfetivo() {
+			case ModoNenhum:
+				@semAutenticacao(f)
+			case ModoOAuth:
+				@credenciaisOAuth(f)
+			default:
+				@credenciaisEstaticas(f)
 		}
 	</div>
 }
 
-// seletorDeModo escolhe entre credencial estática e OAuth.
+// seletorDeModo escolhe entre MCP aberto, credencial estática e OAuth.
+//
+// A opção de OAuth só entra quando este processo tem broker: oferecer um fluxo
+// que ninguém completaria é pior que não oferecer.
 templ seletorDeModo(f Form) {
 	<fieldset class="flex flex-col gap-2">
 		<legend class="text-sm font-medium text-conteudo">Modo de credencial</legend>
@@ -972,9 +993,25 @@ templ seletorDeModo(f Form) {
 			<input
 				type="radio"
 				name="modo"
+				value={ ModoNenhum }
+				class="mt-0.5 h-4 w-4 accent-[var(--pb-acento)]"
+				checked?={ f.SemAutenticacao() }
+			/>
+			<span>
+				<span class="text-sm font-medium text-conteudo">Sem autenticação</span>
+				<span class="block text-sm text-conteudo-tenue">
+					O MCP é aberto, ou está numa rede em que só o patchbay chega nele. Nenhum
+					<code class="font-mono">Authorization</code> e nenhum header sai daqui.
+				</span>
+			</span>
+		</label>
+		<label class="flex items-start gap-3">
+			<input
+				type="radio"
+				name="modo"
 				value={ ModoEstatica }
 				class="mt-0.5 h-4 w-4 accent-[var(--pb-acento)]"
-				checked?={ !f.UsaOAuth() }
+				checked?={ f.ModoEfetivo() == ModoEstatica }
 			/>
 			<span>
 				<span class="text-sm font-medium text-conteudo">Credencial estática</span>
@@ -983,27 +1020,48 @@ templ seletorDeModo(f Form) {
 				</span>
 			</span>
 		</label>
-		<label class="flex items-start gap-3">
-			<input
-				type="radio"
-				name="modo"
-				value={ ModoOAuth }
-				class="mt-0.5 h-4 w-4 accent-[var(--pb-acento)]"
-				checked?={ f.UsaOAuth() }
-			/>
-			<span>
-				<span class="text-sm font-medium text-conteudo">OAuth (authorization code com PKCE)</span>
-				<span class="block text-sm text-conteudo-tenue">
-					O patchbay descobre o authorization server do MCP, você autoriza no navegador,
-					e o token renovado fica cifrado em repouso. Salve primeiro; depois use
-					<em>Autorizar</em> na tela do MCP.
+		if f.OAuthDisponivel {
+			<label class="flex items-start gap-3">
+				<input
+					type="radio"
+					name="modo"
+					value={ ModoOAuth }
+					class="mt-0.5 h-4 w-4 accent-[var(--pb-acento)]"
+					checked?={ f.UsaOAuth() }
+				/>
+				<span>
+					<span class="text-sm font-medium text-conteudo">OAuth (authorization code com PKCE)</span>
+					<span class="block text-sm text-conteudo-tenue">
+						O patchbay descobre o authorization server do MCP, você autoriza no navegador,
+						e o token renovado fica cifrado em repouso. Salve primeiro; depois use
+						<em>Autorizar</em> na tela do MCP.
+					</span>
 				</span>
-			</span>
-		</label>
+			</label>
+		}
 		<p class="text-sm text-conteudo-tenue">
 			Trocar o modo e salvar recarrega o formulário com os campos do outro modo.
 		</p>
 	</fieldset>
+}
+
+// semAutenticacao é o "bloco" do MCP aberto: nada a preencher, e o aviso do que
+// o salvamento vai apagar quando já existe credencial gravada.
+templ semAutenticacao(f Form) {
+	<div class="flex flex-col gap-3">
+		<p class="max-w-[65ch] text-sm text-conteudo-suave">
+			Nada a preencher. O patchbay fala com este MCP sem
+			<code class="font-mono">Authorization</code> e sem header nenhum — é o certo para
+			servidor público e para MCP que só a rede interna alcança.
+		</p>
+		if f.TemCredencialDeHeader() {
+			<p class="max-w-[65ch] rounded-md border border-borda bg-superficie-alta px-3 py-2 text-sm text-conteudo-suave">
+				Este MCP tem credencial gravada. Salvar neste modo <strong>apaga</strong> o bearer e os
+				headers estáticos dele: guardar um segredo que nenhum caminho do código volta a usar
+				não protege ninguém, e faria esta tela dizer "definido" para um valor morto.
+			</p>
+		}
+	</div>
 }
 
 // credenciaisOAuth é o bloco de cliente OAuth.
@@ -1288,8 +1346,11 @@ func tituloDaConexao(f Form) string {
 
 // rotuloDoModo nomeia o modo de credencial na tela.
 func rotuloDoModo(modo string) string {
-	if modo == ModoOAuth {
+	switch modo {
+	case ModoOAuth:
 		return "OAuth"
+	case ModoNenhum:
+		return "sem autenticação"
 	}
 	return "credencial estática"
 }

@@ -120,10 +120,10 @@ type Config struct {
 	// processo, como as credenciais de HTTP, e nunca alimentam a UI nem o log.
 	Env map[string]string
 
-	// Modo é como o patchbay se apresenta a um upstream HTTP ou SSE: estatica
-	// (bearer e headers colados pelo admin) ou oauth. Vazio é estatica, para que
-	// um upstream cadastrado antes da fatia 7 continue significando o que
-	// significava. STDIO ignora o campo: ele não fala HTTP.
+	// Modo é como o patchbay se apresenta a um upstream HTTP ou SSE: nenhum (MCP
+	// aberto), estatica (bearer e headers colados pelo admin) ou oauth. Vazio é
+	// estatica, para que um upstream cadastrado antes da fatia 7 continue
+	// significando o que significava. STDIO ignora o campo: ele não fala HTTP.
 	//
 	// Só o modo entra aqui; nem o token nem o client_secret. Config alimenta a UI
 	// e o log, e segredo nenhum passa por ela — as credenciais são lidas cifradas
@@ -139,10 +139,22 @@ type Config struct {
 
 // ModoEfetivo normaliza o modo de credencial. Vazio é estatica.
 func (c Config) ModoEfetivo() string {
-	if c.Modo == ModoOAuth {
+	switch c.Modo {
+	case ModoOAuth:
 		return ModoOAuth
+	case ModoNenhum:
+		return ModoNenhum
+	default:
+		return ModoEstatica
 	}
-	return ModoEstatica
+}
+
+// SemAutenticacao informa se este upstream foi declarado aberto.
+//
+// STDIO nunca é: o modo só descreve o que vai na requisição HTTP, e um processo
+// local recebe o que recebe por variável de ambiente.
+func (c Config) SemAutenticacao() bool {
+	return c.ModoEfetivo() == ModoNenhum && (c.Tipo == TipoHTTP || c.Tipo == TipoSSE)
 }
 
 // UsaOAuth informa se este upstream se autentica por consentimento OAuth.

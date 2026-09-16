@@ -85,6 +85,18 @@ SELECT tipo, nome
 // o valor, então um campo em branco é ausência de mudança, não ordem de apagar.
 // Apagar é explícito, pelo "limpar".
 func (r *RepositorioSQLite) aplicarCredenciais(ctx context.Context, tx *sql.Tx, upstreamID int64, f Form) error {
+	// "Sem autenticação" é uma declaração, e ela tem de valer no banco: o que
+	// iria no header sai junto, na mesma transação que grava o modo.
+	//
+	// Apagar, e não só ignorar na hora de montar a requisição: guardar o bearer
+	// de um MCP declarado aberto é manter credencial alheia cifrada sem nada que
+	// a use — e é o que faria a tela dizer "definido" para um valor que nunca
+	// mais sai daqui. A tela avisa antes de salvar. Variável de ambiente não
+	// entra nesta limpeza: ela é de upstream STDIO, que não tem modo.
+	if f.ModoEfetivo() == ModoNenhum {
+		return apagarCredenciaisDeHeader(ctx, tx, upstreamID)
+	}
+
 	if f.BearerLimpar {
 		if err := apagarCredencial(ctx, tx, upstreamID, CredencialBearer, ""); err != nil {
 			return err
@@ -154,6 +166,18 @@ ON CONFLICT (upstream_id, tipo, nome) DO UPDATE SET
 		upstreamID, tipo, nome, cifrado, agora, agora)
 	if err != nil {
 		return fmt.Errorf("upstream: gravar credencial %s/%s de %d: %w", tipo, nome, upstreamID, err)
+	}
+	return nil
+}
+
+// apagarCredenciaisDeHeader apaga tudo que viraria header daquele upstream —
+// bearer e headers estáticos —, sem tocar nas variáveis de ambiente cifradas.
+func apagarCredenciaisDeHeader(ctx context.Context, tx *sql.Tx, upstreamID int64) error {
+	_, err := tx.ExecContext(ctx,
+		`DELETE FROM upstream_secret WHERE upstream_id = ? AND tipo IN (?, ?)`,
+		upstreamID, CredencialBearer, CredencialHeader)
+	if err != nil {
+		return fmt.Errorf("upstream: apagar credenciais de header de %d: %w", upstreamID, err)
 	}
 	return nil
 }

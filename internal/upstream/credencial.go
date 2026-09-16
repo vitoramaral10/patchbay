@@ -93,6 +93,13 @@ func (g *Gerente) clienteDe(ctx context.Context, cfg Config) (*http.Client, erro
 	if g.credenciais == nil {
 		return g.cliente, nil
 	}
+	// Declarado aberto é aberto: nem lê a tabela. O repositório já apaga bearer e
+	// headers ao salvar neste modo, então a leitura não traria nada — e pular a
+	// consulta é o que garante que uma linha sobrevivente (gravação direta no
+	// banco, corrida entre duas abas) também não vire header.
+	if cfg.SemAutenticacao() {
+		return g.cliente, nil
+	}
 
 	ctxLeitura, cancelar := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancelar()
