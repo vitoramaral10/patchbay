@@ -1,0 +1,91 @@
+name: imagem
+
+# Um workflow só, com um trabalho só: compilar a imagem e publicá-la no GHCR.
+#
+# Antes eram dois — um de verificação (build, vet, lint, test) e um de release
+# (goreleaser com binários das quatro plataformas, SBOM anexado ao release e
+# assinatura keyless com cosign). Saíram por decisão do dono: o que o projeto
+# entrega é a imagem, e o resto era cerimônia que ninguém consumia.
+#
+# O que se perdeu, dito aqui para não ser descoberto depois:
+#
+#   - nada roda `go test`, `go vet` nem `golangci-lint` no CI. A régua passou a
+#     ser `task verifica` na máquina de quem escreve o código. Um PR que quebra
+#     o teste só é barrado se alguém rodar;
+#   - não há mais binário publicado em Releases, nem checksum;
+#   - a imagem não é mais assinada nem tem SBOM anexado ao release. O
+#     `docker/build-push-action` faz as duas coisas com `sbom: true` e
+#     `provenance: mode=max` — uma linha cada, se um dia voltarem a valer.
+#
+# O build em si continua falhando quando o código não compila: é `go build`
+# dentro do Dockerfile multi-stage. É o único portão que sobrou.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+# contents para ler o repositório; packages para publicar no GHCR. Nada mais:
+# este workflow não cria release, não comenta em PR e não escreve no repo.
+permissions:
+  contents: read
+  packages: write
+
+# Push seguido em main cancela o build anterior — a imagem que importa é a da
+# última. Tag entra em grupo próprio pelo ref, então ela nunca é cancelada por
+# um push em main.
+concurrency:
+  group: imagem-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    name: build e push para o ghcr.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # QEMU para o alvo arm64: o build é CGO_ENABLED=0 e não precisa de
+      # toolchain nativo, então um só passo multi-plataforma resolve os dois a
+      # partir do Dockerfile único.
+      - uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: data
+        run: echo "iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GITHUB_OUTPUT"
+
+      # main publica :main e :sha-abc1234; tag v1.2.3 publica :1.2.3, :1.2 e
+      # :latest. latest só sai de tag, de propósito: um :latest que muda a cada
+      # commit em main faz "puxei a latest" deixar de identificar uma versão.
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSAO=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            DATA=${{ steps.data.outputs.iso }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache entre execuções no próprio GitHub Actions: sem ele todo push
+          # recompila o mundo, e sob QEMU o arm64 domina o tempo do job.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
