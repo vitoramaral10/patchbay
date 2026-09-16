@@ -79,8 +79,12 @@ func proximaTentativa(t time.Time) string {
 	return "em " + falta.String() + " (" + instante(t) + ")"
 }
 
-// TelaLista é a lista de upstreams.
-templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
+// TelaLista é a lista de upstreams, com a caixa de colar em cima dela.
+//
+// A caixa fica aqui, e não numa página própria: colar o comando é o caminho
+// normal de cadastrar um MCP, e mandar o admin a outra tela para isso era um
+// clique a mais antes do único campo que ele ia preencher.
+templ TelaLista(linhas []Linha, alerta *webui.Alerta, colar DadosColar) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "MCPs",
 		Subtitulo: "Cada MCP é um servidor externo que o patchbay consome. Ele mantém uma sessão por MCP, aberta fora do caminho da requisição do cliente.",
@@ -89,9 +93,12 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 		Acao:      botaoNovo(),
 		Alerta:    alerta,
 	}) {
+		<div class="mb-6">
+			@CaixaDeColar(colar)
+		</div>
 		if len(linhas) == 0 {
 			@webui.Vazio("Nenhum MCP ainda.",
-				"Cadastre o primeiro servidor MCP que o patchbay vai agregar: um servidor Streamable HTTP, um servidor SSE legado, ou um processo local que fala MCP pelo stdin e stdout. Se a documentação dele publica uma linha de instalação do claude mcp add, cole-a e o patchbay preenche o cadastro.") {
+				"Cadastre o primeiro servidor MCP que o patchbay vai agregar: um servidor Streamable HTTP, um servidor SSE legado, ou um processo local que fala MCP pelo stdin e stdout. Cole acima a linha de instalação que a documentação dele publica, e o patchbay cria o cadastro.") {
 				@botaoNovo()
 			}
 		} else {
@@ -152,16 +159,17 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 // HTTP, SSE e STDIO pedem campos diferentes, e um formulário com os três
 // conjuntos ao mesmo tempo obrigaria o admin a adivinhar quais valem.
 //
-// Colar o comando é a ação primária, e os três tipos ficam secundários: quase
-// todo servidor MCP publica a instalação como uma linha de `claude mcp add`, e
-// transcrever aquela linha campo a campo é onde nascem o transporte errado e o
-// header com nome trocado. Quem não tem o comando continua com os três botões.
+// O atalho de colar leva para a caixa que está na própria tela, e não para
+// outra página: quase todo servidor MCP publica a instalação como uma linha de
+// `claude mcp add`, e transcrever aquela linha campo a campo é onde nascem o
+// transporte errado e o header com nome trocado. Quem não tem o comando
+// continua com os três botões.
 templ botaoNovo() {
 	<div class="flex flex-wrap items-center gap-2">
 		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoSTDIO) } class="pb-botao pb-botao-secundario">Novo processo STDIO</a>
 		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoSSE) } class="pb-botao pb-botao-secundario">Novo MCP SSE</a>
 		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoHTTP) } class="pb-botao pb-botao-secundario">Novo MCP HTTP</a>
-		<a href={ templ.SafeURL(rotaImportar()) } class="pb-botao pb-botao-primario">Colar comando de instalação</a>
+		<a href="#colar" class="pb-botao pb-botao-primario">Colar comando de instalação</a>
 	</div>
 }
 

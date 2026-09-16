@@ -12,14 +12,17 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/upstream"
 )
 
-// TestAdmin_ImportarComando percorre o fluxo inteiro pela borda HTTP: colar,
-// conferir e criar.
+// rotaColar é a única rota do caminho de colar: um POST, um MCP criado.
+const rotaColar = "/colar"
+
+// TestAdmin_ColarComando percorre o caminho inteiro pela borda HTTP: colar e
+// criar, sem tela no meio.
 //
 // O que ele prova e nenhum teste de domínio prova é a costura: o nome do campo
-// do formulário (`comando`), a rota de aplicar, e — o que mais importa — que a
-// credencial que veio na linha de comando chegou cifrada ao banco pelo mesmo
-// caminho do formulário, em vez de ficar pelo meio.
-func TestAdmin_ImportarComando(t *testing.T) {
+// do formulário (`comando`), a rota, e — o que mais importa — que a credencial
+// que veio na linha de comando chegou cifrada ao banco pelo mesmo caminho do
+// formulário, em vez de ficar pelo meio.
+func TestAdmin_ColarComando(t *testing.T) {
 	t.Parallel()
 
 	a := novoAmbiente(t, func(string) []upstream.Form { return nil }, opcoesAmbiente{})
@@ -28,33 +31,10 @@ func TestAdmin_ImportarComando(t *testing.T) {
 	const comando = `claude mcp add --transport http --scope user xpoz-mcp ` +
 		`https://mcp.exemplo.invalid/mcp --header "Authorization: Bearer sk-do-comando"`
 
-	// 1. Conferência: mostra o que seria criado, e não grava nada.
-	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+"/importar",
-		url.Values{"comando": {comando}})
-	if status != http.StatusOK {
-		t.Fatalf("status da conferência = %d, quer 200 (corpo: %s)", status, corpo)
-	}
-	for _, trecho := range []string{"xpoz-mcp", "https://mcp.exemplo.invalid/mcp", "streamable http"} {
-		if !strings.Contains(corpo, trecho) {
-			t.Errorf("a tela de conferência não mostra %q", trecho)
-		}
-	}
-	// O token não pode aparecer em lugar nenhum da conferência: o resumo diz
-	// que há um bearer, nunca qual é.
-	if strings.Contains(corpo, "sk-do-comando") {
-		t.Error("a tela de conferência revela o token do comando")
-	}
-	if regs, err := a.repo.Todos(context.Background()); err != nil {
-		t.Fatalf("todos: erro = %v, quer nil", err)
-	} else if len(regs) != 0 {
-		t.Fatalf("conferir gravou %d upstream(s); ela não pode escrever nada", len(regs))
-	}
-
-	// 2. Aplicar: cria o MCP e redireciona para o detalhe dele.
-	corpo, status = postar(t, cliente, a.admin.URL+webui.RotaUpstreams+"/importar/aplicar",
+	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+rotaColar,
 		url.Values{"comando": {comando}})
 	if status != http.StatusSeeOther {
-		t.Fatalf("status de aplicar = %d, quer 303 (corpo: %s)", status, corpo)
+		t.Fatalf("status de colar = %d, quer 303 (corpo: %s)", status, corpo)
 	}
 
 	regs, err := a.repo.Todos(context.Background())
@@ -97,112 +77,49 @@ func TestAdmin_ImportarComando(t *testing.T) {
 	}
 }
 
-// TestAdmin_ConferenciaNaoLevaOSegredoParaATela cobre a razão de o comando
-// ficar guardado no processo em vez de voltar num campo escondido: entre
-// conferir e criar, o token não pode estar dentro de nenhum HTML.
-//
-// O identificador da conferência é o que viaja, e ele vale uma vez só — o
-// segundo clique no mesmo botão não pode tentar criar de novo.
-func TestAdmin_ConferenciaNaoLevaOSegredoParaATela(t *testing.T) {
+// TestAdmin_ColarLevaAsNotasParaODetalhe cobre o que sobrou da tela de
+// conferência: o comando pedia coisas que o cadastro não tem — o --scope do
+// Claude Code —, e isso precisa aparecer no MCP recém-criado em vez de sumir no
+// log. E precisa aparecer uma vez só: a nota é consumida na primeira exibição.
+func TestAdmin_ColarLevaAsNotasParaODetalhe(t *testing.T) {
 	t.Parallel()
 
 	a := novoAmbiente(t, func(string) []upstream.Form { return nil }, opcoesAmbiente{})
 	cliente := clienteSemSeguir()
 
-	const comando = `claude mcp add -t http exemplo https://mcp.exemplo.invalid/mcp ` +
-		`-H "X-Api-Key: chave-secreta-do-comando"`
+	const comando = `claude mcp add --transport http --scope user exemplo ` +
+		`https://mcp.exemplo.invalid/mcp --header "X-Api-Key: chave-secreta-do-comando"`
 
-	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+"/importar",
+	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+rotaColar,
 		url.Values{"comando": {comando}})
-	if status != http.StatusOK {
-		t.Fatalf("status da conferência = %d, quer 200 (corpo: %s)", status, corpo)
-	}
-	// O nome do header aparece — é o que permite conferir que foi entendido —,
-	// o valor não. E o comando inteiro também não: ele carrega o valor junto.
-	if !strings.Contains(corpo, "X-Api-Key") {
-		t.Error("a conferência não diz qual header o comando trazia")
-	}
-	if strings.Contains(corpo, "chave-secreta-do-comando") {
-		t.Error("a tela de conferência revela o valor do header")
-	}
-	if strings.Contains(corpo, "-H ") {
-		t.Error("a tela de conferência devolve o comando bruto ao navegador")
-	}
-
-	pendencia := pendenciaDoCorpo(t, corpo)
-	corpo, status = postar(t, cliente, a.admin.URL+webui.RotaUpstreams+"/importar/aplicar",
-		url.Values{"pendencia": {pendencia}})
 	if status != http.StatusSeeOther {
-		t.Fatalf("status de aplicar = %d, quer 303 (corpo: %s)", status, corpo)
+		t.Fatalf("status de colar = %d, quer 303 (corpo: %s)", status, corpo)
+	}
+	destino := localDoRedirecionamento(t, cliente, a.admin.URL+webui.RotaUpstreams+rotaColar,
+		url.Values{"comando": {strings.Replace(comando, "exemplo ", "exemplo2 ", 1)}})
+	if !strings.Contains(destino, "aviso=importado") || !strings.Contains(destino, "notas=") {
+		t.Fatalf("destino = %q, quer o aviso e o identificador das notas", destino)
 	}
 
-	// Segundo clique no mesmo botão: a pendência já foi consumida.
-	corpo, status = postar(t, cliente, a.admin.URL+webui.RotaUpstreams+"/importar/aplicar",
-		url.Values{"pendencia": {pendencia}})
-	if status != http.StatusUnprocessableEntity {
-		t.Fatalf("status do segundo clique = %d, quer 422 (corpo: %s)", status, corpo)
+	primeira := obter(t, cliente, a.admin.URL+destino)
+	if !strings.Contains(primeira, "escopo") {
+		t.Errorf("a tela do MCP não traz a nota do escopo ignorado; corpo = %s", primeira)
 	}
-	if !strings.Contains(corpo, "não vale mais") {
-		t.Errorf("a tela não explica a conferência consumida; corpo = %s", corpo)
+	// O valor do header nunca chega à tela, nem pela nota: ela nomeia o header,
+	// não o repete.
+	if strings.Contains(primeira, "chave-secreta-do-comando") {
+		t.Error("a tela do MCP revela o valor do header do comando")
 	}
-	if regs, err := a.repo.Todos(context.Background()); err != nil {
-		t.Fatalf("todos: erro = %v, quer nil", err)
-	} else if len(regs) != 1 {
-		t.Errorf("upstreams gravados = %d, quer 1: o segundo clique não pode duplicar", len(regs))
+
+	segunda := obter(t, cliente, a.admin.URL+destino)
+	if strings.Contains(segunda, "escopo") {
+		t.Error("a nota da importação apareceu duas vezes; ela vale para uma exibição")
 	}
 }
 
-// TestAdmin_ConferenciaVoltaParaEdicao cobre o "voltar e editar": o comando
-// guardado volta para a caixa, para o admin corrigir sem colar tudo de novo.
-func TestAdmin_ConferenciaVoltaParaEdicao(t *testing.T) {
-	t.Parallel()
-
-	a := novoAmbiente(t, func(string) []upstream.Form { return nil }, opcoesAmbiente{})
-	cliente := clienteSemSeguir()
-
-	const comando = `claude mcp add -t http exemplo https://mcp.exemplo.invalid/mcp`
-	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+"/importar",
-		url.Values{"comando": {comando}})
-	if status != http.StatusOK {
-		t.Fatalf("status da conferência = %d, quer 200 (corpo: %s)", status, corpo)
-	}
-
-	corpo, status = postar(t, cliente, a.admin.URL+webui.RotaUpstreams+"/importar",
-		url.Values{"pendencia": {pendenciaDoCorpo(t, corpo)}, "editar": {"1"}})
-	if status != http.StatusOK {
-		t.Fatalf("status do voltar = %d, quer 200 (corpo: %s)", status, corpo)
-	}
-	if !strings.Contains(corpo, "mcp.exemplo.invalid") {
-		t.Errorf("o voltar não devolveu o comando para a caixa; corpo = %s", corpo)
-	}
-	if regs, err := a.repo.Todos(context.Background()); err != nil {
-		t.Fatalf("todos: erro = %v, quer nil", err)
-	} else if len(regs) != 0 {
-		t.Errorf("o voltar gravou %d upstream(s)", len(regs))
-	}
-}
-
-// pendenciaDoCorpo extrai da tela de conferência o identificador que os dois
-// botões dela reenviam.
-func pendenciaDoCorpo(t *testing.T, corpo string) string {
-	t.Helper()
-
-	const marca = `name="pendencia" value="`
-	i := strings.Index(corpo, marca)
-	if i < 0 {
-		t.Fatalf("a tela de conferência não traz o campo de pendência; corpo = %s", corpo)
-	}
-	resto := corpo[i+len(marca):]
-	fim := strings.IndexByte(resto, '"')
-	if fim <= 0 {
-		t.Fatalf("campo de pendência malformado; corpo = %s", corpo)
-	}
-	return resto[:fim]
-}
-
-// TestAdmin_ImportarComandoRecusado garante que a recusa volta como tela de
-// correção — com o comando de volta na caixa para editar — e não grava nada.
-func TestAdmin_ImportarComandoRecusado(t *testing.T) {
+// TestAdmin_ColarComandoRecusado garante que a recusa volta como a própria tela
+// de MCPs — com o comando de volta na caixa para editar — e não grava nada.
+func TestAdmin_ColarComandoRecusado(t *testing.T) {
 	t.Parallel()
 
 	a := novoAmbiente(t, func(string) []upstream.Form { return nil }, opcoesAmbiente{})
@@ -212,20 +129,22 @@ func TestAdmin_ImportarComandoRecusado(t *testing.T) {
 	const comando = `claude mcp add --transport http xpoz-mcp https://mcp.exemplo.invalid/mcp ` +
 		`--header "Authorization: Bearer [your Xpoz API token]"`
 
-	for _, rota := range []string{"/importar", "/importar/aplicar"} {
-		corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+rota,
-			url.Values{"comando": {comando}})
-		if status != http.StatusUnprocessableEntity {
-			t.Fatalf("status de %s = %d, quer 422 (corpo: %s)", rota, status, corpo)
-		}
-		if !strings.Contains(corpo, "marcador da documentação") {
-			t.Errorf("a recusa em %s não explica o marcador; corpo = %s", rota, corpo)
-		}
-		// O comando volta para a caixa: sem ele, corrigir o token exigiria
-		// copiar tudo da documentação de novo.
-		if !strings.Contains(corpo, "mcp.exemplo.invalid") {
-			t.Errorf("a recusa em %s não devolve o comando para edição", rota)
-		}
+	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+rotaColar,
+		url.Values{"comando": {comando}})
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, quer 422 (corpo: %s)", status, corpo)
+	}
+	if !strings.Contains(corpo, "marcador da documentação") {
+		t.Errorf("a recusa não explica o marcador; corpo = %s", corpo)
+	}
+	// O comando volta para a caixa: sem ele, corrigir o token exigiria copiar
+	// tudo da documentação de novo.
+	if !strings.Contains(corpo, "mcp.exemplo.invalid") {
+		t.Error("a recusa não devolve o comando para edição")
+	}
+	// E volta na tela de MCPs, não numa página de erro à parte.
+	if !strings.Contains(corpo, "Adicionar colando o comando de instalação") {
+		t.Error("a recusa não volta para a caixa de colar da lista")
 	}
 
 	if regs, err := a.repo.Todos(context.Background()); err != nil {
@@ -235,9 +154,9 @@ func TestAdmin_ImportarComandoRecusado(t *testing.T) {
 	}
 }
 
-// TestAdmin_ImportarComandoNomeEmUso cobre o segundo clique no mesmo comando: o
+// TestAdmin_ColarComandoNomeEmUso cobre o segundo clique no mesmo comando: o
 // nome já existe, e a mensagem precisa dizer isso em vez de estourar um 500.
-func TestAdmin_ImportarComandoNomeEmUso(t *testing.T) {
+func TestAdmin_ColarComandoNomeEmUso(t *testing.T) {
 	t.Parallel()
 
 	a := novoAmbiente(t, func(string) []upstream.Form {
@@ -248,7 +167,7 @@ func TestAdmin_ImportarComandoNomeEmUso(t *testing.T) {
 	}, opcoesAmbiente{})
 	cliente := clienteSemSeguir()
 
-	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+"/importar/aplicar",
+	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+rotaColar,
 		url.Values{"comando": {`claude mcp add -t http exemplo https://mcp.exemplo.invalid/mcp`}})
 	if status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, quer 422 (corpo: %s)", status, corpo)
@@ -258,14 +177,14 @@ func TestAdmin_ImportarComandoNomeEmUso(t *testing.T) {
 	}
 }
 
-// TestAdmin_ImportarComandoVazio cobre o submit sem nada colado.
-func TestAdmin_ImportarComandoVazio(t *testing.T) {
+// TestAdmin_ColarComandoVazio cobre o submit sem nada colado.
+func TestAdmin_ColarComandoVazio(t *testing.T) {
 	t.Parallel()
 
 	a := novoAmbiente(t, func(string) []upstream.Form { return nil }, opcoesAmbiente{})
 	cliente := clienteSemSeguir()
 
-	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+"/importar",
+	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+rotaColar,
 		url.Values{"comando": {"   "}})
 	if status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, quer 422 (corpo: %s)", status, corpo)
@@ -290,4 +209,42 @@ func postar(t *testing.T, cliente *http.Client, rota string, valores url.Values)
 		t.Fatalf("ler corpo de %s: erro = %v, quer nil", rota, err)
 	}
 	return string(corpo), resp.StatusCode
+}
+
+// localDoRedirecionamento faz o POST e devolve o Location, que é onde o
+// identificador das notas viaja.
+func localDoRedirecionamento(
+	t *testing.T, cliente *http.Client, rota string, valores url.Values,
+) string {
+	t.Helper()
+
+	resp, err := cliente.PostForm(rota, valores)
+	if err != nil {
+		t.Fatalf("POST %s: erro = %v, quer nil", rota, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status de %s = %d, quer 303", rota, resp.StatusCode)
+	}
+	return resp.Header.Get("Location")
+}
+
+// obter busca uma tela e devolve o corpo.
+func obter(t *testing.T, cliente *http.Client, rota string) string {
+	t.Helper()
+
+	resp, err := cliente.Get(rota)
+	if err != nil {
+		t.Fatalf("GET %s: erro = %v, quer nil", rota, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	corpo, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ler corpo de %s: erro = %v, quer nil", rota, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status de %s = %d, quer 200 (corpo: %s)", rota, resp.StatusCode, corpo)
+	}
+	return string(corpo)
 }

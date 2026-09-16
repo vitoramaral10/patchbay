@@ -24,10 +24,10 @@ type Admin struct {
 	rematerializar Rematerializar
 	nomeExposto    NomeExpostoDe
 	log            *slog.Logger
-	// comandos guarda o comando de instalação colado entre a tela de
-	// conferência e o clique que cria. Vive em memória porque é estado de tela
-	// com credencial em claro dentro (comando_http.go).
-	comandos *guardaDeComandos
+	// notas leva o que o patchbay ajustou de um comando colado até a tela do
+	// MCP recém-criado. Vive em memória porque é recado de uma navegação
+	// (comando_http.go).
+	notas *guardaDeNotas
 }
 
 // NovoAdmin monta o CRUD de upstream.
@@ -46,7 +46,7 @@ func NovoAdmin(
 		rematerializar: rematerializar,
 		nomeExposto:    nomeExposto,
 		log:            log,
-		comandos:       novaGuardaDeComandos(),
+		notas:          novaGuardaDeNotas(),
 	}
 }
 
@@ -57,9 +57,10 @@ func (a *Admin) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+webui.RotaUpstreams, a.criar)
 	// Segmento literal, então não compete com o /{id} logo abaixo: o ServeMux
 	// resolve os dois sem ambiguidade, como já faz com /novo.
-	mux.HandleFunc("GET "+webui.RotaUpstreams+"/importar", a.formImportar)
-	mux.HandleFunc("POST "+webui.RotaUpstreams+"/importar", a.lerComando)
-	mux.HandleFunc("POST "+webui.RotaUpstreams+"/importar/aplicar", a.importar)
+	//
+	// Um POST só: a caixa de colar está na própria lista, e o que ela recebe
+	// vira MCP sem tela no meio.
+	mux.HandleFunc("POST "+webui.RotaUpstreams+"/colar", a.colar)
 	mux.HandleFunc("GET "+webui.RotaUpstreams+"/{id}", a.detalhe)
 	mux.HandleFunc("GET "+webui.RotaUpstreams+"/{id}/editar", a.formEditar)
 	mux.HandleFunc("POST "+webui.RotaUpstreams+"/{id}", a.atualizar)
@@ -73,6 +74,16 @@ func (a *Admin) Rotas(mux *http.ServeMux) {
 }
 
 func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
+	a.renderizarLista(w, r, http.StatusOK, DadosColar{})
+}
+
+// renderizarLista desenha a tela de MCPs. Recebe o estado da caixa de colar
+// porque a recusa de um comando volta para a mesma tela, com o texto de volta
+// no campo e o motivo em cima — e não para uma tela de erro à parte, que
+// obrigaria a colar tudo de novo.
+func (a *Admin) renderizarLista(
+	w http.ResponseWriter, r *http.Request, status int, colar DadosColar,
+) {
 	regs, err := a.repo.Todos(r.Context())
 	if err != nil {
 		webui.ErroInterno(w, r, a.log, err)
@@ -103,7 +114,7 @@ func (a *Admin) listar(w http.ResponseWriter, r *http.Request) {
 		}
 		linhas = append(linhas, l)
 	}
-	webui.Renderizar(w, r, http.StatusOK, a.log, TelaLista(linhas, webui.Avisos(r, avisos)))
+	webui.Renderizar(w, r, status, a.log, TelaLista(linhas, webui.Avisos(r, avisos), colar))
 }
 
 // formNovo abre o formulário do tipo pedido na query.
@@ -379,7 +390,26 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 			Avisos:       avisos,
 		})
 	}
-	webui.Renderizar(w, r, http.StatusOK, a.log, TelaDetalhe(d, webui.Avisos(r, avisos)))
+	webui.Renderizar(w, r, http.StatusOK, a.log,
+		TelaDetalhe(d, a.alertaDoDetalhe(r)))
+}
+
+// alertaDoDetalhe monta o alerta do topo, juntando ao aviso da query as notas
+// que uma importação por comando deixou para esta tela.
+//
+// As notas são o que a tela de conferência dizia antes de gravar — escopo
+// ignorado, variável que foi para o bloco cifrado. Elas aparecem no MCP que
+// acabou de nascer, uma vez só: quem as guarda as entrega e as descarta.
+func (a *Admin) alertaDoDetalhe(r *http.Request) *webui.Alerta {
+	alerta := webui.Avisos(r, avisos)
+	notas := a.notas.tomar(r.URL.Query().Get("notas"))
+	if len(notas) == 0 || alerta == nil {
+		return alerta
+	}
+	copia := *alerta
+	copia.Texto = copia.Texto + " O patchbay ajustou o que o comando pedia e o " +
+		"cadastro não tem: " + strings.Join(notas, " ")
+	return &copia
 }
 
 // reconectar rearma a supervisão de um upstream agora, sem esperar o backoff.
