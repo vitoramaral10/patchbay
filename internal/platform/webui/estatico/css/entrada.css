@@ -160,11 +160,17 @@
     /*
      * Anel de foco em tudo que foca, com offset para não colar na borda.
      * focus-visible e não focus: o anel não deve aparecer no clique de mouse.
+     *
+     * Sem `border-radius` aqui de propósito: definir o raio no `:focus-visible`
+     * reescreve o raio do próprio elemento enquanto ele está focado, e o botão
+     * (rounded-md, 0.5rem) encolhia para 0.375rem ao receber foco de teclado —
+     * a forma mudava só para quem navega por Tab. O `outline` já acompanha o
+     * `border-radius` de quem ele contorna em todo navegador atual, então cada
+     * elemento mantém a própria forma e o anel segue.
      */
     :focus-visible {
         outline: 2px solid var(--pb-anel);
         outline-offset: 2px;
-        border-radius: var(--radius-sm);
     }
 
     /* Toda coluna de número: sem isso as casas dançam a cada render. */
@@ -233,6 +239,34 @@
     }
     .pb-link:hover {
         @apply decoration-acento;
+    }
+
+    /*
+     * Estado pendente das ações htmx.
+     *
+     * O `hx-disabled-elt` já desliga o botão enquanto a requisição está no ar,
+     * mas desligar não diz *está acontecendo* — e aqui a espera é real: sondar
+     * e reconectar saem para um MCP remoto e demoram segundos. Sem isso o
+     * clique some no vazio e o administrador clica de novo.
+     *
+     * O sinal é o rótulo, não um spinner, pela mesma razão que o selo tem
+     * texto e não só cor: texto sobrevive ao leitor de tela, ao alto contraste
+     * e ao `prefers-reduced-motion` — que zera a duração de toda animação
+     * daqui de baixo e deixaria um spinner parado no lugar, mentindo que
+     * travou.
+     *
+     * O htmx põe `.htmx-request` em quem dispara a requisição (aqui o <form>)
+     * e tira quando ela volta; os dois rótulos moram no botão, e só um aparece
+     * por vez.
+     */
+    .pb-pendente {
+        display: none;
+    }
+    .htmx-request .pb-pendente {
+        display: inline;
+    }
+    .htmx-request .pb-ocioso {
+        display: none;
     }
 }
 

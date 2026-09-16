@@ -1,0 +1,940 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" as="image" href="/icon.png"/><link rel="preload" as="image" href="/api/logo?url=https%3A%2F%2Fgithub.com%2Fankimcp%2Fanki-mcp-server&amp;size=64"/><link rel="stylesheet" href="/assets/globals-HkCSC6Wx.css" data-precedence="default"/><link rel="stylesheet" href="/assets/github-markdown-light-C3INj2oG.css" data-precedence="default"/><title>Servidor MCP oficial Anki | Awesome MCP Servers</title><meta name="impact-site-verification" value="7565b9a1-f958-4ea1-988f-88eb1084856a"/><meta property="og:site_name" content="MCP Servers"/><meta property="og:type" content="website"/><meta property="og:locale" content="pt_BR"/><meta name="description" content="Um servidor MCP que permite que assistentes de IA interajam com o Anki, o aplicativo de flashcards de repetição espaçada."/><meta property="og:title" content="Servidor MCP oficial Anki | Awesome MCP Servers"/><meta property="og:description" content="Um servidor MCP que permite que assistentes de IA interajam com o Anki, o aplicativo de flashcards de repetição espaçada."/><meta property="og:url" content="https://mcpservers.org/pt-BR/servers/anki-mcp/anki-mcp-desktop"/><meta property="og:image" content="https://mcpservers.org/api/og?template=item&amp;title=Anki+MCP&amp;description=Um+servidor+MCP+que+permite+que+assistentes+de+IA+interajam+com+o+Anki%2C+o+aplicativo+de+flashcards+de+repeti%C3%A7%C3%A3o+espa%C3%A7ada.&amp;label=Official+MCP&amp;logo=https%3A%2F%2Fmcpservers.org%2Fapi%2Flogo%3Furl%3Dhttps%253A%252F%252Fgithub.com%252Fankimcp%252Fanki-mcp-server%26size%3D64&amp;author=ankimcp&amp;meta=ankimcp%2Fanki-mcp-server"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:image" content="https://mcpservers.org/api/og?template=item&amp;title=Anki+MCP&amp;description=Um+servidor+MCP+que+permite+que+assistentes+de+IA+interajam+com+o+Anki%2C+o+aplicativo+de+flashcards+de+repeti%C3%A7%C3%A3o+espa%C3%A7ada.&amp;label=Official+MCP&amp;logo=https%3A%2F%2Fmcpservers.org%2Fapi%2Flogo%3Furl%3Dhttps%253A%252F%252Fgithub.com%252Fankimcp%252Fanki-mcp-server%26size%3D64&amp;author=ankimcp&amp;meta=ankimcp%2Fanki-mcp-server"/><link rel="modulepreload" href="/assets/index-BHdLe98V.js"/><link rel="modulepreload" href="/assets/jsx-runtime-Cx0BB4qO.js"/><link rel="modulepreload" href="/assets/react-3BKWdGy3.js"/><link rel="modulepreload" href="/assets/createServerFn-DZZNDdqS.js"/><link rel="modulepreload" href="/assets/link-CQMhWUPs.js"/><link rel="modulepreload" href="/assets/not-found-i5RsCZif.js"/><link rel="modulepreload" href="/assets/matchContext-BS1nh9PE.js"/><link rel="modulepreload" href="/assets/redirect-Dhm19zUi.js"/><link rel="modulepreload" href="/assets/lazyRouteComponent-Di5X7ueD.js"/><link rel="modulepreload" href="/assets/useStore-JNfaS1_g.js"/><link rel="modulepreload" href="/assets/useMatch-BiHrb9zr.js"/><link rel="modulepreload" href="/assets/runtime-CPM_Grvh.js"/><link rel="modulepreload" href="/assets/createLucideIcon-DMASS5FJ.js"/><link rel="modulepreload" href="/assets/x-VQNqR9pZ.js"/><link rel="modulepreload" href="/assets/preload-helper-Czpn1I53.js"/><link rel="modulepreload" href="/assets/i18n-D79eJXke.js"/><link rel="modulepreload" href="/assets/button-CNTnyc-7.js"/><link rel="modulepreload" href="/assets/utils-D0Cejml6.js"/><link rel="modulepreload" href="/assets/server-fns-6ATEu-AV.js"/><link rel="modulepreload" href="/assets/head-BatK6-aQ.js"/><link rel="modulepreload" href="/assets/consts-DxQBd0Mq.js"/><link rel="modulepreload" href="/assets/seo-CPTQwe5t.js"/><link rel="modulepreload" href="/assets/og-image-eKpQNnu9.js"/><link rel="modulepreload" href="/assets/server-logo-DGQ4rUnC.js"/><link rel="modulepreload" href="/assets/schemas-CnU5xxun.js"/><link rel="modulepreload" href="/assets/coerce-Cc3PS1--.js"/><link rel="modulepreload" href="/assets/route-canonicalization-CkPI53Cm.js"/><link rel="modulepreload" href="/assets/indexable-queries-dctGpuai.js"/><link rel="modulepreload" href="/assets/official-skills-WxbQ0BBs.js"/><link rel="modulepreload" href="/assets/topic-pages-scMsg8A2.js"/><link rel="modulepreload" href="/assets/skill-list-Dd1CoZX1.js"/><link rel="modulepreload" href="/assets/_-CCUQDldy.js"/><link rel="modulepreload" href="/assets/arrow-up-right-DoDG59eL.js"/><link rel="modulepreload" href="/assets/server-DmTKwVAh.js"/><link rel="modulepreload" href="/assets/use-sponsor-tracking-ehDNuZ5O.js"/><link rel="modulepreload" href="/assets/badge-CtpjZfuf.js"/><link rel="modulepreload" href="/assets/network-ad-D2hqRSPU.js"/><link rel="modulepreload" href="/assets/markdown-CgN6ml4J.js"/><link rel="modulepreload" href="/assets/notebooklm-ad-C6Q6Go_B.js"/><link rel="modulepreload" href="/assets/partner-agent-button-B4bkTsbd.js"/><link rel="modulepreload" href="/assets/breadcrumb-CjKNGgL3.js"/><link rel="icon" href="/icon.png"/><link rel="canonical" href="https://mcpservers.org/pt-BR/servers/anki-mcp/anki-mcp-desktop"/><link rel="alternate" href="https://mcpservers.org/servers/anki-mcp/anki-mcp-desktop" hrefLang="en"/><link rel="alternate" href="https://mcpservers.org/zh-CN/servers/anki-mcp/anki-mcp-desktop" hrefLang="zh-CN"/><link rel="alternate" href="https://mcpservers.org/zh-TW/servers/anki-mcp/anki-mcp-desktop" hrefLang="zh-TW"/><link rel="alternate" href="https://mcpservers.org/ja/servers/anki-mcp/anki-mcp-desktop" hrefLang="ja"/><link rel="alternate" href="https://mcpservers.org/ko/servers/anki-mcp/anki-mcp-desktop" hrefLang="ko"/><link rel="alternate" href="https://mcpservers.org/es/servers/anki-mcp/anki-mcp-desktop" hrefLang="es"/><link rel="alternate" href="https://mcpservers.org/de/servers/anki-mcp/anki-mcp-desktop" hrefLang="de"/><link rel="alternate" href="https://mcpservers.org/fr/servers/anki-mcp/anki-mcp-desktop" hrefLang="fr"/><link rel="alternate" href="https://mcpservers.org/pt-BR/servers/anki-mcp/anki-mcp-desktop" hrefLang="pt-BR"/><link rel="alternate" href="https://mcpservers.org/ru/servers/anki-mcp/anki-mcp-desktop" hrefLang="ru"/><link rel="alternate" href="https://mcpservers.org/hi/servers/anki-mcp/anki-mcp-desktop" hrefLang="hi"/><link rel="alternate" href="https://mcpservers.org/tr/servers/anki-mcp/anki-mcp-desktop" hrefLang="tr"/><link rel="alternate" href="https://mcpservers.org/vi/servers/anki-mcp/anki-mcp-desktop" hrefLang="vi"/><link rel="alternate" href="https://mcpservers.org/id/servers/anki-mcp/anki-mcp-desktop" hrefLang="id"/><link rel="alternate" href="https://mcpservers.org/th/servers/anki-mcp/anki-mcp-desktop" hrefLang="th"/><link rel="alternate" href="https://mcpservers.org/servers/anki-mcp/anki-mcp-desktop" hrefLang="x-default"/><script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Início","item":"https://mcpservers.org/pt-BR/"},{"@type":"ListItem","position":2,"name":"Servidores","item":"https://mcpservers.org/pt-BR/all"},{"@type":"ListItem","position":3,"name":"Produtividade","item":"https://mcpservers.org/pt-BR/category/productivity"},{"@type":"ListItem","position":4,"name":"Anki MCP","item":"https://mcpservers.org/pt-BR/servers/anki-mcp/anki-mcp-desktop"}]}</script></head><body class="font-(--font-geist-sans) antialiased min-h-screen flex flex-col"><header class="relative border-b border-border/70 bg-background z-auto"><nav class="container mx-auto flex h-16 items-center justify-between px-4 lg:h-[4.25rem]" aria-label="Primary navigation"><div class="flex items-center gap-4 lg:gap-6"><a href="/pt-BR/" class="group flex items-center gap-2.5"><span class="grid size-8 place-items-center rounded-lg border border-border/80 bg-background transition-transform duration-150 group-active:scale-[0.97] lg:size-9"><img src="/icon.png" alt="" width="24" height="24" class="size-[22px] lg:size-6"/></span><span class="text-base font-semibold tracking-tight lg:text-[17px]">MCP Servers</span></a><div class="hidden items-center gap-1 lg:flex"><a href="/pt-BR/" class="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground lg:px-3 lg:py-2 lg:text-[15px]">Início</a><a href="/pt-BR/remote-mcp-servers" class="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground lg:px-3 lg:py-2 lg:text-[15px]">Servidores remotos</a><a href="/pt-BR/topics" class="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground lg:px-3 lg:py-2 lg:text-[15px]">Tópicos</a><a href="/pt-BR/agent-skills" class="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground lg:px-3 lg:py-2 lg:text-[15px]">Habilidades de agente</a><a href="/pt-BR/webmcp" class="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground lg:px-3 lg:py-2 lg:text-[15px]">WebMCP</a><a href="https://blog.mcpservers.org/" target="_blank" rel="noopener noreferrer" class="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground lg:px-3 lg:py-2 lg:text-[15px]">Blog</a></div></div><div class="flex items-center gap-1.5 lg:gap-3"><div class="relative"><button type="button" class="flex h-8 items-center gap-1 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs hover:bg-accent lg:h-9 lg:px-3 lg:text-[15px]"><span>Português (BR)</span></button></div><div class="hidden items-center gap-1 lg:flex"><a href="/pt-BR/advertise" class="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground lg:px-3 lg:py-2 lg:text-[15px]">Anunciar</a><a role="button" tabindex="0" data-slot="button" href="/pt-BR/submit" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-primary/80 h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 ml-1">Enviar</a></div><button type="button" tabindex="0" data-slot="button" aria-label="Open menu" aria-controls="mobile-menu" aria-expanded="false" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 size-8 lg:hidden"></button></div></nav></header><main class="flex-1"><!--$--><div class="container mx-auto px-4 py-8"><nav aria-label="breadcrumb" data-slot="breadcrumb" class=""><ol data-slot="breadcrumb-list" class="flex flex-wrap items-center gap-1.5 text-sm wrap-break-word text-muted-foreground"><li data-slot="breadcrumb-item" class="inline-flex items-center gap-1"><a data-slot="breadcrumb-link" class="transition-colors hover:text-foreground" href="/pt-BR">Início</a></li><li data-slot="breadcrumb-separator" role="presentation" aria-hidden="true" class="[&amp;&gt;svg]:size-3.5"></li><li data-slot="breadcrumb-item" class="inline-flex items-center gap-1"><a data-slot="breadcrumb-link" class="transition-colors hover:text-foreground" href="/pt-BR/all">Servidores</a></li><li data-slot="breadcrumb-separator" role="presentation" aria-hidden="true" class="[&amp;&gt;svg]:size-3.5"></li><li data-slot="breadcrumb-item" class="inline-flex items-center gap-1"><a data-slot="breadcrumb-link" class="transition-colors hover:text-foreground" href="/pt-BR/category/productivity">Produtividade</a></li><li data-slot="breadcrumb-separator" role="presentation" aria-hidden="true" class="[&amp;&gt;svg]:size-3.5"></li><li data-slot="breadcrumb-item" class="inline-flex items-center gap-1"><span data-slot="breadcrumb-page" role="link" aria-disabled="true" aria-current="page" class="font-normal text-foreground">Anki MCP</span></li></ol></nav><div class="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start"><main class="min-w-0"><div class="mb-4 flex flex-wrap items-center gap-3"><h1 class="text-3xl font-bold">Anki MCP</h1><span class="text-xs font-medium px-3 py-1 rounded-full border whitespace-nowrap bg-blue-50 text-blue-600  border-blue-100">oficial</span></div><p class="text-gray-600 mb-6">Um servidor MCP que permite que assistentes de IA interajam com o Anki, o aplicativo de flashcards de repetição espaçada.</p><div class="mb-8 flex flex-wrap items-center gap-4"><a href="https://github.com/ankimcp/anki-mcp-server" target="_blank" rel="noopener noreferrer" role="button" tabindex="0" data-slot="button" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2"><span class="grid size-5 shrink-0 place-items-center overflow-hidden rounded-sm bg-white p-0.5 dark:bg-zinc-950"><img src="/api/logo?url=https%3A%2F%2Fgithub.com%2Fankimcp%2Fanki-mcp-server&amp;size=64" alt="" class="size-full object-contain"/></span>GitHub<div class="flex items-center gap-1">474</div></a><span class="inline-flex items-center gap-4"><span aria-hidden="true" class="hidden h-5 w-px bg-zinc-200 sm:block dark:bg-zinc-800"></span><span class="inline-flex items-center gap-2"><a href="https://ottermind.ai/studio/install-mcp-from-docs?doc=https%3A%2F%2Fgithub.com%2Fankimcp%2Fanki-mcp-server&amp;name=Anki+MCP&amp;ref=mcpservers" target="_blank" rel="sponsored noopener noreferrer" title="OtterMind · Patrocinado" data-umami-event="Partner agent click" data-umami-event-type="mcp" class="inline-flex h-9 items-center gap-1.5 rounded-sm text-sm font-medium text-zinc-600 transition-colors hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 dark:text-zinc-400 dark:hover:text-zinc-50">Experimente este MCP</a><span class="rounded-sm border border-zinc-200 px-1 text-[8px] font-medium uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">Patrocinado</span></span></span></div><div><section class="mb-8"><h2 class="mb-4 font-bold text-lg">O que você pode fazer com Anki MCP?</h2><div class="border rounded-lg p-4 border-gray-200 markdown-body use-cases-markdown"><ul>
+<li><strong>Revisar cartões pendentes de forma conversacional</strong> — Peça ao assistente para buscar os cartões pendentes com <code>get_due_cards</code>, apresente cada um via <code>present_card</code> e registre sua avaliação com <code>rate_card</code>.</li>
+<li><strong>Criar e adicionar flashcards em lote</strong> — Peça ao assistente para criar notas em massa com <code>addNotes</code>, opcionalmente construindo um modelo personalizado primeiro via <code>createModel</code> e <code>updateModelStyling</code>.</li>
+<li><strong>Pesquisar e editar notas existentes</strong> — Use <code>findNotes</code> com sintaxe de consulta do Anki, inspecione detalhes via <code>notesInfo</code> e atualize campos com <code>updateNoteFields</code>.</li>
+<li><strong>Gerenciar baralhos e agendamento</strong> — Crie baralhos com <code>createDeck</code>, mova cartões via <code>changeDeck</code> ou reagende cartões usando <code>setDueDate</code> e <code>forgetCards</code>.</li>
+<li><strong>Importar mídia para notas</strong> — Peça ao assistente para enviar uma imagem local ou URL com <code>storeMediaFile</code> e incorporá-la no campo de uma nota.</li>
+<li><strong>Controlar a interface gráfica do Anki</strong> — Abra o navegador ou editor com <code>guiBrowse</code> e <code>guiEditNote</code>, ou obtenha a nota selecionada via <code>guiSelectedNotes</code>.</li>
+</ul></div></section><div class="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 class="font-bold text-lg">Documentação</h2><div class="flex items-center gap-3"><div class="inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5"><button type="button" tabindex="0" data-slot="button" aria-pressed="true" class="group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground gap-1 rounded-[min(var(--radius-md),12px)] text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-7 px-2.5 shadow-none">Tradução</button><button type="button" tabindex="0" data-slot="button" aria-pressed="false" class="group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 gap-1 rounded-[min(var(--radius-md),12px)] text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-7 px-2.5 shadow-none">Original</button></div><button type="button" class="text-xs text-gray-400 transition-colors hover:text-gray-600 disabled:hover:text-gray-400" aria-label="Solicitar atualização" title="Solicitar atualização">Solicitar atualização</button></div></div><div class="border rounded-lg p-4 border-gray-200 markdown-body"><h2>Servidor Anki MCP</h2>
+<p><a href="https://github.com/ankimcp/anki-mcp-server/actions/workflows/test.yml" rel="nofollow noopener noreferrer"><img src="https://github.com/ankimcp/anki-mcp-server/actions/workflows/test.yml/badge.svg" alt="Tests" loading="lazy"/></a>
+<a href="https://www.npmjs.com/package/@ankimcp/anki-mcp-server" rel="nofollow noopener noreferrer"><img src="https://badge.fury.io/js/@ankimcp%2Fanki-mcp-server.svg" alt="npm version" loading="lazy"/></a></p>
+<div align="center">
+  <img width="600" src="https://raw.githubusercontent.com/ankimcp/anki-mcp-server/HEAD/docs/images/ankimcp.png" alt="Anki + MCP Integration" loading="lazy"/>
+  <p><strong>Integre perfeitamente o <a href="https://apps.ankiweb.net" rel="nofollow noopener noreferrer">Anki</a> com assistentes de IA através do <a href="https://modelcontextprotocol.io" rel="nofollow noopener noreferrer">Model Context Protocol</a></strong></p>
+</div>
+<p><strong>Beta</strong> - Este projeto está em desenvolvimento ativo. APIs e recursos podem mudar.</p>
+<p>Um servidor Model Context Protocol (MCP) que permite que assistentes de IA interajam com o Anki, o aplicativo de flashcards com repetição espaçada.</p>
+<p>Transforme sua experiência com o Anki através de interação em linguagem natural — como ter um tutor particular. O assistente de IA não apenas apresenta perguntas e respostas; ele pode explicar conceitos, tornar o processo de aprendizado mais envolvente e humano, fornecer contexto e se adaptar ao seu estilo de aprendizado. Ele pode criar e editar notas em tempo real, transformando suas sessões de estudo em conversas dinâmicas. Mais recursos em breve!</p>
+<h2>Exemplos e Tutoriais</h2>
+<p>Para guias abrangentes, exemplos do mundo real e tutoriais passo a passo sobre como usar este servidor MCP com o Claude Desktop, visite:</p>
+<p><strong><a href="https://ankimcp.ai" rel="nofollow noopener noreferrer">ankimcp.ai</a></strong> - Documentação completa com exemplos práticos e casos de uso</p>
+<p>Consulte <a href="https://github.com/ankimcp/anki-mcp-server/blob/HEAD/docs/README.md" rel="nofollow noopener noreferrer"><code>docs/</code></a> para documentação complementar, incluindo o <a href="https://github.com/ankimcp/anki-mcp-server/blob/HEAD/docs/reviewer-setup.md" rel="nofollow noopener noreferrer">guia de configuração do revisor</a> e o baralho Anki de exemplo.</p>
+<h2>Exemplos de Casos de Uso</h2>
+<p>Três prompts representativos mostrando os fluxos de ferramentas que este servidor permite:</p>
+<ol>
+<li>
+<p><strong>&quot;Ajude-me a revisar meu baralho de espanhol.&quot;</strong> — O assistente sincroniza com o AnkiWeb (<code>sync</code>), busca cartões vencidos (<code>get_due_cards</code> com filtro de baralho), apresenta cada cartão (<code>present_card</code>) e registra sua avaliação (<code>rate_card</code>). Conversa de estudo natural com explicações adaptadas a você.</p>
+</li>
+<li>
+<p><strong>&quot;Crie 10 cartões de vocabulário em árabe com estilo RTL.&quot;</strong> — O assistente lista os tipos de nota (<code>modelNames</code>), cria um modelo RTL personalizado se necessário (<code>createModel</code> + <code>updateModelStyling</code> para CSS da direita para a esquerda) e então cria os cartões em lote (<code>addNotes</code>).</p>
+</li>
+<li>
+<p><strong>&quot;Importe esta imagem da minha pasta Downloads para a frente da nota selecionada.&quot;</strong> — O assistente envia o arquivo local (<code>storeMediaFile</code> com um caminho de arquivo), lê a nota atualmente selecionada no navegador (<code>guiSelectedNotes</code> + <code>notesInfo</code>) e atualiza o campo da frente com uma tag <code>&lt;img&gt;</code> (<code>updateNoteFields</code>).</p>
+</li>
+</ol>
+<h2>Ferramentas Disponíveis</h2>
+<p>O servidor expõe <strong>50 ferramentas MCP</strong> — 39 ferramentas essenciais para operações diárias do Anki e 11 ferramentas GUI que controlam a interface desktop do Anki para fluxos de edição/criação de notas.</p>
+<h3>Ferramentas Essenciais</h3>
+<h4>Revisão e Estudo</h4>
+<ul>
+<li><code>sync</code> - Sincronize com o AnkiWeb para puxar os dados mais recentes e enviar alterações</li>
+<li><code>get_due_cards</code> - Obtenha cartões vencidos para revisão, opcionalmente filtrados por baralho (respostas omitidas a menos que <code>include_answer: true</code>, padrão <code>false</code>)</li>
+<li><code>get_cards</code> - Obtenha cartões com filtragem flexível por estado (vencido, novo, aprendendo, suspenso, enterrado) e baralho (respostas omitidas a menos que <code>include_answer: true</code>, padrão <code>false</code>)</li>
+<li><code>present_card</code> - Mostre um cartão para revisão com sua pergunta/lado frontal</li>
+<li><code>rate_card</code> - Avalie o desempenho do cartão (Again, Hard, Good, Easy) e agende a próxima revisão</li>
+<li><code>forgetCards</code> - Redefina cartões para novo, descartando seu agendamento sem registrar uma revisão</li>
+<li><code>setDueDate</code> - Reagende cartões para vencerem em N dias (<code>&quot;0&quot;</code>, <code>&quot;3-7&quot;</code>, <code>&quot;1!&quot;</code>), sem registrar uma revisão</li>
+</ul>
+<blockquote>
+<p><strong>Nota:</strong> <code>forgetCards</code> e <code>setDueDate</code> alteram o agendamento <em>sem</em> registrar uma revisão, que é o que os diferencia de <code>rate_card</code>. Use-os quando o agendamento de um cartão estiver errado em vez da resposta: avaliar um cartão como <code>Again</code> para enterrá-lo mais profundamente registra uma falha real e reduz seu fator de facilidade, distorcendo permanentemente tanto o agendamento futuro quanto suas estatísticas. <code>forgetCards</code> apaga o intervalo e reinicia o cartão; <code>setDueDate</code> mantém o histórico do cartão e apenas move a próxima revisão.</p>
+</blockquote>
+<blockquote>
+<p><strong>Nota:</strong> O conteúdo do cartão <code>front</code>/<code>back</code> é renderizado por cartão a partir de seu próprio modelo (como o Anki o exibe), então cartões invertidos e de lacuna exibem a direção correta. Texto estático adicionado pelos seus modelos de cartão também aparece na saída.</p>
+</blockquote>
+<h4>Gerenciamento de Baralhos</h4>
+<ul>
+<li><code>listDecks</code> - Liste todos os baralhos, opcionalmente com estatísticas de fila de estudo por baralho</li>
+<li><code>deckStats</code> - Obtenha estatísticas abrangentes para um único baralho (fila de estudo, contagens reais de estado de cartão, distribuições de facilidade/intervalo)</li>
+<li><code>createDeck</code> - Crie um novo baralho vazio (suporta <code>Parent::Child</code>, máximo de 2 níveis)</li>
+<li><code>changeDeck</code> - Mova cartões para um baralho diferente (criado se não existir)</li>
+</ul>
+<blockquote>
+<p><strong>Nota:</strong> As estatísticas de baralho vêm em duas versões. O bloco <code>counts</code> (e tudo que <code>listDecks</code> reporta) espelha o navegador de baralhos do Anki: cartões <strong>vencidos hoje</strong>, limitados pelos <strong>limites diários de novos/revisão</strong> de cada baralho, com cartões suspensos e enterrados excluídos — então <code>review</code> não é &quot;cartões maduros&quot; e o grupo <code>other</code> é apenas o restante aritmético (principalmente cartões de revisão não vencidos hoje mais cartões novos acima do limite diário). Para totais reais por estado, use o bloco <code>states</code> em <code>deckStats</code> / <code>collection_stats</code>, que conta <code>new</code>, <code>learning</code>, <code>review</code>, <code>suspended</code> e <code>buried</code> via buscas do Anki, ignorando datas de vencimento e limites diários.</p>
+</blockquote>
+<h4>Gerenciamento de Notas</h4>
+<ul>
+<li><code>addNote</code> - Crie uma única nota com campos e tags especificados</li>
+<li><code>addNotes</code> - Crie em lote até 100 notas compartilhando baralho e modelo (sucesso parcial suportado)</li>
+<li><code>findNotes</code> - Busque notas usando a sintaxe de consulta do Anki (<code>deck:</code>, <code>tag:</code>, <code>is:due</code>, etc.)</li>
+<li><code>notesInfo</code> - Obtenha informações detalhadas sobre notas (campos, tags, estilos CSS)</li>
+<li><code>updateNoteFields</code> - Atualize campos de notas existentes (ciente de CSS, suporta conteúdo HTML)</li>
+<li><code>deleteNotes</code> - Exclua notas e todos os cartões associados (destrutivo, requer confirmação)</li>
+</ul>
+<h4>Gerenciamento de Tags</h4>
+<ul>
+<li><code>getTags</code> - Obtenha todas as tags na coleção (use primeiro para evitar duplicação)</li>
+<li><code>addTags</code> - Adicione tags separadas por espaço às notas especificadas</li>
+<li><code>removeTags</code> - Remova tags separadas por espaço das notas especificadas</li>
+<li><code>replaceTags</code> - Renomeie uma tag nas notas especificadas</li>
+<li><code>clearUnusedTags</code> - Remova tags órfãs não usadas por nenhuma nota (destrutivo)</li>
+</ul>
+<h4>Gerenciamento de Mídia</h4>
+<ul>
+<li><code>getMediaFilesNames</code> - Liste arquivos de mídia em <code>collection.media</code>, opcionalmente filtrados por padrão</li>
+<li><code>retrieveMediaFile</code> - Baixe um arquivo de mídia como conteúdo base64</li>
+<li><code>storeMediaFile</code> - Envie mídia a partir de dados base64, um caminho de arquivo absoluto ou uma URL</li>
+<li><code>deleteMediaFile</code> - Remova um arquivo de mídia de <code>collection.media</code> (destrutivo)</li>
+</ul>
+<p><strong>💡 Melhor Prática para Imagens:</strong></p>
+<ul>
+<li>✅ <strong>Use caminhos de arquivo</strong> (ex.: <code>/Users/you/image.png</code>) - Rápido e eficiente</li>
+<li>✅ <strong>Use URLs</strong> (ex.: <code>https://example.com/image.jpg</code>) - Download direto</li>
+<li>❌ <strong>Evite base64</strong> - Extremamente lento e ineficiente em tokens</li>
+</ul>
+<p>Basta dizer ao Claude onde a imagem está, e ele cuidará do envio automaticamente usando o método mais eficiente.</p>
+<h4>Gerenciamento de Modelos/Modelos de Cartão</h4>
+<ul>
+<li><code>modelNames</code> - Liste todos os tipos de nota/modelos disponíveis</li>
+<li><code>modelFieldNames</code> - Obtenha nomes de campos para um tipo de nota específico</li>
+<li><code>modelStyling</code> - Obtenha informações de estilo CSS para um tipo de nota</li>
+<li><code>modelTemplates</code> - Obtenha os modelos de cartão (HTML da Frente e do Verso) para um tipo de nota</li>
+<li><code>createModel</code> - Crie um novo tipo de nota com campos personalizados, modelos de cartão e CSS (ex.: modelos RTL)</li>
+<li><code>updateModelStyling</code> - Atualize o estilo CSS de um tipo de nota existente (aplica-se a todos os seus cartões)</li>
+<li><code>updateModelTemplates</code> - Atualize os modelos de cartão (HTML da Frente e do Verso) para um tipo de nota existente (aplica-se a todos os seus cartões)</li>
+<li><code>addModelField</code> - Adicione um novo campo a um tipo de nota existente (anexado ao final ou inserido em uma posição específica)</li>
+<li><code>removeModelField</code> - Remova um campo de um tipo de nota existente (exclui seu conteúdo de todas as notas; requer confirmação explícita)</li>
+<li><code>renameModelField</code> - Renomeie um campo em um tipo de nota existente (modelos de cartão que referenciam o nome antigo devem ser atualizados separadamente)</li>
+<li><code>repositionModelField</code> - Altere a posição de um campo dentro de um tipo de nota existente</li>
+</ul>
+<h4>Estatísticas</h4>
+<ul>
+<li><code>collection_stats</code> - Estatísticas agregadas em todos os baralhos com detalhamento por baralho e contagens de estado de cartão em toda a coleção</li>
+<li><code>review_stats</code> - Análise do histórico de revisões (padrões temporais, métricas de retenção, sequências de estudo)</li>
+</ul>
+<h3>Ferramentas GUI</h3>
+<p>Ferramentas que controlam a interface desktop do Anki. Destinadas a fluxos de edição/criação de notas e gerenciamento de baralhos, <strong>não</strong> para sessões de revisão.</p>
+<ul>
+<li><code>guiBrowse</code> - Abra o Navegador de Cartões e busque cartões</li>
+<li><code>guiSelectCard</code> - Selecione um cartão específico no Navegador de Cartões</li>
+<li><code>guiSelectedNotes</code> - Obtenha IDs de notas atualmente selecionadas no Navegador de Cartões</li>
+<li><code>guiAddCards</code> - Abra a caixa de diálogo Adicionar Cartões com detalhes de nota predefinidos</li>
+<li><code>guiEditNote</code> - Abra o editor de notas para uma nota específica</li>
+<li><code>guiDeckOverview</code> - Abra a caixa de diálogo Visão Geral do Baralho para um baralho específico</li>
+<li><code>guiDeckBrowser</code> - Abra a caixa de diálogo Navegador de Baralhos</li>
+<li><code>guiCurrentCard</code> - Obtenha informações sobre o cartão atual no modo de revisão</li>
+<li><code>guiShowQuestion</code> - Mostre o lado da pergunta do cartão atual</li>
+<li><code>guiShowAnswer</code> - Mostre o lado da resposta do cartão atual</li>
+<li><code>guiUndo</code> - Desfaça a última ação no Anki</li>
+</ul>
+<h2>Pré-requisitos</h2>
+<ul>
+<li><a href="https://apps.ankiweb.net/" rel="nofollow noopener noreferrer">Anki</a> com o plugin <a href="https://github.com/FooSoft/anki-connect" rel="nofollow noopener noreferrer">AnkiConnect</a> instalado</li>
+<li>Node.js 22.12.0+</li>
+</ul>
+<h2>Instalação</h2>
+<p>Existem algumas maneiras de colocar o servidor na sua máquina. Depois de instalado, vá para <a href="#connecting-an-ai-client" rel="nofollow noopener noreferrer">Conectando um Cliente de IA</a> para conectá-lo ao seu assistente de IA — local ou remotamente.</p>
+<h3>npm (global ou npx)</h3>
+<p>A maneira de propósito geral de instalar o servidor, adequada para qualquer cliente MCP que o inicie diretamente.</p>
+<p>Instale globalmente para clientes que executam o comando <code>ankimcp</code>:</p>
+<pre><code class="language-bash">npm install -g @ankimcp/anki-mcp-server
+</code></pre>
+<p>Ou execute sob demanda sem necessidade de instalação:</p>
+<pre><code class="language-bash">npx @ankimcp/anki-mcp-server
+</code></pre>
+<h3>Pacote MCPB (Recomendado para Claude Desktop)</h3>
+<p>A maneira mais fácil de instalar este servidor MCP para o Claude Desktop:</p>
+<ol>
+<li>Baixe o pacote <code>.mcpb</code> mais recente da página de <a href="https://github.com/ankimcp/anki-mcp-server/releases" rel="nofollow noopener noreferrer">Releases</a></li>
+<li>No Claude Desktop, instale a extensão:
+<ul>
+<li><strong>Método 1</strong>: Vá para Configurações → Extensões, então arraste e solte o arquivo <code>.mcpb</code></li>
+<li><strong>Método 2</strong>: Vá para Configurações → Desenvolvedor → Extensões → Instalar Extensão, então selecione o arquivo <code>.mcpb</code></li>
+</ul>
+</li>
+<li>Configure a URL do AnkiConnect se necessário (padrão é <code>http://localhost:8765</code>)</li>
+<li>Reinicie o Claude Desktop</li>
+</ol>
+<p>Pronto! O pacote inclui tudo que é necessário para executar o servidor localmente.</p>
+<blockquote>
+<p><strong>Para revisores do Anthropic MCP Directory:</strong> um passo a passo do zero à integração com um baralho de exemplo pré-populado está em <a href="https://github.com/ankimcp/anki-mcp-server/blob/HEAD/docs/reviewer-setup.md" rel="nofollow noopener noreferrer"><code>docs/reviewer-setup.md</code></a>.</p>
+</blockquote>
+<h3>Instalar a partir do Código-Fonte (para desenvolvimento)</h3>
+<p>Para desenvolvimento ou uso avançado (executar a suíte de testes requer Node.js 24.9+ — os scripts de teste npm carregam os pacotes NestJS 12 somente-ESM via <code>require(esm)</code>, que o Jest só suporta lá; o requisito de execução para <em>usar</em> o servidor permanece 22.12.0+):</p>
+<pre><code class="language-bash">npm install
+npm run build
+</code></pre>
+<h2>Conectando um Cliente de IA</h2>
+<p>Existem duas maneiras de um assistente de IA alcançar este servidor, dependendo de onde o assistente é executado:</p>
+<ul>
+<li><strong><a href="#local" rel="nofollow noopener noreferrer">Local</a></strong> — o servidor é executado na mesma máquina que o cliente de IA (Claude Desktop, Cursor, Cline, Zed ou uma sessão de navegador local). Use <strong>STDIO</strong> para clientes MCP de desktop, <strong>HTTP</strong> para ferramentas web locais.</li>
+<li><strong><a href="#remote" rel="nofollow noopener noreferrer">Remoto</a></strong> — uma IA hospedada/remota (ex.: ChatGPT ou Claude.ai na nuvem) precisa alcançar o Anki executando na sua máquina local. Use o <strong>Tunnel</strong> gerenciado (✅ recomendado — autenticado) ou, como alternativa não autenticada mais leve, <strong>ngrok</strong>.</li>
+</ul>
+<h3>Local</h3>
+<p>O servidor é executado no mesmo computador que seu cliente de IA e fala com o AnkiConnect em <code>localhost</code>.</p>
+<h4>STDIO (integração local primária)</h4>
+<p>STDIO é o transporte padrão para clientes MCP locais de desktop — <strong>Claude Desktop</strong>, <strong>Cursor IDE</strong>, <strong>Cline</strong>, <strong>Zed Editor</strong> e outros. O cliente inicia o servidor como um subprocesso e se comunica via entrada/saída padrão.
+<strong>Clientes Suportados:</strong></p>
+<ul>
+<li><a href="https://claude.ai/download" rel="nofollow noopener noreferrer">Claude Desktop</a></li>
+<li><a href="https://www.cursor.com/" rel="nofollow noopener noreferrer">Cursor IDE</a> - editor de código com IA</li>
+<li><a href="https://github.com/cline/cline" rel="nofollow noopener noreferrer">Cline</a> - extensão do VS Code para assistência de IA</li>
+<li><a href="https://zed.dev/" rel="nofollow noopener noreferrer">Zed Editor</a> - editor de código rápido e moderno</li>
+<li>Outros clientes MCP que suportam transporte STDIO</li>
+</ul>
+<p>Para Claude Desktop, o <a href="#mcpb-bundle-recommended-for-claude-desktop" rel="nofollow noopener noreferrer">pacote MCPB</a> é o caminho mais fácil. Para outros clientes, configure o pacote npm com a flag <code>--stdio</code>.</p>
+<p><strong>Configuração - Escolha um método:</strong></p>
+<p><strong>Método 1: Usando npx (recomendado - sem necessidade de instalação)</strong></p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;anki-mcp&quot;: {
+      &quot;command&quot;: &quot;npx&quot;,
+      &quot;args&quot;: [&quot;-y&quot;, &quot;@ankimcp/anki-mcp-server&quot;, &quot;--stdio&quot;],
+      &quot;env&quot;: {
+        &quot;ANKI_CONNECT_URL&quot;: &quot;http://localhost:8765&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<p><strong>Método 2: Usando instalação global</strong></p>
+<p>Primeiro, instale globalmente:</p>
+<pre><code class="language-bash">npm install -g @ankimcp/anki-mcp-server
+</code></pre>
+<p>Depois configure:</p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;anki-mcp&quot;: {
+      &quot;command&quot;: &quot;ankimcp&quot;,
+      &quot;args&quot;: [&quot;--stdio&quot;],
+      &quot;env&quot;: {
+        &quot;ANKI_CONNECT_URL&quot;: &quot;http://localhost:8765&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<p><strong>Locais dos arquivos de configuração:</strong></p>
+<ul>
+<li><strong>Cursor IDE</strong>: <code>~/.cursor/mcp.json</code> (macOS/Linux) ou <code>%USERPROFILE%\.cursor\mcp.json</code> (Windows)</li>
+<li><strong>Cline</strong>: Acessível pela interface de configurações no VS Code</li>
+<li><strong>Zed Editor</strong>: Instale como extensão MCP pelo marketplace de extensões</li>
+</ul>
+<p>Para recursos específicos do cliente e solução de problemas, consulte a documentação do seu cliente MCP. Veja também <a href="#connect-to-claude-desktop-local-mode" rel="nofollow noopener noreferrer">Conectar ao Claude Desktop</a> para uma configuração que aponta diretamente para um <code>dist/main-stdio.js</code> compilado.</p>
+<h4>HTTP (IA local baseada na web)</h4>
+<p>O modo HTTP executa o servidor como um servidor web local que fala o protocolo MCP Streamable HTTP. É o transporte com o qual uma ferramenta de IA baseada na web fala quando apontada para sua máquina, e também é o que as opções <a href="#remote" rel="nofollow noopener noreferrer">Remoto</a> expõem para o mundo externo. Por si só, o modo HTTP vincula-se apenas a <code>localhost</code>.</p>
+<blockquote>
+<p><strong>Vinculando além do localhost?</strong> Se você passar <code>--host 0.0.0.0</code> (ou executar atrás de um proxy reverso/domínio público), o servidor só aceita cabeçalhos <code>Host</code> de loopback por padrão para proteção contra rebinding de DNS — defina <code>ALLOWED_HOSTS</code> para o(s) hostname(s) que os clientes usam. Veja <a href="#http-mode-configuration" rel="nofollow noopener noreferrer">Configuração do Modo HTTP</a>.</p>
+</blockquote>
+<p><strong>Configuração - Escolha um método:</strong></p>
+<p><strong>Método 1: Usando npx (recomendado - sem necessidade de instalação)</strong></p>
+<pre><code class="language-bash"># Quick start
+npx @ankimcp/anki-mcp-server
+
+# With custom options
+npx @ankimcp/anki-mcp-server --port 8080 --host 0.0.0.0
+npx @ankimcp/anki-mcp-server --anki-connect http://localhost:8765
+</code></pre>
+<p><strong>Método 2: Usando instalação global</strong></p>
+<pre><code class="language-bash"># Install once
+npm install -g @ankimcp/anki-mcp-server
+
+# Run the server
+ankimcp
+
+# With custom options
+ankimcp --port 8080 --host 0.0.0.0
+ankimcp --anki-connect http://localhost:8765
+</code></pre>
+<p><strong>Método 3: Instalar a partir do código-fonte (para desenvolvimento)</strong></p>
+<pre><code class="language-bash">npm install
+npm run build
+npm run start:prod:http
+</code></pre>
+<p>Para tornar um servidor HTTP local acessível por uma IA hospedada na nuvem, use uma das opções <a href="#remote" rel="nofollow noopener noreferrer">Remoto</a> abaixo.</p>
+<h3>Remoto</h3>
+<p>Uma IA hospedada/remota (como ChatGPT ou Claude.ai rodando na nuvem) não consegue alcançar <code>localhost</code> diretamente. Essas opções expõem seu Anki <strong>local</strong> à internet para que um assistente remoto possa falar com ele.</p>
+<h4>Tunnel (✅ Recomendado)</h4>
+<blockquote>
+<p><strong>Caminho remoto recomendado — autenticado e seguro.</strong> Diferente de uma porta pública bruta, o modo tunnel exige que você faça login (fluxo de dispositivo OAuth 2.0), então o endpoint não fica aberto para qualquer um que adivinhe a URL.</p>
+</blockquote>
+<p>O modo tunnel permite que assistentes de IA baseados na web alcancem seu Anki <strong>local</strong> sem executar seu próprio túnel. O servidor se conecta ao serviço de túnel gerenciado do AnkiMCP (<code>wss://tunnel.ankimcp.ai</code>) via WebSocket e recebe uma URL pública. A autenticação é integrada — sem necessidade de conta ngrok ou processo de túnel separado, e você faz login uma vez.</p>
+<p><strong>Login (fluxo de dispositivo OAuth):</strong></p>
+<p>O modo tunnel usa o OAuth 2.0 Device Authorization Grant. O login abre seu navegador automaticamente em uma página de aprovação com o código já embutido na URL — nada para digitar, apenas aprove. (Se o navegador não abrir, o terminal imprime uma URL de verificação e um código para inserir manualmente como fallback.) Em caso de sucesso, as credenciais são salvas em <code>~/.ankimcp/credentials.json</code> (permissões de arquivo <code>0600</code>).</p>
+<pre><code class="language-bash"># Pre-authenticate (optional — --tunnel will trigger this automatically if needed)
+ankimcp --login
+npx @ankimcp/anki-mcp-server --login
+
+# Clear saved credentials
+ankimcp --logout
+</code></pre>
+<p><strong>Inicie o túnel:</strong></p>
+<pre><code class="language-bash"># Connect to the managed tunnel service (wss://tunnel.ankimcp.ai)
+ankimcp --tunnel
+npx @ankimcp/anki-mcp-server --tunnel
+
+# Override the tunnel server URL (must be ws:// or wss://) — e.g. for self-hosting
+ankimcp --tunnel wss://my-tunnel.example.com
+</code></pre>
+<p>Se não houver credenciais, o <code>--tunnel</code> inicia automaticamente o fluxo de login primeiro e depois continua para o túnel. Este login automático requer um terminal interativo — quando stdout não é um TTY (systemd, Docker headless, CI), o servidor falha rapidamente e pede para você executar <code>ankimcp --login</code> primeiro. Uma vez conectado, a URL pública do túnel é impressa; pressione Ctrl+C para desconectar. Compartilhe essa URL com seu assistente de IA.</p>
+<p><strong>Variáveis de ambiente do modo tunnel:</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Variável</th><th>Descrição</th><th>Padrão</th></tr></thead><tbody><tr><td><code>TUNNEL_SERVER_URL</code></td><td>URL WebSocket do servidor de túnel (o valor da flag <code>--tunnel</code>/<code>--login</code> substitui isso)</td><td><code>wss://tunnel.ankimcp.ai</code></td></tr><tr><td><code>TUNNEL_AUTH_CLIENT_ID</code></td><td>ID do cliente OAuth para o fluxo de dispositivo. Avançado — necessário apenas ao apontar para um serviço de túnel/auth auto-hospedado.</td><td>(integrado)</td></tr></tbody></table>
+<p>Os endpoints de autenticação do fluxo de dispositivo (<code>/auth/device</code>, <code>/auth/token</code>) são derivados de <code>TUNNEL_SERVER_URL</code>, então apontar <code>--tunnel</code> (ou <code>TUNNEL_SERVER_URL</code>) para um host diferente também move a autenticação para esse host.</p>
+<p><strong>Como funciona:</strong> O modo tunnel executa o servidor MCP em processo atrás de um transporte em memória (<code>TunnelTransport</code>). Esse transporte é dono do servidor MCP e transforma cada corpo de requisição retransmitida em uma resposta, e <code>TunnelClient</code> faz a ponte para o serviço de túnel remoto via WebSocket — retransmitindo requisições MCP para dentro e respostas para fora. O AnkiConnect ainda é alcançado apenas na sua máquina local.</p>
+<p><strong>Revisões de protocolo:</strong> Como o túnel conecta o servidor MCP em processo, o modo tunnel atende apenas à revisão de 2025 do protocolo MCP, enquanto os modos STDIO e HTTP atendem tanto à revisão de 2025 quanto à mais nova de 2026-07-28. Cada ferramenta se comporta da mesma forma de qualquer maneira — mas um cliente que fala apenas 2026-07-28 é rejeitado pelo túnel com um erro de versão de protocolo; execute o modo <a href="#stdio-primary-local-integration" rel="nofollow noopener noreferrer">STDIO</a> ou <a href="#http-local-web-based-ai" rel="nofollow noopener noreferrer">HTTP</a> para esse cliente.</p>
+<h4>ngrok (alternativa não autenticada)</h4>
+<p>Se você preferir expor o <a href="#http-local-web-based-ai" rel="nofollow noopener noreferrer">modo HTTP local</a> publicamente sem uma conta no túnel gerenciado, a flag integrada <code>--ngrok</code> inicia um subprocesso <a href="https://ngrok.com/" rel="nofollow noopener noreferrer">ngrok</a> (<code>src/services/ngrok.service.ts</code>) e imprime a URL pública no banner de inicialização:</p>
+<pre><code class="language-bash"># One-time ngrok setup, then:
+ankimcp --ngrok
+</code></pre>
+<p>Esta rota é <strong>não autenticada</strong> — qualquer pessoa com a URL pode alcançar seu Anki, então é menos segura que o <a href="#tunnel--recommended" rel="nofollow noopener noreferrer">Tunnel</a>. Prefira Tunnel, a menos que você tenha um motivo específico para gerenciar seu próprio endpoint ngrok. (Requer instalação global do ngrok e authtoken.)</p>
+<p>A flag <code>--ngrok</code> inicia o ngrok com <code>--host-header=rewrite</code>, então o ngrok reescreve o <code>Host</code> upstream para <code>localhost</code> antes de encaminhar. Isso mantém as requisições dentro da allowlist de Host de loopback (veja <a href="#http-mode-configuration" rel="nofollow noopener noreferrer">proteção contra rebinding de DNS</a>) sem que você precise adicionar o domínio público <code>*.ngrok</code> a <code>ALLOWED_HOSTS</code>. Se você executar o ngrok manualmente, use a mesma flag — <code>ngrok http --host-header=rewrite 3000</code> — caso contrário, o ngrok encaminha o hostname público do ngrok como <code>Host</code> e o servidor o rejeita com <code>403</code>.</p>
+<h3>Opções de CLI (todos os modos)</h3>
+<pre><code class="language-bash">ankimcp [options]
+
+Options:
+  --stdio                        Run in STDIO mode (for MCP clients)
+  --tunnel [url]                 Connect via the managed tunnel (authenticated)
+  --login                        Authenticate for tunnel mode (OAuth device flow)
+  --logout                       Clear saved tunnel credentials
+  -p, --port &lt;number&gt;            Port to listen on (HTTP mode; default: 3000, or PORT env var)
+  -h, --host &lt;address&gt;           Host to bind to (HTTP mode; default: 127.0.0.1, or HOST env var)
+  -a, --anki-connect &lt;url&gt;       AnkiConnect URL (default: http://localhost:8765, or ANKI_CONNECT_URL env var)
+  --ngrok                        Start ngrok tunnel (requires global ngrok installation)
+  --read-only                    Run in read-only mode (blocks all write operations)
+  --help                         Show help message
+
+Usage with npx (no installation needed):
+  npx @ankimcp/anki-mcp-server                        # HTTP mode
+  npx @ankimcp/anki-mcp-server --port 8080            # Custom port
+  npx @ankimcp/anki-mcp-server --stdio                # STDIO mode
+  npx @ankimcp/anki-mcp-server --tunnel               # Managed tunnel mode
+  npx @ankimcp/anki-mcp-server --ngrok                # HTTP mode with ngrok tunnel
+  npx @ankimcp/anki-mcp-server --read-only            # Read-only mode
+
+Usage with global installation:
+  npm install -g @ankimcp/anki-mcp-server             # Install once
+  ankimcp                                             # HTTP mode
+  ankimcp --port 8080                                 # Custom port
+  ankimcp --stdio                                     # STDIO mode
+  ankimcp --tunnel                                    # Managed tunnel mode
+  ankimcp --ngrok                                     # HTTP mode with ngrok tunnel
+  ankimcp --read-only                                 # Read-only mode
+</code></pre>
+<h3>Modo Somente Leitura (todos os modos)</h3>
+<p>A flag <code>--read-only</code> impede qualquer modificação na sua coleção do Anki. Quando habilitada:</p>
+<ul>
+<li>Todas as operações de leitura funcionam normalmente (navegar por decks, ver cartões, pesquisar notas)</li>
+<li>Operações de revisão são permitidas (sync, answerCards, suspend/unsuspend)</li>
+<li>Modificações de conteúdo são bloqueadas (addNote, deleteNotes, createDeck, updateNoteFields, etc.)</li>
+<li>Útil para explorar dados do Anki com segurança, sem risco de alterações acidentais</li>
+</ul>
+<pre><code class="language-bash"># HTTP mode with read-only
+ankimcp --read-only
+
+# STDIO mode with read-only
+ankimcp --stdio --read-only
+
+# Can combine with other flags
+ankimcp --ngrok --read-only
+</code></pre>
+<p>Você também pode habilitar o modo somente leitura via variável de ambiente:</p>
+<pre><code class="language-bash">READ_ONLY=true ankimcp
+</code></pre>
+<p>Ou na configuração do cliente MCP:</p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;anki-mcp&quot;: {
+      &quot;command&quot;: &quot;npx&quot;,
+      &quot;args&quot;: [&quot;-y&quot;, &quot;@ankimcp/anki-mcp-server&quot;, &quot;--stdio&quot;, &quot;--read-only&quot;],
+      &quot;env&quot;: {
+        &quot;ANKI_CONNECT_URL&quot;: &quot;http://localhost:8765&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<h2>Conectar ao Claude Desktop (Modo Local)</h2>
+<p>Você pode configurar o servidor no Claude Desktop de duas formas:</p>
+<ul>
+<li>Indo em: Configurações → Desenvolvedor → Editar Config</li>
+<li>Ou editando manualmente o arquivo de configuração</li>
+</ul>
+<h3>Configuração</h3>
+<p>Adicione o seguinte à configuração do seu Claude Desktop:</p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;anki-mcp&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;/path/to/anki-mcp-server/dist/main-stdio.js&quot;],
+      &quot;env&quot;: {
+        &quot;ANKI_CONNECT_URL&quot;: &quot;http://localhost:8765&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<p>Substitua <code>/path/to/anki-mcp-server</code> pelo caminho real do seu projeto.</p>
+<h3>Locais dos Arquivos de Configuração</h3>
+<ul>
+<li><strong>macOS</strong>: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
+<li><strong>Windows</strong>: <code>%APPDATA%\Claude\claude_desktop_config.json</code></li>
+<li><strong>Linux</strong>: <code>~/.config/Claude/claude_desktop_config.json</code></li>
+</ul>
+<p>Para mais detalhes, veja a <a href="https://modelcontextprotocol.io/docs/develop/connect-local-servers" rel="nofollow noopener noreferrer">documentação oficial do MCP</a>.</p>
+<h2>Variáveis de Ambiente (Opcional)</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Variável</th><th>Descrição</th><th>Padrão</th></tr></thead><tbody><tr><td><code>ANKI_CONNECT_URL</code></td><td>URL do AnkiConnect</td><td><code>http://localhost:8765</code></td></tr><tr><td><code>ANKI_CONNECT_API_VERSION</code></td><td>Versão da API</td><td><code>6</code></td></tr><tr><td><code>ANKI_CONNECT_API_KEY</code></td><td>Chave da API se configurada no AnkiConnect</td><td>-</td></tr><tr><td><code>ANKI_CONNECT_TIMEOUT</code></td><td>Timeout de requisição em ms</td><td><code>5000</code></td></tr><tr><td><code>READ_ONLY</code></td><td>Habilita modo somente leitura (<code>true</code> ou <code>1</code>)</td><td><code>false</code></td></tr><tr><td><code>PORT</code></td><td>Modo HTTP: porta para escutar (a flag <code>--port</code> tem precedência)</td><td><code>3000</code></td></tr><tr><td><code>HOST</code></td><td>Modo HTTP: endereço para vincular (a flag <code>--host</code> tem precedência)</td><td><code>127.0.0.1</code></td></tr><tr><td><code>ALLOWED_HOSTS</code></td><td>Modo HTTP: valores extras de cabeçalho <code>Host</code> para aceitar além do loopback (hostnames separados por vírgula). Necessário ao vincular a um endereço LAN/público ou ao executar atrás de um proxy reverso. Veja <a href="#http-mode-configuration" rel="nofollow noopener noreferrer">Configuração do Modo HTTP</a>.</td><td>apenas loopback</td></tr><tr><td><code>ALLOWED_ORIGINS</code></td><td>Modo HTTP: allowlist separada por vírgulas de padrões de <code>Origin</code>/<code>Referer</code> do navegador (curingas suportados, ex.: <code>https://*.ngrok.io</code>).</td><td><code>http://localhost:*,http://127.0.0.1:*,https://localhost:*,https://127.0.0.1:*</code></td></tr><tr><td><code>TUNNEL_SERVER_URL</code></td><td>URL WebSocket do servidor de túnel (apenas modo tunnel)</td><td><code>wss://tunnel.ankimcp.ai</code></td></tr><tr><td><code>MEDIA_ALLOWED_TYPES</code></td><td>Tipos MIME extras para permitir em importações de caminho de arquivo (separados por vírgula, ex.: <code>application/pdf</code>)</td><td>-</td></tr><tr><td><code>MEDIA_IMPORT_DIR</code></td><td>Restringe importações de caminho de arquivo a este diretório</td><td>-</td></tr><tr><td><code>MEDIA_ALLOWED_HOSTS</code></td><td>Permite hosts específicos de rede privada para importações de URL (separados por vírgula, ex.: <code>192.168.1.50,my-nas</code>)</td><td>-</td></tr></tbody></table>
+<h2>Exemplos de Uso</h2>
+<h3>Pesquisando e Atualizando Notas</h3>
+<pre><code># Search for notes in a specific deck
+findNotes(query: &quot;deck:Spanish&quot;)
+
+# Get detailed information about notes
+notesInfo(notes: [1234567890, 1234567891])
+
+# Update a note&#x27;s fields (HTML content supported)
+updateNoteFields(note: {
+  id: 1234567890,
+  fields: {
+    &quot;Front&quot;: &quot;&lt;b&gt;¿Cómo estás?&lt;/b&gt;&quot;,
+    &quot;Back&quot;: &quot;How are you?&quot;
+  }
+})
+
+# Delete notes (requires confirmation)
+deleteNotes(notes: [1234567890], confirmDeletion: true)
+</code></pre>
+<h3>Exemplos de Sintaxe de Consulta do Anki</h3>
+<p>A ferramenta <code>findNotes</code> suporta a poderosa sintaxe de consulta do Anki:</p>
+<ul>
+<li><code>&quot;deck:DeckName&quot;</code> - Todas as notas em um deck específico</li>
+<li><code>&quot;tag:important&quot;</code> - Notas com a tag &quot;important&quot;</li>
+<li><code>&quot;is:due&quot;</code> - Cartões que estão atrasados para revisão</li>
+<li><code>&quot;is:new&quot;</code> - Cartões novos que ainda não foram estudados</li>
+<li><code>&quot;added:7&quot;</code> - Notas adicionadas nos últimos 7 dias</li>
+<li><code>&quot;front:hello&quot;</code> - Notas com &quot;hello&quot; no campo da frente</li>
+<li><code>&quot;flag:1&quot;</code> - Notas com bandeira vermelha</li>
+<li><code>&quot;prop:due&lt;=2&quot;</code> - Cartões atrasados dentro de 2 dias</li>
+<li><code>&quot;deck:Spanish tag:verb&quot;</code> - Notas do deck de espanhol com tag de verbo (AND)</li>
+<li><code>&quot;deck:Spanish OR deck:French&quot;</code> - Notas de qualquer um dos decks</li>
+</ul>
+<h3>Notas Importantes</h3>
+<h4>Tratamento de CSS e HTML</h4>
+<ul>
+<li>A ferramenta <code>notesInfo</code> retorna informações de estilo CSS para consciência adequada de renderização</li>
+<li>A ferramenta <code>updateNoteFields</code> suporta conteúdo HTML em campos e preserva o estilo CSS</li>
+<li>Cada modelo de nota tem seu próprio estilo CSS - use <code>modelStyling</code> para obter o CSS específico do modelo</li>
+</ul>
+<h4>Aviso de Atualização</h4>
+<p>⚠️ <strong>IMPORTANTE</strong>: Ao usar <code>updateNoteFields</code>, NÃO visualize a nota no navegador do Anki durante a atualização, ou os campos não serão atualizados corretamente. Feche o navegador ou mude para uma nota diferente antes de atualizar. Veja <a href="#known-issues" rel="nofollow noopener noreferrer">Problemas Conhecidos</a> para mais detalhes.</p>
+<h4>Segurança de Exclusão</h4>
+<p>A ferramenta <code>deleteNotes</code> exige confirmação explícita (<code>confirmDeletion: true</code>) para evitar exclusões acidentais. Excluir uma nota remove TODOS os cartões associados permanentemente.</p>
+<h2>Segurança</h2>
+<h3>Validação de Caminho de Arquivo de Mídia e URL</h3>
+<p>As ferramentas de mídia (<code>storeMediaFile</code>, <code>retrieveMediaFile</code>, <code>deleteMediaFile</code>) e os campos de áudio/imagem <code>updateNoteFields</code> incluem validação de segurança para prevenir uso indevido via injeção de prompt:</p>
+<ul>
+<li><strong>Importações de caminho de arquivo</strong> são restritas apenas a tipos de arquivos de mídia (imagens, áudio, vídeo). Arquivos não-mídia (ex.: chaves SSH, credenciais, configs de shell) são rejeitados com base no tipo MIME. Configure <code>MEDIA_ALLOWED_TYPES</code> para permitir tipos de arquivo adicionais, ou <code>MEDIA_IMPORT_DIR</code> para restringir importações a um diretório específico.</li>
+<li><strong>Importações de URL</strong> são validadas contra ataques SSRF. Requisições a redes privadas (10.x, 172.16.x, 192.168.x), loopback (127.x), link-local (169.254.x) e esquemas não-HTTP(S) são bloqueadas. Configure <code>MEDIA_ALLOWED_HOSTS</code> para permitir hosts específicos de rede privada.</li>
+<li><strong>Nomes de arquivo</strong> são sanitizados para prevenir path traversal (ex.: sequências <code>../../</code> são removidas).</li>
+</ul>
+<p>Essas proteções se aplicam a <code>storeMediaFile</code>, <code>retrieveMediaFile</code>, <code>deleteMediaFile</code> e campos de áudio/imagem <code>updateNoteFields</code>.</p>
+<blockquote>
+<p>Vulnerabilidade de path traversal reportada por <a href="https://github.com/Koukyosyumei" rel="nofollow noopener noreferrer">Hideaki Takahashi</a>.</p>
+</blockquote>
+<h3>Proteção contra Rebinding de DNS (transporte HTTP)</h3>
+<p>Quando executado em modo HTTP, o servidor valida o cabeçalho <code>Host</code> em cada requisição. Por padrão, apenas hosts de loopback (<code>localhost</code>, <code>127.0.0.1</code>, <code>::1</code>) são aceitos, independentemente da porta. <code>Host</code> é um cabeçalho proibido em navegadores, então uma página da web maliciosa não pode forjá-lo — isso elimina o caminho de DNS-rebinding onde uma página redirecionada alcança o servidor local com um <code>Host</code> falsificado e sem <code>Origin</code>, alcançando as ferramentas MCP. Um <code>Host</code> não permitido é rejeitado com <code>403</code>.</p>
+<p>Se você vincular a <code>0.0.0.0</code>, executar atrás de um proxy reverso ou expor um domínio de túnel público, defina <code>ALLOWED_HOSTS</code> (nomes de host separados por vírgula) para permitir esses hosts. Ao usar túnel com ngrok, o servidor usa <code>--host-header=rewrite</code>, então o upstream ainda vê um <code>Host</code> de loopback. Consulte <a href="#http-mode-configuration" rel="nofollow noopener noreferrer">Configuração do Modo HTTP</a> para a lista completa de opções.</p>
+<blockquote>
+<p>Vulnerabilidade de DNS-rebinding relatada por <a href="https://github.com/avishaigo-commits" rel="nofollow noopener noreferrer">avishaigo-commits</a> e <a href="https://github.com/yotampe-pluto" rel="nofollow noopener noreferrer">yotampe-pluto</a>.</p>
+</blockquote>
+<h2>Política de Privacidade</h2>
+<p>Este servidor MCP é executado localmente na sua máquina e não coleta telemetria, análises ou dados de uso.</p>
+<p>Política completa: <strong><a href="https://ankimcp.ai/privacy/" rel="nofollow noopener noreferrer">https://ankimcp.ai/privacy/</a></strong></p>
+<ul>
+<li><strong>Coleta de dados</strong>: O servidor não coleta nada. Ele faz proxy de requisições entre seu assistente de IA e seu plugin AnkiConnect local.</li>
+<li><strong>Uso / armazenamento</strong>: Sem armazenamento no servidor. Todos os dados de flashcards permanecem na sua instalação do Anki no seu próprio dispositivo.</li>
+<li><strong>Compartilhamento com terceiros</strong>: Nenhum. O servidor apenas conversa com a URL do AnkiConnect que você configurar (padrão: localhost). Se você habilitar a sincronização AnkiWeb integrada do Anki, isso acontece entre sua instalação do Anki e o AnkiWeb diretamente — fora do escopo deste servidor.</li>
+<li><strong>Retenção</strong>: Não aplicável — nenhum dado é retido no servidor.</li>
+<li><strong>Contato</strong>: <a href="https://github.com/ankimcp/anki-mcp-server/blob/HEAD/mailto:support@ankimcp.ai" rel="nofollow noopener noreferrer">support@ankimcp.ai</a></li>
+</ul>
+<h2>Problemas Conhecidos</h2>
+<p>Para uma lista abrangente de problemas conhecidos e limitações, visite nossa documentação:</p>
+<p><strong><a href="https://ankimcp.ai/docs/known-issues/" rel="nofollow noopener noreferrer">Documentação de Problemas Conhecidos</a></strong></p>
+<h3>Limitações Críticas</h3>
+<h4>Atualizações de Notas Falham Quando Visualizadas no Navegador</h4>
+<p>⚠️ <strong>IMPORTANTE</strong>: Ao atualizar notas usando <code>updateNoteFields</code>, a atualização falhará silenciosamente se a nota estiver sendo visualizada na janela do navegador do Anki. Esta é uma limitação do AnkiConnect upstream.</p>
+<p><strong>Solução alternativa</strong>: Sempre feche o navegador ou navegue para uma nota diferente antes de atualizar.</p>
+<p>Para mais detalhes e outros problemas conhecidos, consulte a <a href="https://ankimcp.ai/docs/known-issues/" rel="nofollow noopener noreferrer">documentação completa</a>.</p>
+<h2>Solução de Problemas</h2>
+<h3>Erro ERR_REQUIRE_ESM</h3>
+<p>Se você vir um erro como:</p>
+<pre><code>Error [ERR_REQUIRE_ESM]: require() of ES Module not supported
+</code></pre>
+<p>Isso significa que sua versão do Node.js não é suportada. O servidor requer <strong>Node.js 22.12.0+</strong>.</p>
+<blockquote>
+<p><strong>Nota:</strong> O runtime mínimo suportado é Node.js 22.12.0. Node.js 20 (Iron) atingiu o fim da vida útil em 2026-04-30 e não é mais suportado.</p>
+</blockquote>
+<p><strong>Verifique sua versão:</strong></p>
+<pre><code class="language-bash">node --version
+</code></pre>
+<p><strong>Solução:</strong> Atualize o Node.js para a versão 22.12.0+. Você pode baixá-lo em <a href="https://nodejs.org/" rel="nofollow noopener noreferrer">nodejs.org</a> ou usar um gerenciador de versões como <a href="https://github.com/nvm-sh/nvm" rel="nofollow noopener noreferrer">nvm</a>.</p>
+<h2>Desenvolvimento</h2>
+<h3>Modos de Transporte</h3>
+<p>Este servidor suporta três modos de transporte MCP via <strong>pontos de entrada separados</strong>:</p>
+<h4>Modo STDIO (Padrão)</h4>
+<ul>
+<li>Para clientes MCP locais como Claude Desktop</li>
+<li>Usa entrada/saída padrão para comunicação</li>
+<li><strong>Ponto de entrada</strong>: <code>dist/main-stdio.js</code></li>
+<li><strong>Executar</strong>: <code>npm run start:prod:stdio</code> ou <code>node dist/main-stdio.js</code></li>
+<li><strong>Pacote MCPB</strong>: Usa modo STDIO</li>
+</ul>
+<h4>Modo HTTP (HTTP Streamable)</h4>
+<ul>
+<li>Para clientes MCP remotos e integrações baseadas na web</li>
+<li>Usa o protocolo MCP Streamable HTTP</li>
+<li><strong>Ponto de entrada</strong>: <code>dist/main-http.js</code></li>
+<li><strong>Executar</strong>: <code>npm run start:prod:http</code> ou <code>node dist/main-http.js</code></li>
+<li><strong>Porta padrão</strong>: 3000 (configurável via variável de ambiente <code>PORT</code>)</li>
+<li><strong>Host padrão</strong>: <code>127.0.0.1</code> (configurável via variável de ambiente <code>HOST</code>)</li>
+<li><strong>Endpoint MCP</strong>: <code>http://127.0.0.1:3000/</code> (caminho raiz)</li>
+</ul>
+<h4>Modo Túnel (Túnel WebSocket Gerenciado)</h4>
+<ul>
+<li>Para assistentes de IA baseados na web via serviço de túnel AnkiMCP gerenciado, com autenticação integrada</li>
+<li>O servidor MCP é executado em processo atrás de um transporte em memória; <code>TunnelTransport</code> possui o servidor MCP e <code>TunnelClient</code> o conecta ao serviço de túnel via WebSocket</li>
+<li><strong>Protocolo</strong>: atende apenas a revisão MCP 2025 (STDIO e HTTP também atendem 2026-07-28)</li>
+<li><strong>Ponto de entrada</strong>: <code>dist/main-tunnel.js</code></li>
+<li><strong>Executar</strong>: <code>node dist/main-tunnel.js --tunnel</code> (ou <code>ankimcp --tunnel</code>)</li>
+<li><strong>Autenticação</strong>: <code>ankimcp --login</code> / <code>ankimcp --logout</code>; credenciais armazenadas em <code>~/.ankimcp/credentials.json</code> (<code>0600</code>)</li>
+<li><strong>Dev</strong>: <code>npm run start:dev:tunnel</code> (modo de observação, executa <code>--tunnel --debug</code>)</li>
+</ul>
+<h4>Compilação</h4>
+<pre><code class="language-bash">npm run build  # Builds once, creates dist/ with all three entry points
+</code></pre>
+<p><code>main-stdio.js</code>, <code>main-http.js</code> e <code>main-tunnel.js</code> são todos compilados no mesmo diretório <code>dist/</code>. Escolha qual executar com base nas suas necessidades.</p>
+<h4>Configuração do Modo HTTP</h4>
+<p><strong>Variáveis de Ambiente:</strong></p>
+<ul>
+<li><code>PORT</code> - Porta do servidor HTTP (padrão: 3000)</li>
+<li><code>HOST</code> - Endereço de vinculação (padrão: 127.0.0.1 para somente localhost)</li>
+<li><code>ALLOWED_HOSTS</code> - Valores extras de cabeçalho <code>Host</code> separados por vírgula para aceitar além do conjunto de loopback integrado (<code>localhost</code>, <code>127.0.0.1</code>, <code>::1</code>). Somente nome de host e sem porta. Padrão: somente loopback.</li>
+<li><code>ALLOWED_ORIGINS</code> - Lista de permissões separada por vírgula de padrões de navegador <code>Origin</code>/<code>Referer</code>; curingas suportados (ex.: <code>https://*.ngrok.io</code>). Padrão: <code>http://localhost:*,http://127.0.0.1:*,https://localhost:*,https://127.0.0.1:*</code>.</li>
+<li><code>LOG_LEVEL</code> - Nível de registro (padrão: info)</li>
+</ul>
+<p><strong>Segurança:</strong></p>
+<ul>
+<li><strong>Validação do cabeçalho Host (proteção contra DNS-rebinding)</strong> — cada requisição HTTP deve conter um cabeçalho <code>Host</code> que corresponda à lista de permissões. Por padrão, apenas hosts de loopback (<code>localhost</code>, <code>127.0.0.1</code>, <code>::1</code>) são aceitos, independentemente da porta. <code>Host</code> é um cabeçalho proibido em navegadores, então uma página da web maliciosa não pode forjá-lo — isso elimina o caminho de <a href="https://github.com/ankimcp/anki-mcp-server/security/advisories" rel="nofollow noopener noreferrer">DNS-rebinding</a> onde uma página redirecionada alcança o servidor com um <code>Host</code> falsificado e sem <code>Origin</code>. Um <code>Host</code> não permitido é rejeitado com <code>403</code>.</li>
+<li><strong>Validação do cabeçalho Origin</strong> — requisições de navegador com <code>Origin</code>/<code>Referer</code> presente, mas não permitido, são rejeitadas. Requisições <strong>sem</strong> <code>Origin</code> (curl, Postman, clientes MCP-over-HTTP) são permitidas; a validação de Host é a defesa contra rebinding.</li>
+<li>Vincula a localhost (127.0.0.1) por padrão.</li>
+<li>Sem autenticação na versão atual (suporte a OAuth planejado).</li>
+</ul>
+<p><strong>Expondo o modo HTTP além do localhost</strong> — se você vincular a um endereço LAN/público ou colocar o servidor atrás de um proxy reverso ou domínio público, você <strong>deve</strong> definir <code>ALLOWED_HOSTS</code> para o(s) nome(s) de host que os clientes usarão, caso contrário, toda requisição não-loopback é rejeitada com <code>403</code>:</p>
+<pre><code class="language-bash"># Bind to all interfaces and accept the machine&#x27;s LAN name + a public domain
+ALLOWED_HOSTS=my-nas.local,anki.example.com PORT=8080 HOST=0.0.0.0 node dist/main-http.js
+</code></pre>
+<p>Quando você vincula a <code>0.0.0.0</code>/<code>::</code> sem <code>ALLOWED_HOSTS</code>, o servidor registra um aviso de inicialização de que apenas cabeçalhos <code>Host</code> de loopback serão aceitos.</p>
+<blockquote>
+<p><strong>Docker / proxy reverso / domínio público:</strong> a mesma regra se aplica. No Docker, as requisições geralmente chegam com o nome de host publicado do contêiner ou o <code>Host</code> do proxy, então defina <code>ALLOWED_HOSTS</code> de acordo. Um proxy reverso (nginx, Caddy, Traefik) deve encaminhar o <code>Host</code> original e ter esse nome de host listado em <code>ALLOWED_HOSTS</code>, ou reescrever o <code>Host</code> upstream para <code>localhost</code>. A integração integrada <code>--ngrok</code> lida com isso automaticamente (veja abaixo).</p>
+</blockquote>
+<p><strong>Exemplo: Modos de Execução</strong></p>
+<pre><code class="language-bash"># Development - STDIO mode (watch mode with auto-rebuild)
+npm run start:dev:stdio
+
+# Development - HTTP mode (watch mode with auto-rebuild)
+npm run start:dev:http
+
+# Production - STDIO mode
+npm run start:prod:stdio
+# or
+node dist/main-stdio.js
+
+# Production - HTTP mode
+npm run start:prod:http
+# or
+PORT=8080 HOST=0.0.0.0 node dist/main-http.js
+</code></pre>
+<h3>Compilando um Pacote MCPB</h3>
+<p>Para criar um pacote MCPB distribuível:</p>
+<pre><code class="language-bash">npm run mcpb:bundle
+</code></pre>
+<p>Este comando irá:</p>
+<ol>
+<li>Sincronizar a versão de <code>package.json</code> para <code>manifest.json</code></li>
+<li>Remover arquivos <code>.mcpb</code> antigos</li>
+<li>Compilar o projeto TypeScript</li>
+<li>Empacotar <code>dist/</code> e <code>node_modules/</code> em um arquivo <code>.mcpb</code></li>
+<li>Executar <code>mcpb clean</code> para remover devDependencies (otimiza o pacote de ~47MB para ~10MB)</li>
+</ol>
+<p>O arquivo de saída será nomeado <code>anki-mcp-server-X.X.X.mcpb</code> e pode ser distribuído para instalação com um clique.</p>
+<h4>O Que é Empacotado</h4>
+<p>O pacote MCPB inclui:</p>
+<ul>
+<li>JavaScript compilado (diretório <code>dist/</code> - inclui todos os três pontos de entrada)</li>
+<li>Apenas dependências de produção (<code>node_modules/</code> - devDependencies removidas por <code>mcpb clean</code>)</li>
+<li>Metadados do pacote (<code>package.json</code>)</li>
+<li>Configuração do manifesto (<code>manifest.json</code> - configurado para usar <code>main-stdio.js</code>)</li>
+<li>Ícone (<code>icon.png</code>)</li>
+</ul>
+<p>Arquivos de origem, testes e configurações de desenvolvimento são excluídos automaticamente via <code>.mcpbignore</code>.</p>
+<h3>Registro no Claude Desktop</h3>
+<p>Ao executar como uma extensão MCPB no Claude Desktop, os registros são gravados em:</p>
+<p><strong>Localização do Registro</strong>: <code>~/Library/Logs/Claude/</code> (macOS)</p>
+<p>Os registros são divididos em vários arquivos:</p>
+<ul>
+<li><strong>main.log</strong> - Registros gerais do aplicativo Claude Desktop</li>
+<li><strong>mcp-server-Anki MCP Server.log</strong> - Mensagens de protocolo MCP para esta extensão</li>
+<li><strong>mcp.log</strong> - Registros MCP combinados de todos os servidores</li>
+</ul>
+<p><strong>Nota</strong>: A saída do registrador pino (mensagens INFO, ERROR, WARN do código do servidor) vai para stderr e aparece nos arquivos de registro específicos do MCP. O Claude Desktop determina qual arquivo de registro recebe quais mensagens, mas geralmente:</p>
+<ul>
+<li>Inicialização do aplicativo e comunicação do protocolo MCP → registro específico do MCP</li>
+<li>Registro interno do servidor (pino) → Ambos o registro específico do MCP e às vezes main.log</li>
+</ul>
+<p>Para visualizar registros em tempo real:</p>
+<pre><code class="language-bash">tail -f ~/Library/Logs/Claude/mcp-server-Anki\ MCP\ Server.log
+</code></pre>
+<h3>Depurando o Servidor MCP</h3>
+<p>Você pode depurar o servidor MCP usando o MCP Inspector e anexando um depurador da sua IDE (WebStorm, VS Code, etc.).</p>
+<p><strong>Nota para o Modo HTTP:</strong> Ao testar o modo HTTP (Streamable HTTP) com o MCP Inspector, use &quot;Connection Type: Via Proxy&quot; para evitar erros de CORS.</p>
+<h4>Passo 1: Configurar o Servidor de Depuração no MCP Inspector</h4>
+<p>O <code>mcp-inspector-config.json</code> já inclui uma configuração de servidor de depuração:</p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;stdio-server-debug&quot;: {
+      &quot;type&quot;: &quot;stdio&quot;,
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;--inspect-brk=9229&quot;, &quot;dist/main-stdio.js&quot;],
+      &quot;env&quot;: {
+        &quot;MCP_SERVER_NAME&quot;: &quot;anki-mcp-stdio-debug&quot;,
+        &quot;MCP_SERVER_VERSION&quot;: &quot;1.0.0&quot;,
+        &quot;LOG_LEVEL&quot;: &quot;debug&quot;
+      },
+      &quot;note&quot;: &quot;Anki MCP server with debugging enabled on port 9229&quot;
+    }
+  }
+}
+</code></pre>
+<h4>Passo 2: Iniciar o Servidor de Depuração</h4>
+<p>Execute o MCP Inspector com o servidor de depuração:</p>
+<pre><code class="language-bash">npm run inspector:debug
+</code></pre>
+<p>Isso iniciará o servidor com a depuração do Node.js habilitada na porta 9229 e pausará a execução na primeira linha.</p>
+<h4>Passo 3: Anexar o Depurador da Sua IDE</h4>
+<h5>WebStorm</h5>
+<ol>
+<li>Vá para <strong>Run → Edit Configurations</strong></li>
+<li>Adicione uma nova configuração <strong>Attach to Node.js/Chrome</strong></li>
+<li>Defina a porta para <code>9229</code></li>
+<li>Clique em <strong>Debug</strong> para anexar</li>
+</ol>
+<h5>VS Code</h5>
+<ol>
+<li>Abra o painel de Depuração (Ctrl+Shift+D / Cmd+Shift+D)</li>
+<li>Selecione a configuração <strong>Debug MCP Server (Attach)</strong></li>
+<li>Pressione F5 para anexar</li>
+</ol>
+<h4>Passo 4: Definir Pontos de Interrupção e Depurar</h4>
+<p>Uma vez anexado, você pode:</p>
+<ul>
+<li>Definir pontos de interrupção em seus arquivos de origem TypeScript</li>
+<li>Percorrer a execução do código</li>
+<li>Inspecionar variáveis e a pilha de chamadas</li>
+<li>Usar o console de depuração para avaliar expressões</li>
+</ul>
+<p>O depurador funcionará com mapas de origem, permitindo que você depure o código TypeScript original em vez do JavaScript compilado.</p>
+<h3>Depurando com Claude Desktop</h3>
+<p>Você também pode depurar o servidor MCP enquanto ele executa dentro do Claude Desktop habilitando o depurador do Node.js e anexando sua IDE.</p>
+<h4>Passo 1: Configurar o Claude Desktop para Depuração</h4>
+<p>Atualize sua configuração do Claude Desktop para habilitar a depuração:</p>
+<p><strong>macOS</strong>: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>
+<strong>Windows</strong>: <code>%APPDATA%\Claude\claude_desktop_config.json</code>
+<strong>Linux</strong>: <code>~/.config/Claude/claude_desktop_config.json</code></p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;anki-mcp&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [
+        &quot;--inspect=9229&quot;,
+        &quot;&lt;path_to_project&gt;/anki-mcp-server/dist/main-stdio.js&quot;
+      ],
+      &quot;env&quot;: {
+        &quot;ANKI_CONNECT_URL&quot;: &quot;http://localhost:8765&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<p><strong>Mudança principal</strong>: Adicione <code>--inspect=9229</code> antes do caminho para <code>dist/main-stdio.js</code></p>
+<p><strong>Opções de depuração</strong>:</p>
+<ul>
+<li><code>--inspect=9229</code> - Inicia o depurador imediatamente, não bloqueia (recomendado)</li>
+<li><code>--inspect-brk=9229</code> - Pausa a execução até o depurador anexar (para depurar problemas de inicialização)</li>
+</ul>
+<h4>Passo 2: Reiniciar o Claude Desktop</h4>
+<p>Após salvar a configuração, reinicie o Claude Desktop. O servidor MCP agora será executado com depuração habilitada na porta 9229.</p>
+<h4>Passo 3: Anexar o Depurador da Sua IDE</h4>
+<h5>WebStorm</h5>
+<ol>
+<li>Vá para <strong>Run → Edit Configurations</strong></li>
+<li>Clique no botão <strong>+</strong> e selecione <strong>Attach to Node.js/Chrome</strong></li>
+<li>Configure:
+<ul>
+<li><strong>Nome</strong>: <code>Attach to Anki MCP (Claude Desktop)</code></li>
+<li><strong>Host</strong>: <code>localhost</code></li>
+<li><strong>Porta</strong>: <code>9229</code></li>
+<li><strong>Anexar a</strong>: <code>Node.js &lt; 8</code> ou <code>Chrome or Node.js &gt; 6.3</code> (dependendo da versão do WebStorm)</li>
+</ul>
+</li>
+<li>Clique em <strong>OK</strong></li>
+<li>Clique em <strong>Debug</strong> (Shift+F9) para anexar</li>
+</ol>
+<h5>VS Code</h5>
+<ol>
+<li>Adicione a <code>.vscode/launch.json</code>:</li>
+</ol>
+<pre><code class="language-json">{
+  &quot;version&quot;: &quot;0.2.0&quot;,
+  &quot;configurations&quot;: [
+    {
+      &quot;type&quot;: &quot;node&quot;,
+      &quot;request&quot;: &quot;attach&quot;,
+      &quot;name&quot;: &quot;Attach to Anki MCP (Claude Desktop)&quot;,
+      &quot;port&quot;: 9229,
+      &quot;skipFiles&quot;: [&quot;&lt;node_internals&gt;/**&quot;],
+      &quot;sourceMaps&quot;: true,
+      &quot;outFiles&quot;: [&quot;${workspaceFolder}/dist/**/*.js&quot;]
+    }
+  ]
+}
+</code></pre>
+<ol start="2">
+<li>Abra o painel de Depuração (Ctrl+Shift+D / Cmd+Shift+D)</li>
+<li>Selecione <strong>Attach to Anki MCP (Claude Desktop)</strong></li>
+<li>Pressione F5 para anexar</li>
+</ol>
+<h4>Passo 4: Depurar em Tempo Real</h4>
+<p>Uma vez anexado, você pode:</p>
+<ul>
+<li>Definir breakpoints nos seus arquivos de código-fonte TypeScript (ex.: <code>src/mcp/primitives/essential/tools/create-model.tool.ts</code>)</li>
+<li>Usar o Claude Desktop normalmente — os breakpoints serão acionados quando as ferramentas forem invocadas</li>
+<li>Percorrer a execução do código passo a passo</li>
+<li>Inspecionar variáveis e a pilha de chamadas</li>
+<li>Usar o console de depuração</li>
+</ul>
+<p><strong>Exemplo</strong>: Defina um breakpoint em <code>create-model.tool.ts</code> na linha 119 e peça ao Claude para criar um novo modelo. O depurador pausará no seu breakpoint!</p>
+<p><strong>Observação</strong>: O depurador permanece anexado enquanto o Claude Desktop estiver em execução. Você pode desconectar/reconectar a qualquer momento sem reiniciar o Claude Desktop.</p>
+<h3>Comandos de Build</h3>
+<pre><code class="language-bash">npm run build              # Build the project (compile TypeScript to JavaScript)
+npm run start:dev:stdio    # STDIO mode with watch (auto-rebuild)
+npm run start:dev:http     # HTTP mode with watch (auto-rebuild)
+npm run type-check         # Run TypeScript type checking
+npm run lint               # Run ESLint
+npm run mcpb:bundle        # Sync version, clean, build, and create MCPB bundle
+</code></pre>
+<h3>Teste do Pacote NPM (Local)</h3>
+<p>Teste o pacote npm localmente antes de publicar:</p>
+<pre><code class="language-bash"># 1. Create local package
+npm run pack:local         # Builds and creates @ankimcp/anki-mcp-server-*.tgz
+
+# 2. Install globally from local package
+npm run install:local      # Installs from ./@ankimcp/anki-mcp-server-*.tgz
+
+# 3. Test the command
+ankimcp                    # Runs HTTP server on port 3000
+
+# 4. Uninstall when done testing
+npm run uninstall:local    # Removes global installation
+</code></pre>
+<p><strong>Como funciona:</strong></p>
+<ul>
+<li><code>npm pack</code> cria um arquivo <code>.tgz</code> idêntico ao que o npm publish criaria</li>
+<li>Instalar a partir de <code>.tgz</code> simula o que os usuários obtêm de <code>npm install -g ankimcp</code></li>
+<li>Isso permite testar a experiência completa do usuário antes de publicar no npm</li>
+</ul>
+<h3>Comandos de Teste</h3>
+<pre><code class="language-bash">npm test              # Run all tests
+npm run test:unit     # Run unit tests only
+npm run test:tools    # Run tool-specific tests
+npm run test:workflows # Run workflow integration tests
+npm run test:e2e      # Run end-to-end tests
+npm run test:cov      # Run tests with coverage report
+npm run test:watch    # Run tests in watch mode
+npm run test:debug    # Run tests with debugger
+npm run test:ci       # Run tests for CI (silent, with coverage)
+</code></pre>
+<h3>Cobertura de Testes</h3>
+<p>O projeto mantém limites mínimos de cobertura de 70% para:</p>
+<ul>
+<li>Branches</li>
+<li>Funções</li>
+<li>Linhas</li>
+<li>Statements</li>
+</ul>
+<p>Os relatórios de cobertura são gerados no diretório <code>coverage/</code>.</p>
+<h2>Versionamento</h2>
+<p>Este projeto segue <a href="https://semver.org/" rel="nofollow noopener noreferrer">Versionamento Semântico</a> com uma abordagem de desenvolvimento pré-1.0:</p>
+<ul>
+<li>
+<p><strong>0.x.x</strong> — Versões Beta/Desenvolvimento (fase atual)</p>
+<ul>
+<li><strong>0.1.x</strong> — Correções de bugs e patches</li>
+<li><strong>0.2.0+</strong> — Novos recursos ou melhorias menores</li>
+<li><strong>Mudanças que quebram compatibilidade</strong> são aceitáveis nas versões 0.x</li>
+</ul>
+</li>
+<li>
+<p><strong>1.0.0</strong> — Primeira versão estável</p>
+<ul>
+<li>Será lançada quando a API estiver estável e testada</li>
+<li>Mudanças que quebram compatibilidade exigirão aumentos de versão principal (2.0.0, etc.)</li>
+</ul>
+</li>
+</ul>
+<p><strong>Status Atual</strong>: <code>0.22.0</code> — Desenvolvimento beta ativo. Recursos recentes incluem análise de revisão em todo o acervo (<code>review_stats</code> agora agrega todos os baralhos quando <code>deck</code> é omitido), gerenciamento de campos de modelo (<code>addModelField</code>, <code>removeModelField</code>, <code>renameModelField</code>, <code>repositionModelField</code>), criação de notas em lote (<code>addNotes</code>), tunelamento ngrok integrado (flag <code>--ngrok</code>), gerenciamento de arquivos de mídia, gerenciamento de modelos/modelos e estatísticas abrangentes de baralhos. As APIs podem mudar com base em feedback e testes.</p>
+<h3>Evolução da especificação MCPB</h3>
+<p>Este projeto tem como alvo a especificação de pacote MCPB da Anthropic, que ainda está em evolução. Acompanhamos a especificação em <a href="https://github.com/modelcontextprotocol/mcpb" rel="nofollow noopener noreferrer">https://github.com/modelcontextprotocol/mcpb</a> e podemos introduzir mudanças que quebram compatibilidade para permanecer em conformidade. Mudanças que quebram compatibilidade são permitidas sob o esquema de versionamento 0.x.x.</p>
+<h2>Projetos Semelhantes</h2>
+<p>Se você está explorando integrações Anki MCP, aqui estão outros projetos neste espaço:</p>
+<h3><a href="https://github.com/scorzeth/anki-mcp-server" rel="nofollow noopener noreferrer">scorzeth/anki-mcp-server</a></h3>
+<ul>
+<li><strong>Status</strong>: Parece estar abandonado (sem atualizações recentes)</li>
+<li>Implementação inicial da integração Anki MCP</li>
+</ul>
+<h3><a href="https://github.com/nailuoGG/anki-mcp-server" rel="nofollow noopener noreferrer">nailuoGG/anki-mcp-server</a></h3>
+<ul>
+<li><strong>Abordagem</strong>: Implementação leve, de arquivo único</li>
+<li><strong>Arquitetura</strong>: Estrutura de código procedural com todas as ferramentas em um arquivo</li>
+<li><strong>Ideal para</strong>: Casos de uso simples, dependências mínimas</li>
+</ul>
+<p><strong>Por que este projeto é diferente:</strong></p>
+<ul>
+<li><strong>Arquitetura de nível empresarial</strong>: Construído em NestJS com injeção de dependência</li>
+<li><strong>Design modular</strong>: Cada ferramenta é uma classe separada com clara separação de responsabilidades</li>
+<li><strong>Facilidade de manutenção</strong>: Fácil de estender com novos recursos sem tocar no código existente</li>
+<li><strong>Testes</strong>: Suíte de testes abrangente com requisito de cobertura de 70%</li>
+<li><strong>Segurança de tipos</strong>: TypeScript estrito com validação Zod</li>
+<li><strong>Tratamento de erros</strong>: Tratamento robusto de erros com feedback útil ao usuário</li>
+<li><strong>Pronto para produção</strong>: Logs adequados, relatórios de progresso e suporte a pacotes MCPB</li>
+<li><strong>Escalabilidade</strong>: Pode crescer facilmente de ferramentas básicas para fluxos de trabalho complexos</li>
+</ul>
+<p><strong>Caso de uso</strong>: Se você precisa de uma base sólida para construir integrações avançadas do Anki ou planeja estender a funcionalidade significativamente, a abordagem arquitetônica deste projeto facilita a manutenção e a escala ao longo do tempo.</p>
+<h2>Links Úteis</h2>
+<ul>
+<li><a href="https://modelcontextprotocol.io/docs" rel="nofollow noopener noreferrer">Documentação do Model Context Protocol</a></li>
+<li><a href="https://git.sr.ht/~foosoft/anki-connect" rel="nofollow noopener noreferrer">Documentação da API AnkiConnect</a></li>
+<li><a href="https://claude.ai/download" rel="nofollow noopener noreferrer">Download do Claude Desktop</a></li>
+<li><a href="https://www.anthropic.com/engineering/desktop-extensions" rel="nofollow noopener noreferrer">Construindo Extensões para Desktop (Blog da Anthropic)</a></li>
+<li><a href="https://github.com/modelcontextprotocol/servers" rel="nofollow noopener noreferrer">Repositório de Servidores MCP</a></li>
+<li><a href="https://docs.nestjs.com" rel="nofollow noopener noreferrer">Documentação do NestJS</a></li>
+<li><a href="https://apps.ankiweb.net/" rel="nofollow noopener noreferrer">Site Oficial do Anki</a></li>
+</ul>
+<h2>Licença e Atribuições</h2>
+<p>Este projeto é licenciado sob a Licença MIT — veja <a href="https://github.com/ankimcp/anki-mcp-server/blob/HEAD/LICENSE" rel="nofollow noopener noreferrer">LICENSE</a> para o texto completo.</p>
+<p>Copyright © 2026 Anatoly Tarnavsky.</p>
+<h3>Atribuições de Terceiros</h3>
+<ul>
+<li>
+<p><strong>Anki®</strong> é uma marca registrada da Ankitects Pty Ltd. Este projeto é uma ferramenta não oficial de terceiros e não é afiliado, endossado ou patrocinado pela Ankitects Pty Ltd. O logotipo do Anki é usado sob a licença alternativa para referenciar o Anki com um link para <a href="https://apps.ankiweb.net" rel="nofollow noopener noreferrer">https://apps.ankiweb.net</a>. Para o aplicativo oficial do Anki, visite <a href="https://apps.ankiweb.net" rel="nofollow noopener noreferrer">https://apps.ankiweb.net</a>.</p>
+</li>
+<li>
+<p><strong>Model Context Protocol (MCP)</strong> é um padrão aberto da Anthropic. O logotipo do MCP é do <a href="https://github.com/modelcontextprotocol/docs" rel="nofollow noopener noreferrer">repositório oficial de documentação do MCP</a> e é usado sob a Licença MIT. Para mais informações sobre o MCP, visite <a href="https://modelcontextprotocol.io" rel="nofollow noopener noreferrer">https://modelcontextprotocol.io</a>.</p>
+</li>
+<li>
+<p>Este é um projeto independente que conecta as tecnologias Anki e MCP. Todas as marcas registradas, marcas de serviço, nomes comerciais, nomes de produtos e logotipos são propriedade de seus respectivos proprietários.</p>
+</li>
+</ul></div></div></main><aside class="space-y-6"><div class="space-y-6"><section class="rounded-lg border border-gray-200 bg-white p-4 shadow-xs shadow-gray-950/[0.03]"><h2 class="font-bold text-lg">Detalhes do servidor MCP</h2><a href="https://github.com/ankimcp/anki-mcp-server" target="_blank" rel="noopener noreferrer" class="group mt-3 flex items-center justify-between border-b border-gray-100 pb-3 transition-colors hover:border-gray-200"><span class="flex min-w-0 items-center gap-3"><span class="grid size-8 shrink-0 place-items-center rounded-md border border-gray-200 bg-white p-1.5 text-gray-900" aria-hidden="true"><img src="/api/logo?url=https%3A%2F%2Fgithub.com%2Fankimcp%2Fanki-mcp-server&amp;size=64" alt="Anki MCP logo" loading="lazy" class="size-full object-contain"/></span><span class="min-w-0"><span class="block text-xs font-medium uppercase tracking-wide text-gray-500">Repositório</span><span class="mt-0.5 block truncate text-sm font-semibold text-gray-950">Repositório GitHub</span></span></span></a><dl class="mt-4 text-sm"><div><dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Categoria</dt><dd class="mt-2 flex flex-wrap gap-2"><a href="/pt-BR/category/productivity" class="inline-flex rounded-full border border-gray-200 px-2.5 py-1 font-medium text-gray-800 hover:border-gray-300 hover:bg-gray-50">Produtividade</a></dd></div></dl></section><div data-ea-publisher="mcpserversorg" data-ea-type="text" data-ea-keywords="mcp|productivity"></div></div><section class="rounded-lg border border-gray-200 bg-white p-5" data-nosnippet=""><h2 class="font-bold text-lg">Servidores relacionados</h2><ul class="mt-2 divide-y divide-gray-100"><li><a href="/pt-BR/servers/rember/rember-mcp" target="_blank" class="-mx-2 block rounded-md px-2 py-3 transition-colors hover:bg-gray-50"><h3 class="font-semibold text-gray-950">Rember</h3><p class="mt-1 line-clamp-2 text-sm leading-6 text-gray-600">Crie flashcards de repetição espaçada no Rember para lembrar de tudo que você aprende em suas conversas</p></a></li><li><a href="/pt-BR/servers/loonskai/anki-mcp-server" target="_blank" class="-mx-2 block rounded-md px-2 py-3 transition-colors hover:bg-gray-50"><h3 class="font-semibold text-gray-950">Anki</h3><p class="mt-1 line-clamp-2 text-sm leading-6 text-gray-600">Gerencie flashcards e baralhos do Anki usando o plugin Anki-Connect.</p></a></li><li><a href="/pt-BR/servers/hmnzr/anki-mcp" target="_blank" class="-mx-2 block rounded-md px-2 py-3 transition-colors hover:bg-gray-50"><h3 class="font-semibold text-gray-950">Anki Connect</h3><p class="mt-1 line-clamp-2 text-sm leading-6 text-gray-600">Gerencie flashcards e baralhos do Anki através do plugin AnkiConnect.</p></a></li><li><a href="/pt-BR/servers/MCP-Mirror/samefarrar_mcp-ankiconnect" target="_blank" class="-mx-2 block rounded-md px-2 py-3 transition-colors hover:bg-gray-50"><h3 class="font-semibold text-gray-950">AnkiConnect</h3><p class="mt-1 line-clamp-2 text-sm leading-6 text-gray-600">Conecte o Claude ao AnkiConnect para criar e revisar flashcards usando linguagem natural.</p></a></li><li><a href="/pt-BR/servers/captain-blue210/anki-mcp-server" target="_blank" class="-mx-2 block rounded-md px-2 py-3 transition-colors hover:bg-gray-50"><h3 class="font-semibold text-gray-950">Anki MCP Server</h3><p class="mt-1 line-clamp-2 text-sm leading-6 text-gray-600">Conecta-se ao Anki via AnkiConnect para recuperar flashcards marcados como leech para uso no Claude Desktop.</p></a></li><li><a href="/pt-BR/servers/nailuoGG/anki-mcp-server" target="_blank" class="-mx-2 block rounded-md px-2 py-3 transition-colors hover:bg-gray-50"><h3 class="font-semibold text-gray-950">Anki MCP Server</h3><p class="mt-1 line-clamp-2 text-sm leading-6 text-gray-600">Interaja com o software de flashcards Anki usando LLMs por meio do complemento AnkiConnect.</p></a></li><li><a href="/pt-BR/servers/johwiebe/anki-mcp" target="_blank" class="-mx-2 block rounded-md px-2 py-3 transition-colors hover:bg-gray-50"><h3 class="font-semibold text-gray-950">Anki MCP Server</h3><p class="mt-1 line-clamp-2 text-sm leading-6 text-gray-600">Integre assistentes de IA com o Anki, o popular software de flashcards de repetição espaçada.</p></a></li><li><a href="/pt-BR/servers/jasperket/clanki" target="_blank" class="-mx-2 block rounded-md px-2 py-3 transition-colors hover:bg-gray-50"><h3 class="font-semibold text-gray-950">Clanki - Claude&#x27;s Anki Integration</h3><p class="mt-1 line-clamp-2 text-sm leading-6 text-gray-600">Permite que assistentes de IA interajam com baralhos de flashcards do Anki através do plugin AnkiConnect.</p></a></li><li><a href="/pt-BR/servers/flashmemorize-com" target="_blank" class="-mx-2 block rounded-md px-2 py-3 transition-colors hover:bg-gray-50"><h3 class="font-semibold text-gray-950">Flash</h3><p class="mt-1 line-clamp-2 text-sm leading-6 text-gray-600">Flashcards de repetição espaçada que sua IA pode executar: Claude, ChatGPT ou Grok escreve cartões a partir das suas anotações, faz perguntas sem usar as mãos por voz, avalia respostas e o FSRS agenda cada revisão. Importa baralhos do Anki. Gratuito e de código aberto.</p></a></li><li><a href="/pt-BR/servers/servation/memora-mcp" target="_blank" class="-mx-2 block rounded-md px-2 py-3 transition-colors hover:bg-gray-50"><h3 class="font-semibold text-gray-950">Memora</h3><p class="mt-1 line-clamp-2 text-sm leading-6 text-gray-600">Flashcards interativos, quizzes e cartões cloze com repetição espaçada FSRS, renderizados inline no Claude Desktop como um MCP App.</p></a></li></ul></section></aside></div></div><!--/$--></main><footer class="mt-auto border-t bg-gray-50"><div class="container mx-auto px-4 py-10 sm:py-12"><div class="grid gap-10 md:grid-cols-[1.2fr_2fr] lg:grid-cols-[1.5fr_2fr]"><div class="max-w-xs"><a href="/pt-BR/" class="flex items-center gap-2.5"><span class="grid size-8 place-items-center rounded-lg border border-border/80 bg-background"><img src="/icon.png" alt="" width="22" height="22"/></span><span class="text-base font-semibold tracking-tight">MCP Servers</span></a><p class="mt-3 text-sm leading-6 text-gray-600">A directory of Model Context Protocol servers, clients, and guides for building with AI agents.</p></div><div class="grid grid-cols-2 gap-8 sm:grid-cols-3"><nav aria-label="Directory"><h2 class="text-sm font-semibold text-gray-950">Directory</h2><ul class="mt-3 space-y-2.5"><li><a href="/pt-BR/all" class="text-sm text-gray-600 hover:text-gray-950">Servidores MCP mais recentes</a></li><li><a href="/pt-BR/official" class="text-sm text-gray-600 hover:text-gray-950">Servidores MCP oficiais</a></li><li><a href="/pt-BR/remote-mcp-servers" class="text-sm text-gray-600 hover:text-gray-950">Servidores MCP remotos</a></li><li><a href="/pt-BR/webmcp" class="text-sm text-gray-600 hover:text-gray-950">Diretório WebMCP</a></li><li><a href="/pt-BR/clients" class="text-sm text-gray-600 hover:text-gray-950">MCP Clients</a></li></ul></nav><nav aria-label="Learn"><h2 class="text-sm font-semibold text-gray-950">Learn</h2><ul class="mt-3 space-y-2.5"><li><a href="/pt-BR/learn/what-is-an-mcp-server" class="text-sm text-gray-600 hover:text-gray-950">What is an MCP server?</a></li><li><a href="/pt-BR/learn/what-is-webmcp" class="text-sm text-gray-600 hover:text-gray-950">O que é WebMCP?</a></li><li><a href="/pt-BR/learn/chrome-webmcp" class="text-sm text-gray-600 hover:text-gray-950">WebMCP no Chrome</a></li><li><a href="/pt-BR/topics" class="text-sm text-gray-600 hover:text-gray-950">MCP Topics</a></li><li><a href="/pt-BR/agent-skills" class="text-sm text-gray-600 hover:text-gray-950">Claude Skills</a></li></ul></nav><nav aria-label="More"><h2 class="text-sm font-semibold text-gray-950">More</h2><ul class="mt-3 space-y-2.5"><li><a href="/pt-BR/submit" class="text-sm text-gray-600 hover:text-gray-950">Enviar</a></li><li><a href="/pt-BR/advertise" class="text-sm text-gray-600 hover:text-gray-950">Anunciar</a></li><li><a href="https://blog.mcpservers.org/" target="_blank" rel="noopener noreferrer" class="text-sm text-gray-600 hover:text-gray-950">Blog</a></li><li><a href="https://codex-resets.com/?utm_source=mcpservers&amp;utm_medium=footer" target="_blank" rel="noopener noreferrer" class="text-sm text-gray-600 hover:text-gray-950">Codex Resets</a></li></ul></nav></div></div><div class="mt-10 flex flex-col gap-2 border-t border-gray-200 pt-6 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between"><span>© <!-- -->2026<!-- --> mcpservers.org</span><span>contact [at] mcpservers.org</span></div></div></footer></body></html>

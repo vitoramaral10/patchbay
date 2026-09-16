@@ -29,22 +29,22 @@ func itensDeTeste() []biblioteca.Item {
 	return []biblioteca.Item{
 		{
 			Nome: "com.atlassian/mcp", Titulo: "Atlassian",
-			Descricao: "Jira, Confluence and Compass for agents",
-			Versao:    "1.0.0", Transporte: biblioteca.TransporteHTTP,
-			URL: "https://mcp.atlassian.test/mcp", PedeCredencial: true,
+			Descricao:  "Jira, Confluence and Compass for agents",
+			Transporte: biblioteca.TransporteHTTP,
+			URL:        "https://mcp.atlassian.test/mcp", PedeCredencial: true,
 			Site: "https://atlassian.test",
 		},
 		{
 			Nome: "com.notion/mcp", Titulo: "Notion",
-			Descricao: "Official Notion MCP server",
-			Versao:    "1.0.1", Transporte: biblioteca.TransporteSSE,
-			URL: "https://mcp.notion.test/sse",
+			Descricao:  "Official Notion MCP server",
+			Transporte: biblioteca.TransporteSSE,
+			URL:        "https://mcp.notion.test/sse",
 		},
 		{
 			Nome: "com.acme/local", Titulo: "Acme Local",
-			Descricao: "Runs beside the gateway",
-			Versao:    "0.4.0", Transporte: biblioteca.TransporteSTDIO,
-			Comando: "npx", Args: []string{"-y", "acme-mcp@0.4.0"},
+			Descricao:  "Runs beside the gateway",
+			Transporte: biblioteca.TransporteSTDIO,
+			Comando:    "npx", Args: []string{"-y", "acme-mcp@0.4.0"},
 		},
 	}
 }
@@ -74,6 +74,74 @@ func TestSubstituirGravaEBuscarDevolve(t *testing.T) {
 		if len(i.Args) != 2 || i.Args[0] != "-y" || i.Args[1] != "acme-mcp@0.4.0" {
 			t.Fatalf("Args = %v, quer [-y acme-mcp@0.4.0]", i.Args)
 		}
+	}
+}
+
+// TestEndpointsIdaEVolta prova a coluna endpoints (D-07): item com vários
+// endpoints volta com todos, na ordem; item sem nenhum volta com fatia vazia,
+// nunca nula — um formulário que faz range sobre nil não quebra, mas um teste
+// que compara com nil sim.
+func TestEndpointsIdaEVolta(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	r := repoDeTeste(t)
+
+	comEndpoints := biblioteca.Item{
+		Nome: "mcpservers.org/varios-endpoints", Titulo: "Vários Endpoints",
+		Transporte: biblioteca.TransporteHTTP,
+		URL:        "https://a.test/mcp",
+		Endpoints: []string{
+			"https://a.test/mcp", "https://b.test/mcp", "https://c.test/mcp",
+		},
+	}
+	semEndpoints := biblioteca.Item{
+		Nome: "mcpservers.org/sem-endpoints", Titulo: "Sem Endpoints",
+		Transporte: biblioteca.TransporteSTDIO,
+		Comando:    "npx",
+	}
+	if err := r.Substituir(ctx, []biblioteca.Item{comEndpoints, semEndpoints}, time.Now()); err != nil {
+		t.Fatalf("Substituir: erro = %v, quer nil", err)
+	}
+
+	itens, _, err := r.Buscar(ctx, biblioteca.Filtro{}, 10, 0)
+	if err != nil {
+		t.Fatalf("Buscar: erro = %v, quer nil", err)
+	}
+	var achouCom, achouSem bool
+	for _, i := range itens {
+		switch i.Nome {
+		case comEndpoints.Nome:
+			achouCom = true
+			if len(i.Endpoints) != 3 || i.Endpoints[0] != "https://a.test/mcp" ||
+				i.Endpoints[1] != "https://b.test/mcp" || i.Endpoints[2] != "https://c.test/mcp" {
+				t.Fatalf("Endpoints (Buscar) = %v, quer [a b c] na ordem", i.Endpoints)
+			}
+		case semEndpoints.Nome:
+			achouSem = true
+			if i.Endpoints == nil || len(i.Endpoints) != 0 {
+				t.Fatalf("Endpoints (Buscar) = %#v, quer fatia vazia não nula", i.Endpoints)
+			}
+		}
+	}
+	if !achouCom || !achouSem {
+		t.Fatalf("Buscar não devolveu os dois itens: achouCom=%v achouSem=%v", achouCom, achouSem)
+	}
+
+	// Um segue a mesma regra.
+	um, err := r.Um(ctx, comEndpoints.Nome)
+	if err != nil {
+		t.Fatalf("Um: erro = %v, quer nil", err)
+	}
+	if len(um.Endpoints) != 3 {
+		t.Fatalf("Endpoints (Um) = %v, quer 3", um.Endpoints)
+	}
+	umSem, err := r.Um(ctx, semEndpoints.Nome)
+	if err != nil {
+		t.Fatalf("Um: erro = %v, quer nil", err)
+	}
+	if umSem.Endpoints == nil || len(umSem.Endpoints) != 0 {
+		t.Fatalf("Endpoints (Um) = %#v, quer fatia vazia não nula", umSem.Endpoints)
 	}
 }
 
@@ -266,108 +334,10 @@ func TestUmRecusaNomeQueNaoPodeExistir(t *testing.T) {
 	}
 }
 
-// itensDeTodosOsNamespaces cobre cada forma de nome que o registry publica.
-func itensDeTodosOsNamespaces() []biblioteca.Item {
-	nomes := []string{
-		"com.notion/mcp",                        // domínio verificado
-		"ac.inference.sh/mcp",                   // domínio verificado, com subdomínio
-		"io.github.fulano/servidor",             // conta de GitHub
-		"io.github.MrRefactoring/atlassian-mcp", // conta de GitHub, com maiúscula
-		"io.gitlab.beltrano/servidor",           // conta de GitLab
-		"io.modelcontextprotocol.anonymous/x",   // publicado sem identificação
-	}
-	itens := make([]biblioteca.Item, 0, len(nomes))
-	for _, n := range nomes {
-		itens = append(itens, biblioteca.Item{
-			Nome: n, Titulo: n, Descricao: "servidor de teste",
-			Transporte: biblioteca.TransporteHTTP, URL: "https://exemplo.test/mcp",
-		})
-	}
-	return itens
-}
-
-func TestDominioVerificadoSeparaFornecedorDeContaDeFoundry(t *testing.T) {
-	t.Parallel()
-
-	quer := map[string]bool{
-		"com.notion/mcp":                        true,
-		"ac.inference.sh/mcp":                   true,
-		"io.github.fulano/servidor":             false,
-		"io.github.MrRefactoring/atlassian-mcp": false,
-		"io.gitlab.beltrano/servidor":           false,
-		"io.modelcontextprotocol.anonymous/x":   false,
-	}
-	for _, i := range itensDeTodosOsNamespaces() {
-		if got := i.DominioVerificado(); got != quer[i.Nome] {
-			t.Errorf("DominioVerificado(%q) = %v, quer %v", i.Nome, got, quer[i.Nome])
-		}
-	}
-}
-
-// TestFiltroDeCuradosRecortaAListaCurta prova o filtro que a tela oferece: só o
-// que a curadoria do mcpservers.org escolheu a dedo.
-//
-// Ao contrário do filtro de domínio que existia antes, curado é coluna gravada
-// na sincronização — não há regra derivada do nome escrita em dois lugares para
-// divergir.
-func TestFiltroDeCuradosRecortaAListaCurta(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	r := repoDeTeste(t)
-	itens := itensDeTeste()
-	itens[0].Curado = true
-	itens[0].Autenticacao = biblioteca.AutOAuth
-	if err := r.Substituir(ctx, itens, time.Now()); err != nil {
-		t.Fatalf("Substituir: erro = %v, quer nil", err)
-	}
-
-	curados, total, err := r.Buscar(ctx, biblioteca.Filtro{SoCurados: true}, 100, 0)
-	if err != nil {
-		t.Fatalf("Buscar: erro = %v, quer nil", err)
-	}
-	if total != 1 || len(curados) != 1 || curados[0].Nome != itens[0].Nome {
-		t.Fatalf("curados = %v (total %d), quer só %s", curados, total, itens[0].Nome)
-	}
-	// A autenticação precisa sobreviver à ida e volta do banco: é ela que faz o
-	// formulário abrir com OAuth marcado.
-	if curados[0].Autenticacao != biblioteca.AutOAuth {
-		t.Errorf("Autenticacao = %q, quer %q", curados[0].Autenticacao, biblioteca.AutOAuth)
-	}
-	if !curados[0].Curado {
-		t.Error("Curado voltou falso do banco")
-	}
-}
-
-func TestFiltroDeCuradosSomaComABuscaPorTermo(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	r := repoDeTeste(t)
-	itens := itensDeTeste()
-	itens[0].Curado = true // o Atlassian
-	if err := r.Substituir(ctx, itens, time.Now()); err != nil {
-		t.Fatalf("Substituir: erro = %v, quer nil", err)
-	}
-
-	// O que se prova aqui é que os dois critérios se somam em vez de um
-	// sobrescrever o outro: o Atlassian casa no termo e está marcado como
-	// curado, então sobra ele e mais ninguém.
-	_, comAmbos, err := r.Buscar(ctx,
-		biblioteca.Filtro{Termo: "jira", SoCurados: true}, 10, 0)
-	if err != nil {
-		t.Fatalf("Buscar: erro = %v, quer nil", err)
-	}
-	if comAmbos != 1 {
-		t.Errorf("termo + curados = %d, quer 1", comAmbos)
-	}
-}
-
-// TestCuradosVemPrimeiro: a ordem alfabética sozinha enterrava o que importa.
-// Medido numa varredura de verdade em 2026-09-09, buscar "neon" trazia
-// "br.com.nineoneninetwo/9192" — que casa porque "neon" está dentro de
-// "nineoneninetwo" — antes do Neon curado.
-func TestCuradosVemPrimeiro(t *testing.T) {
+// TestOrdemPorNome: sem curadoria para desempatar, a listagem vem em ordem
+// alfabética de nome — e essa ordem precisa se manter estável mesmo quando
+// mais de um item casa com o termo buscado.
+func TestOrdemPorNome(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -376,7 +346,7 @@ func TestCuradosVemPrimeiro(t *testing.T) {
 		{Nome: "br.com.nineoneninetwo/9192", Titulo: "Nine One Nine Two",
 			Descricao: "algo qualquer", Transporte: biblioteca.TransporteHTTP,
 			URL: "https://a.test/mcp"},
-		{Nome: "mcpservers.org/neon", Titulo: "Neon", Curado: true,
+		{Nome: "mcpservers.org/neon", Titulo: "Neon",
 			Descricao: "Postgres serverless", Transporte: biblioteca.TransporteHTTP,
 			URL: "https://mcp.neon.tech/mcp"},
 	}
@@ -391,8 +361,10 @@ func TestCuradosVemPrimeiro(t *testing.T) {
 	if total != 2 {
 		t.Fatalf("total = %d, quer 2 (os dois casam em 'neon')", total)
 	}
-	if achados[0].Nome != "mcpservers.org/neon" {
-		t.Fatalf("primeiro = %q, quer o curado — a ordem alfabética enterrou o que importa",
+	// "br.com.nineoneninetwo" vem antes de "mcpservers.org/neon" em ordem
+	// alfabética de nome.
+	if achados[0].Nome != "br.com.nineoneninetwo/9192" {
+		t.Fatalf("primeiro = %q, quer br.com.nineoneninetwo/9192 — ordem por nome",
 			achados[0].Nome)
 	}
 }

@@ -128,65 +128,62 @@ templ TelaTrilha(p Pagina) {
 				}
 			} else {
 				@webui.Cartao("") {
-					<div class="overflow-x-auto">
-						<table class="w-full text-left">
-							<caption class="sr-only">Chamadas de ferramenta, da mais recente para a mais antiga</caption>
-							<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
-								<tr>
-									<th scope="col" class="px-3 py-2.5 font-semibold">Quando</th>
-									<th scope="col" class="px-3 py-2.5 font-semibold">Endpoint</th>
-									<th scope="col" class="px-3 py-2.5 font-semibold">MCP</th>
-									<th scope="col" class="px-3 py-2.5 font-semibold">Ferramenta</th>
-									<th scope="col" class="px-3 py-2.5 font-semibold">Resultado</th>
-									<th scope="col" class="px-3 py-2.5 font-semibold">Origem</th>
-									<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Duração</th>
-									<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Entrada</th>
-									<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Saída</th>
-									<th scope="col" class="px-3 py-2.5 font-semibold">Quem chamou</th>
+					@webui.Tabela("Chamadas de ferramenta, da mais recente para a mais antiga") {
+						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+							<tr>
+								<th scope="col" class="px-3 py-2.5 font-semibold">Quando</th>
+								<th scope="col" class="px-3 py-2.5 font-semibold">Endpoint</th>
+								<th scope="col" class="px-3 py-2.5 font-semibold">MCP</th>
+								<th scope="col" class="px-3 py-2.5 font-semibold">Ferramenta</th>
+								<th scope="col" class="px-3 py-2.5 font-semibold">Resultado</th>
+								<th scope="col" class="px-3 py-2.5 font-semibold">Origem</th>
+								<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Duração</th>
+								<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Entrada</th>
+								<th scope="col" class="px-3 py-2.5 font-semibold" data-numero>Saída</th>
+								<th scope="col" class="px-3 py-2.5 font-semibold">Quem chamou</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-borda">
+							for _, e := range p.Eventos {
+								<tr class="align-top transition-colors duration-150 ease-out hover:bg-superficie-alta">
+									<td class="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-conteudo-suave">{ instante(e.Inicio) }</td>
+									<td class="px-3 py-2.5">
+										<code class="font-mono text-xs">{ ouTraco(e.EndpointSlug) }</code>
+									</td>
+									<td class="px-3 py-2.5">{ ouTraco(e.UpstreamNome) }</td>
+									<td class="px-3 py-2.5">
+										<code class="font-mono text-xs text-conteudo">{ ouTraco(e.Ferramenta) }</code>
+										if e.Original != "" && e.Original != e.Ferramenta {
+											<div class="text-xs text-conteudo-tenue">
+												no MCP: <code class="font-mono">{ e.Original }</code>
+											</div>
+										}
+									</td>
+									<td class="px-3 py-2.5">
+										@webui.Selo(tomDoResultado(e.Resultado), e.Resultado.Rotulo())
+										if e.Erro != "" {
+											<div class="mt-1 max-w-[42ch] break-words text-xs text-conteudo-suave">{ e.Erro }</div>
+										}
+									</td>
+									<td class="px-3 py-2.5">
+										@webui.Selo(tomDaOrigem(e.Origem), e.Origem.Rotulo())
+									</td>
+									<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ duracao(e.Duracao) }</td>
+									<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ tamanho(e.BytesEntrada) }</td>
+									<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ tamanho(e.BytesSaida) }</td>
+									<td class="px-3 py-2.5 text-xs text-conteudo-suave">
+										<div>{ ouTraco(e.Credencial) }</div>
+										if e.Sessao != "" {
+											<div class="text-conteudo-tenue">sessão <code class="font-mono">{ e.Sessao }</code></div>
+										}
+										if e.Era != "" {
+											<div class="text-conteudo-tenue">era { e.Era }</div>
+										}
+									</td>
 								</tr>
-							</thead>
-							<tbody class="divide-y divide-borda">
-								for _, e := range p.Eventos {
-									<tr class="align-top transition-colors duration-150 ease-out hover:bg-superficie-alta">
-										<td class="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-conteudo-suave">{ instante(e.Inicio) }</td>
-										<td class="px-3 py-2.5">
-											<code class="font-mono text-xs">{ ouTraco(e.EndpointSlug) }</code>
-										</td>
-										<td class="px-3 py-2.5">{ ouTraco(e.UpstreamNome) }</td>
-										<td class="px-3 py-2.5">
-											<code class="font-mono text-xs text-conteudo">{ ouTraco(e.Ferramenta) }</code>
-											if e.Original != "" && e.Original != e.Ferramenta {
-												<div class="text-xs text-conteudo-tenue">
-													no MCP: <code class="font-mono">{ e.Original }</code>
-												</div>
-											}
-										</td>
-										<td class="px-3 py-2.5">
-											@webui.Selo(tomDoResultado(e.Resultado), e.Resultado.Rotulo())
-											if e.Erro != "" {
-												<div class="mt-1 max-w-[42ch] break-words text-xs text-conteudo-suave">{ e.Erro }</div>
-											}
-										</td>
-										<td class="px-3 py-2.5">
-											@webui.Selo(tomDaOrigem(e.Origem), e.Origem.Rotulo())
-										</td>
-										<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ duracao(e.Duracao) }</td>
-										<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ tamanho(e.BytesEntrada) }</td>
-										<td class="whitespace-nowrap px-3 py-2.5 text-conteudo-suave" data-numero>{ tamanho(e.BytesSaida) }</td>
-										<td class="px-3 py-2.5 text-xs text-conteudo-suave">
-											<div>{ ouTraco(e.Credencial) }</div>
-											if e.Sessao != "" {
-												<div class="text-conteudo-tenue">sessão <code class="font-mono">{ e.Sessao }</code></div>
-											}
-											if e.Era != "" {
-												<div class="text-conteudo-tenue">era { e.Era }</div>
-											}
-										</td>
-									</tr>
-								}
-							</tbody>
-						</table>
-					</div>
+							}
+						</tbody>
+					}
 				}
 				@paginacao(p)
 			}

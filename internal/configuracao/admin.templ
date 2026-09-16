@@ -152,53 +152,51 @@ templ TelaRelatorio(r Relatorio) {
 	}) {
 		<div class="flex max-w-3xl flex-col gap-8">
 			@webui.Cartao("") {
-				<div class="overflow-x-auto">
-					<table class="w-full text-left">
-						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+				@webui.Tabela("Resultado do import, item por item") {
+					<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+						<tr>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Resultado</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Operação</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Item</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-borda">
+						for _, res := range r.Resultados {
 							<tr>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Resultado</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Operação</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Item</th>
+								<td class="px-4 py-3">
+									if res.Erro == "" {
+										@webui.Selo(webui.TomSucesso, "aplicado")
+									} else {
+										@webui.Selo(webui.TomPerigo, "falhou")
+									}
+								</td>
+								<td class="px-4 py-3 text-conteudo-suave">{ string(res.Item.Operacao) }</td>
+								<td class="px-4 py-3">
+									<span class="font-medium">{ res.Item.Nome }</span>
+									<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ res.Item.Tipo }</code>
+									if res.Erro != "" {
+										<p class="text-sm text-perigo">{ res.Erro }</p>
+									}
+								</td>
 							</tr>
-						</thead>
-						<tbody class="divide-y divide-borda">
-							for _, res := range r.Resultados {
-								<tr>
-									<td class="px-4 py-3">
-										if res.Erro == "" {
-											@webui.Selo(webui.TomSucesso, "aplicado")
-										} else {
-											@webui.Selo(webui.TomPerigo, "falhou")
-										}
-									</td>
-									<td class="px-4 py-3 text-conteudo-suave">{ string(res.Item.Operacao) }</td>
-									<td class="px-4 py-3">
-										<span class="font-medium">{ res.Item.Nome }</span>
-										<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ res.Item.Tipo }</code>
-										if res.Erro != "" {
-											<p class="text-sm text-perigo">{ res.Erro }</p>
-										}
-									</td>
-								</tr>
-							}
-							for _, item := range r.Ignorados {
-								<tr>
-									<td class="px-4 py-3">
-										@webui.Selo(tomDaOperacao(item.Operacao), "não aplicado")
-									</td>
-									<td class="px-4 py-3 text-conteudo-suave">{ string(item.Operacao) }</td>
-									<td class="px-4 py-3">
-										<span class="font-medium">{ item.Nome }</span>
-										<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ item.Tipo }</code>
-										if item.Motivo != "" {
-											<p class="text-sm text-conteudo-suave">{ item.Motivo }</p>
-										}
-									</td>
-								</tr>
-							}
-						</tbody>
-					</table>
-				</div>
+						}
+						for _, item := range r.Ignorados {
+							<tr>
+								<td class="px-4 py-3">
+									@webui.Selo(tomDaOperacao(item.Operacao), "não aplicado")
+								</td>
+								<td class="px-4 py-3 text-conteudo-suave">{ string(item.Operacao) }</td>
+								<td class="px-4 py-3">
+									<span class="font-medium">{ item.Nome }</span>
+									<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ item.Tipo }</code>
+									if item.Motivo != "" {
+										<p class="text-sm text-conteudo-suave">{ item.Motivo }</p>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				}
 			}
 			<div>
 				<a href={ templ.SafeURL(webui.RotaConfiguracao) } class="pb-botao pb-botao-primario">Voltar à configuração</a>
@@ -211,41 +209,39 @@ templ tabelaDeItens(itens []Item) {
 	if len(itens) == 0 {
 		<p class="px-4 py-6 text-conteudo-suave">O arquivo não descreve nenhum item.</p>
 	} else {
-		<div class="overflow-x-auto">
-			<table class="w-full text-left">
-				<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+		@webui.Tabela("Itens descritos pelo arquivo, um por linha") {
+			<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+				<tr>
+					<th scope="col" class="px-4 py-2.5 font-semibold">Operação</th>
+					<th scope="col" class="px-4 py-2.5 font-semibold">Item</th>
+				</tr>
+			</thead>
+			<tbody class="divide-y divide-borda">
+				for _, item := range itens {
 					<tr>
-						<th scope="col" class="px-4 py-2.5 font-semibold">Operação</th>
-						<th scope="col" class="px-4 py-2.5 font-semibold">Item</th>
+						<td class="px-4 py-3">
+							@webui.Selo(tomDaOperacao(item.Operacao), string(item.Operacao))
+						</td>
+						<td class="px-4 py-3">
+							<span class="font-medium">{ item.Nome }</span>
+							<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ item.Tipo }</code>
+							if item.Motivo != "" {
+								<p class="text-sm text-conteudo-suave">{ item.Motivo }</p>
+							}
+							for _, d := range item.Divergencias {
+								<p class="text-sm text-conteudo-suave">
+									<code class="font-mono text-xs">{ d.Campo }</code>
+									{ " — arquivo: " }
+									<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs">{ ouTraco(d.NoYAML) }</code>
+									{ " / banco: " }
+									<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs">{ ouTraco(d.NoBanco) }</code>
+								</p>
+							}
+						</td>
 					</tr>
-				</thead>
-				<tbody class="divide-y divide-borda">
-					for _, item := range itens {
-						<tr>
-							<td class="px-4 py-3">
-								@webui.Selo(tomDaOperacao(item.Operacao), string(item.Operacao))
-							</td>
-							<td class="px-4 py-3">
-								<span class="font-medium">{ item.Nome }</span>
-								<code class="ml-2 font-mono text-xs text-conteudo-tenue">{ item.Tipo }</code>
-								if item.Motivo != "" {
-									<p class="text-sm text-conteudo-suave">{ item.Motivo }</p>
-								}
-								for _, d := range item.Divergencias {
-									<p class="text-sm text-conteudo-suave">
-										<code class="font-mono text-xs">{ d.Campo }</code>
-										{ " — arquivo: " }
-										<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs">{ ouTraco(d.NoYAML) }</code>
-										{ " / banco: " }
-										<code class="rounded bg-superficie-alta px-1.5 py-0.5 font-mono text-xs">{ ouTraco(d.NoBanco) }</code>
-									</p>
-								}
-							</td>
-						</tr>
-					}
-				</tbody>
-			</table>
-		</div>
+				}
+			</tbody>
+		}
 	}
 }
 

@@ -55,27 +55,22 @@ func (s Sincronizacao) Idade() time.Duration {
 
 // colunas é a projeção usada em toda leitura, para as duas consultas lerem os
 // campos na mesma ordem.
-const colunas = `nome, titulo, descricao, versao, transporte, url, comando, args,
-	pede_credencial, site, autenticacao, curado`
+const colunas = `nome, titulo, descricao, transporte, url, endpoints, comando, args,
+	pede_credencial, site, autenticacao`
 
 // Filtro é o que a tela pede ao catálogo.
 //
-// Struct e não mais parâmetros soltos porque já são dois critérios que andam
-// juntos em toda consulta — o termo e o recorte de origem —, e um terceiro
-// parâmetro string ao lado de dois ints é onde a chamada errada passa a
-// compilar.
+// Struct e não parâmetro solto: um parâmetro string a mais ao lado de limite e
+// deslocamento, ambos int, é onde a chamada errada passa a compilar sem
+// ninguém notar.
 type Filtro struct {
 	// Termo é a busca livre, sobre nome, título e descrição.
 	Termo string
-	// SoCurados deixa passar só o que está na lista de remotos do
-	// mcpservers.org — a curadoria feita a dedo, e o sinal de confiança mais
-	// forte que a biblioteca tem.
-	SoCurados bool
 }
 
 // Vazio diz se o filtro deixa passar o catálogo inteiro.
 func (f Filtro) Vazio() bool {
-	return strings.TrimSpace(f.Termo) == "" && !f.SoCurados
+	return strings.TrimSpace(f.Termo) == ""
 }
 
 // Buscar devolve uma página do catálogo local, filtrada pelo termo.
@@ -102,17 +97,11 @@ func (r *RepositorioSQLite) Buscar(
 		return nil, 0, nil
 	}
 
-	// Curados primeiro, depois por nome.
+	// Por nome.
 	//
 	// A ordem precisa ser estável — sem ORDER BY, duas páginas seguidas podem
-	// repetir e pular linhas — e o nome sozinho enterrava o que importa: medido
-	// numa varredura de verdade em 2026-09-09, buscar "neon" trazia
-	// "br.com.nineoneninetwo/9192" antes do Neon, porque "neon" está dentro de
-	// "nineoneninetwo" e o b vem antes do m de "mcpservers.org/neon".
+	// repetir e pular linhas.
 	//
-	// Relevância de texto exigiria pontuação que o LIKE não dá. Curadoria é a
-	// aproximação honesta: são algumas centenas escolhidas a dedo contra dezenas
-	// de milhares auto-publicadas, e quem busca quase sempre quer uma delas.
 	// O gosec marca as duas consultas acima e abaixo como SQL montado por
 	// concatenação. Os pedaços concatenados são constantes deste arquivo:
 	// colunas é literal, e onde vem de filtroDe, que só emite "busca LIKE ?"
@@ -122,7 +111,7 @@ func (r *RepositorioSQLite) Buscar(
 	//nolint:gosec // ver o parágrafo acima: nada de fora entra na consulta
 	linhas, err := r.leitura.QueryContext(ctx,
 		"SELECT "+colunas+" FROM biblioteca_servidor"+onde+
-			" ORDER BY curado DESC, nome LIMIT ? OFFSET ?",
+			" ORDER BY nome LIMIT ? OFFSET ?",
 		append(args, limite, deslocamento)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("biblioteca: listar: %w", err)
@@ -163,18 +152,25 @@ type escaneavel interface{ Scan(dest ...any) error }
 
 func lerLinha(l escaneavel) (Item, error) {
 	var i Item
-	var args string
-	var pede, curado int
-	if err := l.Scan(&i.Nome, &i.Titulo, &i.Descricao, &i.Versao,
-		&i.Transporte, &i.URL, &i.Comando, &args, &pede, &i.Site,
-		&i.Autenticacao, &curado); err != nil {
+	var endpoints, args string
+	var pede int
+	if err := l.Scan(&i.Nome, &i.Titulo, &i.Descricao,
+		&i.Transporte, &i.URL, &endpoints, &i.Comando, &args, &pede, &i.Site,
+		&i.Autenticacao); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Item{}, err
 		}
 		return Item{}, fmt.Errorf("biblioteca: ler servidor: %w", err)
 	}
 	i.PedeCredencial = pede != 0
-	i.Curado = curado != 0
+	i.Endpoints = []string{}
+	if endpoints != "" && endpoints != "[]" {
+		if err := json.Unmarshal([]byte(endpoints), &i.Endpoints); err != nil {
+			// Mesmo raciocínio de args logo abaixo: endpoints ilegível é linha
+			// que este código gravou e não sabe mais ler.
+			return Item{}, fmt.Errorf("biblioteca: endpoints de %s: %w", i.Nome, err)
+		}
+	}
 	if args != "" {
 		if err := json.Unmarshal([]byte(args), &i.Args); err != nil {
 			// Args ilegível é linha que este código gravou e não sabe mais ler.
@@ -199,12 +195,6 @@ func filtroDe(f Filtro) (string, []any) {
 		args = append(args, "%"+escaparLike(c)+"%")
 	}
 
-	if f.SoCurados {
-		// Coluna gravada na sincronização, e não regra derivada do nome: a
-		// curadoria vem de outra origem, e não há como inferi-la daqui.
-		condicoes = append(condicoes, "curado = 1")
-	}
-
 	if len(condicoes) == 0 {
 		return "", nil
 	}
@@ -219,9 +209,10 @@ func escaparLike(s string) string {
 // Substituir troca o catálogo inteiro pelo que a varredura trouxe.
 //
 // Troca e não mescla, numa transação só. Mesclar deixaria para sempre o
-// servidor que saiu do registry — e um servidor que saiu de lá saiu por algum
-// motivo, quase sempre porque o endpoint morreu. Com a troca inteira, o
-// catálogo local é sempre uma foto de uma varredura, nunca a soma de várias.
+// servidor que saiu do catálogo oficial — e um servidor que saiu de lá saiu
+// por algum motivo, quase sempre porque o endpoint morreu. Com a troca
+// inteira, o catálogo local é sempre uma foto de uma varredura, nunca a soma
+// de várias.
 //
 // Como é uma transação só, quem estiver lendo a tela durante a troca continua
 // vendo a foto anterior inteira, e passa a ver a nova inteira. Não existe
@@ -246,9 +237,9 @@ func (r *RepositorioSQLite) Substituir(ctx context.Context, itens []Item, quando
 	}
 	inserir, err := tx.PrepareContext(ctx, `
 		INSERT INTO biblioteca_servidor
-			(nome, titulo, descricao, versao, transporte, url, comando, args,
-			 pede_credencial, site, autenticacao, curado, busca)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+			(nome, titulo, descricao, transporte, url, endpoints, comando, args,
+			 pede_credencial, site, autenticacao, busca)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("biblioteca: preparar inserção: %w", err)
 	}
@@ -256,14 +247,22 @@ func (r *RepositorioSQLite) Substituir(ctx context.Context, itens []Item, quando
 
 	gravados := 0
 	for _, i := range itens {
+		endpoints := i.Endpoints
+		if endpoints == nil {
+			endpoints = []string{}
+		}
+		endpointsJSON, err := json.Marshal(endpoints)
+		if err != nil {
+			return fmt.Errorf("biblioteca: endpoints de %s: %w", i.Nome, err)
+		}
 		args, err := json.Marshal(i.Args)
 		if err != nil {
 			return fmt.Errorf("biblioteca: args de %s: %w", i.Nome, err)
 		}
 		if _, err := inserir.ExecContext(ctx,
-			i.Nome, i.Titulo, i.Descricao, i.Versao, i.Transporte, i.URL,
+			i.Nome, i.Titulo, i.Descricao, i.Transporte, i.URL, string(endpointsJSON),
 			i.Comando, string(args), booleano(i.PedeCredencial), i.Site,
-			i.Autenticacao, booleano(i.Curado), textoDeBusca(i),
+			i.Autenticacao, textoDeBusca(i),
 		); err != nil {
 			return fmt.Errorf("biblioteca: gravar %s: %w", i.Nome, err)
 		}

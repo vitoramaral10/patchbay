@@ -22,14 +22,10 @@ func rotaDeAdicionar(nome string) string {
 // resumoDaPagina descreve em uma linha o que está sendo mostrado.
 func resumoDaPagina(p Pagina) string {
 	total := strconv.Itoa(p.Total)
-	recorte := " no catálogo"
-	if p.Filtro.SoCurados {
-		recorte = " curados"
-	}
 	if p.Filtro.Termo != "" {
-		return total + " servidores" + recorte + " para " + strconv.Quote(p.Filtro.Termo)
+		return total + " servidores no catálogo para " + strconv.Quote(p.Filtro.Termo)
 	}
-	return total + " servidores" + recorte
+	return total + " servidores no catálogo"
 }
 
 // idadeDoCatalogo diz de quando é o que está na tela.
@@ -53,12 +49,39 @@ func idadeDoCatalogo(e Sincronizacao) string {
 	}
 }
 
+// horaDaTentativa é quando a última varredura foi tentada, em hora de parede.
+//
+// Hora de parede e não "há X" porque ao lado vem o motivo do erro: o admin
+// cruza isso com log ou com quando ele mesmo pediu para tentar de novo, e para
+// isso precisa do instante exato, não de quanto tempo faz.
+func horaDaTentativa(e Sincronizacao) string {
+	return e.TentadaEm.Local().Format("02/01/2006 15:04:05")
+}
+
 // linhaDaConexao é o que o cartão mostra sobre como o servidor é alcançado.
 func linhaDaConexao(i Item) string {
 	if i.Remoto() {
 		return i.URL
 	}
 	return strings.TrimSpace(i.Comando + " " + strings.Join(i.Args, " "))
+}
+
+// rotaDeAdicionarComEndpoint é o link "Adicionar" de um endpoint específico,
+// entre os vários que a página do servidor publicou (D-07). O índice é o da
+// posição em Endpoints, base 0 — a rota lê de volta em adicionar().
+func rotaDeAdicionarComEndpoint(nome string, indice int) string {
+	return rotaDeAdicionar(nome) + "?endpoint=" + strconv.Itoa(indice)
+}
+
+// slugDoServidor é o trecho do Nome que identifica a página do servidor em
+// mcpservers.org/pt-BR/servers/. Vazio quando o Nome não segue o padrão
+// "mcpservers.org/<slug>" — aí não há link a mostrar.
+func slugDoServidor(i Item) string {
+	const prefixo = "mcpservers.org/"
+	if !strings.HasPrefix(i.Nome, prefixo) {
+		return ""
+	}
+	return strings.TrimPrefix(i.Nome, prefixo)
 }
 
 // rotuloDoTransporte é o transporte em palavra de gente.
@@ -77,7 +100,7 @@ func rotuloDoTransporte(i Item) string {
 templ TelaBiblioteca(p Pagina) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "Biblioteca",
-		Subtitulo: "Servidores MCP publicados no registry oficial do Model Context Protocol. Adicionar abre o formulário de MCP preenchido com endpoint e transporte — você confere e salva.",
+		Subtitulo: "Servidores MCP da lista oficial do mcpservers.org. Adicionar abre o formulário de MCP preenchido com o que a página do servidor publica — você confere e salva.",
 		Secao:     webui.SecaoBiblioteca,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Alerta:    p.Alerta,
@@ -108,21 +131,6 @@ templ TelaBiblioteca(p Pagina) {
 						/>
 						<button type="submit" class="pb-botao pb-botao-secundario">Buscar</button>
 					</div>
-					<label class="flex items-start gap-2 text-sm text-conteudo">
-						<input
-							type="checkbox"
-							name="curados"
-							value="1"
-							checked?={ p.Filtro.SoCurados }
-							class="mt-0.5"
-						/>
-						<span>
-							Só oficiais
-							<span class="block text-conteudo-tenue">
-								Os servidores remotos que o mcpservers.org escolhe a dedo — algumas centenas, contra as dezenas de milhares que o registry aceita de quem provar o namespace. São também os únicos que declaram a forma de autenticação, e por isso os únicos que abrem o formulário já com OAuth marcado.
-							</span>
-						</span>
-					</label>
 					<p id="q-ajuda" class="text-sm text-conteudo-tenue">
 						A busca procura no nome e na descrição da cópia local — por isso é instantânea. O catálogo é publicado em inglês; termo em português costuma não achar nada.
 					</p>
@@ -149,7 +157,7 @@ templ estadoDoCatalogo(p Pagina) {
 				<span class="text-conteudo-tenue">— { strconv.Itoa(p.Estado.Servidores) } servidores na última varredura</span>
 			}
 			if p.Estado.Erro != "" {
-				<span class="text-conteudo-tenue">— a última tentativa não terminou</span>
+				<span class="text-conteudo-tenue">— a última tentativa, em { horaDaTentativa(p.Estado) }, não terminou: { p.Estado.Erro }</span>
 			}
 		</p>
 		<form method="post" action={ templ.SafeURL(webui.RotaBiblioteca + "/atualizar") }>
@@ -171,7 +179,7 @@ templ Resultados(p Pagina) {
 		if len(p.Itens) == 0 {
 			if p.CatalogoVazio() {
 				@aviso("O catálogo ainda está sendo baixado.",
-					"Esta é a primeira varredura do registry: são cerca de trezentas páginas, e leva uns quinze minutos. Recarregue daqui a pouco — ou cadastre o MCP à mão, que funciona desde já.")
+					"Esta é a primeira varredura da lista oficial do mcpservers.org: são 22 páginas de índice e cerca de 650 páginas de detalhe, com pausa entre elas, e leva de 20 a 35 minutos. Recarregue daqui a pouco — ou cadastre o MCP à mão, que funciona desde já.")
 			} else {
 				@aviso("Nenhum servidor com esse termo.",
 					"A busca é sobre o nome e a descrição, e o catálogo é escrito em inglês. Se o que você quer não está aqui, cadastre o MCP à mão.")
@@ -194,21 +202,37 @@ templ cartaoDoServidor(i Item) {
 		<div class="flex flex-col gap-1">
 			<div class="flex flex-wrap items-baseline gap-2">
 				<h3 class="text-base font-semibold text-conteudo">{ i.Titulo }</h3>
-				if i.Curado {
-					@webui.Selo(webui.TomSucesso, "curado")
-				} else if i.DominioVerificado() {
-					@webui.Selo(webui.TomInfo, "domínio verificado")
-				}
 				<span class="text-xs text-conteudo-tenue">{ rotuloDoTransporte(i) }</span>
-				if i.Versao != "" {
-					<span class="text-xs text-conteudo-tenue">v{ i.Versao }</span>
-				}
 			</div>
 			<p class="text-xs text-conteudo-tenue">{ i.Nome }</p>
 			if i.Descricao != "" {
 				<p class="text-sm text-conteudo-suave">{ i.Descricao }</p>
 			}
-			<p class="break-all text-xs text-conteudo-tenue">{ linhaDaConexao(i) }</p>
+			if i.Remoto() || linhaDaConexao(i) != "" {
+				<p class="break-all text-xs text-conteudo-tenue">{ linhaDaConexao(i) }</p>
+			} else {
+				<p class="text-xs text-conteudo-tenue">
+					a página deste servidor não publica comando nem endpoint reconhecível — abra a página e cadastre à mão
+				</p>
+				if slug := slugDoServidor(i); slug != "" {
+					<a
+						href={ templ.SafeURL("https://mcpservers.org/pt-BR/servers/" + slug) }
+						target="_blank"
+						rel="noreferrer noopener"
+						class="pb-link text-xs"
+					>Abrir a página do servidor</a>
+				}
+			}
+			if len(i.Endpoints) > 1 {
+				<ul class="flex flex-col gap-1">
+					for idx, ep := range i.Endpoints {
+						<li class="flex flex-wrap items-center gap-2 text-xs text-conteudo-tenue">
+							<span class="break-all">{ ep }</span>
+							<a href={ templ.SafeURL(rotaDeAdicionarComEndpoint(i.Nome, idx)) } class="pb-link">Adicionar</a>
+						</li>
+					}
+				</ul>
+			}
 			if i.PedeCredencial {
 				<p class="text-xs text-conteudo-suave">A origem declara que este servidor exige credencial.</p>
 			}
@@ -287,9 +311,9 @@ templ aviso(titulo, texto string) {
 // verificados pelo patchbay.
 templ rodapeDaOrigem() {
 	<p class="text-sm text-conteudo-tenue">
-		Cópia local do
-		<a href="https://registry.modelcontextprotocol.io" target="_blank" rel="noreferrer noopener" class="pb-link">registry.modelcontextprotocol.io</a>,
-		o registry oficial do Model Context Protocol, refeita a cada 12 horas.
+		Cópia local da lista oficial em
+		<a href="https://mcpservers.org/pt-BR/official" target="_blank" rel="noreferrer noopener" class="pb-link">mcpservers.org/pt-BR/official</a>,
+		refeita a cada 12 horas.
 		As URLs e os comandos são de terceiros e não foram verificados pelo patchbay — confira antes de salvar.
 	</p>
 }

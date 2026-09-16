@@ -96,52 +96,50 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 			}
 		} else {
 			@webui.Cartao("") {
-				<div class="overflow-x-auto">
-					<table class="w-full text-left">
-						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
-							<tr>
-								<th scope="col" class="px-4 py-2.5 font-semibold">MCP</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Estado</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Ferramentas</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Endpoints</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold">Próxima tentativa</th>
-								<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Timeout</th>
+				@webui.Tabela("MCPs cadastrados, com estado da sessão e ferramentas") {
+					<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+						<tr>
+							<th scope="col" class="px-4 py-2.5 font-semibold">MCP</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Estado</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Ferramentas</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Endpoints</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold">Próxima tentativa</th>
+							<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Timeout</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-borda">
+						for _, l := range linhas {
+							<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
+								<td class="px-4 py-3">
+									<a href={ templ.SafeURL(rotaDo(l.ID)) } class="pb-link font-medium">{ l.Nome }</a>
+									<p class="mt-0.5 flex items-center gap-2">
+										@webui.Selo(webui.TomNeutro, rotuloDoTipo(l.Tipo))
+									</p>
+									<p class="max-w-[48ch] truncate font-mono text-xs text-conteudo-tenue" title={ l.Descricao() }>{ l.Descricao() }</p>
+								</td>
+								<td class="px-4 py-3">
+									@webui.Selo(tomDoEstado(l.Estado, l.Habilitado, l.Supervisionado),
+										rotuloDoEstado(l.Estado, l.Habilitado, l.Supervisionado))
+									if l.UltimoErro != "" {
+										<p class="mt-1 max-w-[40ch] truncate text-xs text-perigo" title={ l.UltimoErro }>{ l.UltimoErro }</p>
+									}
+								</td>
+								<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Ferramentas) }</td>
+								<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Endpoints) }</td>
+								<td class="px-4 py-3 text-sm text-conteudo-suave">
+									{ proximaTentativa(l.ProximaEm) }
+									if l.Abandonos > 0 {
+										<p class="mt-1 text-xs text-conteudo-tenue">{ strconv.Itoa(l.Abandonos) } connect(s) abandonado(s)</p>
+									}
+									if l.AbandonosTotais > l.Abandonos {
+										<p class="text-xs text-conteudo-tenue">{ strconv.Itoa(l.AbandonosTotais) } no total</p>
+									}
+								</td>
+								<td class="px-4 py-3" data-numero>{ strconv.FormatInt(l.TimeoutMS, 10) } ms</td>
 							</tr>
-						</thead>
-						<tbody class="divide-y divide-borda">
-							for _, l := range linhas {
-								<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
-									<td class="px-4 py-3">
-										<a href={ templ.SafeURL(rotaDo(l.ID)) } class="pb-link font-medium">{ l.Nome }</a>
-										<p class="mt-0.5 flex items-center gap-2">
-											@webui.Selo(webui.TomNeutro, rotuloDoTipo(l.Tipo))
-										</p>
-										<p class="max-w-[48ch] truncate font-mono text-xs text-conteudo-tenue" title={ l.Descricao() }>{ l.Descricao() }</p>
-									</td>
-									<td class="px-4 py-3">
-										@webui.Selo(tomDoEstado(l.Estado, l.Habilitado, l.Supervisionado),
-											rotuloDoEstado(l.Estado, l.Habilitado, l.Supervisionado))
-										if l.UltimoErro != "" {
-											<p class="mt-1 max-w-[40ch] truncate text-xs text-perigo" title={ l.UltimoErro }>{ l.UltimoErro }</p>
-										}
-									</td>
-									<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Ferramentas) }</td>
-									<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Endpoints) }</td>
-									<td class="px-4 py-3 text-sm text-conteudo-suave">
-										{ proximaTentativa(l.ProximaEm) }
-										if l.Abandonos > 0 {
-											<p class="mt-1 text-xs text-conteudo-tenue">{ strconv.Itoa(l.Abandonos) } connect(s) abandonado(s)</p>
-										}
-										if l.AbandonosTotais > l.Abandonos {
-											<p class="text-xs text-conteudo-tenue">{ strconv.Itoa(l.AbandonosTotais) } no total</p>
-										}
-									</td>
-									<td class="px-4 py-3" data-numero>{ strconv.FormatInt(l.TimeoutMS, 10) } ms</td>
-								</tr>
-							}
-						</tbody>
-					</table>
-				</div>
+						}
+					</tbody>
+				}
 			}
 		}
 	}
@@ -312,43 +310,41 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 						}
 					</p>
 				} else {
-					<div class="overflow-x-auto">
-						<table class="w-full text-left">
-							<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+					@webui.Tabela("Ferramentas deste MCP, com o nome exposto ao cliente") {
+						<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+							<tr>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Nome exposto</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Nome no MCP</th>
+								<th scope="col" class="px-4 py-2.5 font-semibold">Descrição</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-borda">
+							for _, f := range d.Ferramentas {
 								<tr>
-									<th scope="col" class="px-4 py-2.5 font-semibold">Nome exposto</th>
-									<th scope="col" class="px-4 py-2.5 font-semibold">Nome no MCP</th>
-									<th scope="col" class="px-4 py-2.5 font-semibold">Descrição</th>
+									<td class="px-4 py-3 align-top">
+										<code class="font-mono text-sm">{ f.NomeExposto }</code>
+										if len(f.Avisos) > 0 {
+											<p class="mt-1 flex flex-wrap gap-1">
+												for _, aviso := range f.Avisos {
+													@webui.Selo(webui.TomAlerta, strings.ReplaceAll(aviso, "_", " "))
+												}
+											</p>
+										}
+									</td>
+									<td class="px-4 py-3 align-top">
+										<code class="font-mono text-sm text-conteudo-suave">{ f.NomeOriginal }</code>
+									</td>
+									<td class="max-w-[60ch] px-4 py-3 align-top text-conteudo-suave">
+										if f.Descricao == "" {
+											<span class="text-conteudo-tenue">sem descrição</span>
+										} else {
+											{ f.Descricao }
+										}
+									</td>
 								</tr>
-							</thead>
-							<tbody class="divide-y divide-borda">
-								for _, f := range d.Ferramentas {
-									<tr>
-										<td class="px-4 py-3 align-top">
-											<code class="font-mono text-sm">{ f.NomeExposto }</code>
-											if len(f.Avisos) > 0 {
-												<p class="mt-1 flex flex-wrap gap-1">
-													for _, aviso := range f.Avisos {
-														@webui.Selo(webui.TomAlerta, strings.ReplaceAll(aviso, "_", " "))
-													}
-												</p>
-											}
-										</td>
-										<td class="px-4 py-3 align-top">
-											<code class="font-mono text-sm text-conteudo-suave">{ f.NomeOriginal }</code>
-										</td>
-										<td class="max-w-[60ch] px-4 py-3 align-top text-conteudo-suave">
-											if f.Descricao == "" {
-												<span class="text-conteudo-tenue">sem descrição</span>
-											} else {
-												{ f.Descricao }
-											}
-										</td>
-									</tr>
-								}
-							</tbody>
-						</table>
-					</div>
+							}
+						</tbody>
+					}
 				}
 			}
 			@cartaoSonda(d)
@@ -655,7 +651,7 @@ templ acoesDoDetalhe(d Detalhe) {
 				hx-post={ rotaDo(d.ID) + "/sondar" }
 				hx-disabled-elt="find button"
 			>
-				<button type="submit" class="pb-botao pb-botao-secundario">Sondar agora</button>
+				@webui.BotaoAcao("pb-botao-secundario", "Sondar agora", "Sondando…")
 			</form>
 		}
 		if d.Habilitado {
@@ -665,7 +661,7 @@ templ acoesDoDetalhe(d Detalhe) {
 				hx-post={ rotaDo(d.ID) + "/reconectar" }
 				hx-disabled-elt="find button"
 			>
-				<button type="submit" class="pb-botao pb-botao-secundario">Reconectar</button>
+				@webui.BotaoAcao("pb-botao-secundario", "Reconectar", "Reconectando…")
 			</form>
 		}
 		<form
@@ -675,7 +671,7 @@ templ acoesDoDetalhe(d Detalhe) {
 			hx-confirm={ avisoDeRemocao(d) }
 			hx-disabled-elt="find button"
 		>
-			<button type="submit" class="pb-botao pb-botao-perigo">Remover</button>
+			@webui.BotaoAcao("pb-botao-perigo", "Remover", "Removendo…")
 		</form>
 		<a href={ templ.SafeURL(rotaDo(d.ID) + "/editar") } class="pb-botao pb-botao-primario">Editar</a>
 	</div>
