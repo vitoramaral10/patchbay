@@ -322,8 +322,9 @@ Quase todo servidor MCP publica a instalação como uma linha só:
 
 Transcrever essa linha para o formulário é trabalho mecânico com quatro chances
 de errar — transporte, URL, nome do header e token —, e nenhum dos quatro dá
-erro de formulário: dá MCP degradado depois. Em `/admin/mcps`, **Colar comando
-de instalação** troca isso por um Ctrl+V.
+erro de formulário: dá MCP degradado depois. A caixa no topo de `/admin/mcps`
+troca isso por um Ctrl+V: cole a linha, clique em **Criar MCP**, e o cadastro
+existe.
 
 O que o patchbay lê: `--transport` (e, quando ele falta, o formato do destino
 decide), `--header`, `--env`, `--scope`, o `--` que separa as opções do processo
@@ -352,22 +353,27 @@ dias depois como 401 sem ninguém lembrar do cadastro. Marcador entre colchetes
 ou sinais, `${VARIAVEL}` e valor começando em `your` param na tela de colar, com
 o pedido de trocar pelo token de verdade.
 
-### Colar, conferir, criar
+### Colar e criar, num passo
 
-O clique em **Ler o comando** não grava nada: ele mostra o cadastro que o
-comando descreve — nome, transporte, destino, timeout e *quais* credenciais
-vieram — e só o botão seguinte escreve. A conferência é o mesmo desenho do
-import de YAML, e existe principalmente pelo caso STDIO: um `npx -y algo`
-copiado de um README que ninguém leu não pode virar processo filho do patchbay
-sem alguém ver o que ele executa. Nesse caso a tela ainda abre com um alerta
-dizendo isso.
+Até 2026-09-16 havia uma tela de conferência no meio: o comando era lido, o
+cadastro aparecia como resumo, e só o botão seguinte gravava. Ela saiu por
+decisão do dono — colar e salvar. Hoje o POST da caixa lê, valida, cria e
+redireciona para o MCP recém-nascido.
 
-Entre as duas telas, **o comando fica guardado no processo**, e para o navegador
-vai só um identificador opaco, válido uma vez e por quinze minutos. É o que
-permite mostrar a conferência sem pôr o token do `--header` dentro de um HTML —
-a mesma regra que faz o formulário nunca reexibir credencial gravada. A caixa de
-colar é a única exceção, e deliberada: quando a leitura falha, o comando volta
-para ela, porque corrigir o token exige tê-lo ali para editar.
+**O que a conferência protegia, e agora depende de quem cola:** um comando STDIO
+(`npx -y algum-mcp`) vira processo filho do patchbay, com o usuário deste
+processo, reiniciado pela supervisão sempre que cair. Não há mais tela pedindo
+confirmação antes disso — a caixa avisa, e a linha colada é executada. Para MCP
+remoto (http e sse) não há essa consequência: o que se cria é uma URL e, quando
+o comando traz, uma credencial cifrada.
+
+O que o resumo dizia e continua sendo dito: os **ajustes** — `--scope` ignorado,
+`--env` que foi inteiro para o bloco cifrado — viajam até a tela do MCP criado
+num identificador opaco, válido uma vez e por cinco minutos, e aparecem no
+alerta do topo. O comando em si nunca volta ao navegador, porque ele carrega o
+token literal. A caixa de colar é a única exceção, e deliberada: quando a
+leitura falha, o comando volta para ela, porque corrigir o token exige tê-lo ali
+para editar.
 
 Quem grava é o caminho de sempre — a mesma validação do formulário, o mesmo
 `Criar` que cifra bearer, headers e variáveis na transação do `INSERT`, o mesmo
