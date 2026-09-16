@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -247,4 +248,84 @@ func obter(t *testing.T, cliente *http.Client, rota string) string {
 		t.Fatalf("status de %s = %d, quer 200 (corpo: %s)", rota, resp.StatusCode, corpo)
 	}
 	return string(corpo)
+}
+
+// TestAdmin_ColarDescobreModoOAuth cobre o buraco que o comando de instalação
+// tem por natureza: ele não diz nada sobre autenticação.
+//
+// Sem a descoberta, todo MCP remoto colado nascia em modo estática — o padrão
+// de ModoEfetivo —, e um servidor OAuth cadastrado assim nunca chega ao fluxo
+// de consentimento: ele fica tomando 401 em laço, sem botão de Autorizar na
+// tela, porque o transporte sai sem OAuthHandler.
+//
+// O servidor do teste publica o documento do RFC 9728 no caminho derivado, que
+// é o que a Cloudflare e a Canva publicam de verdade.
+func TestAdmin_ColarDescobreModoOAuth(t *testing.T) {
+	t.Parallel()
+
+	const metadado = "/.well-known/oauth-protected-resource/mcp"
+	recurso := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != metadado {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"resource":"` + r.Host + `","authorization_servers":["https://as.test"]}`))
+	}))
+	t.Cleanup(recurso.Close)
+
+	a := novoAmbiente(t, func(string) []upstream.Form { return nil }, opcoesAmbiente{})
+	cliente := clienteSemSeguir()
+
+	destino := localDoRedirecionamento(t, cliente, a.admin.URL+webui.RotaUpstreams+rotaColar,
+		url.Values{"comando": {"npx add-mcp '" + recurso.URL + "/mcp'"}})
+
+	regs, err := a.repo.Todos(context.Background())
+	if err != nil {
+		t.Fatalf("todos: erro = %v, quer nil", err)
+	}
+	if len(regs) != 1 {
+		t.Fatalf("upstreams gravados = %d, quer 1", len(regs))
+	}
+	if got := regs[0].ModoEfetivo(); got != upstream.ModoOAuth {
+		t.Fatalf("modo gravado = %q, quer oauth", got)
+	}
+
+	// A troca de modo não pode ser silenciosa: ela aparece na tela do MCP
+	// recém-criado, pela mesma guarda de notas dos outros ajustes do comando.
+	tela := obter(t, cliente, a.admin.URL+destino)
+	if !strings.Contains(tela, "OAuth") {
+		t.Errorf("a tela do MCP não diz que o modo virou OAuth; corpo = %s", tela)
+	}
+}
+
+// TestAdmin_ColarSemMetadadosSegueEstatica é o contrário do teste acima, e o que
+// impede a descoberta de virar palpite: servidor que não publica nada continua
+// nascendo em estática, que é o cadastro que o admin termina preenchendo o
+// bearer.
+func TestAdmin_ColarSemMetadadosSegueEstatica(t *testing.T) {
+	t.Parallel()
+
+	mudo := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(mudo.Close)
+
+	a := novoAmbiente(t, func(string) []upstream.Form { return nil }, opcoesAmbiente{})
+	cliente := clienteSemSeguir()
+
+	corpo, status := postar(t, cliente, a.admin.URL+webui.RotaUpstreams+rotaColar,
+		url.Values{"comando": {"npx add-mcp '" + mudo.URL + "/mcp'"}})
+	if status != http.StatusSeeOther {
+		t.Fatalf("status de colar = %d, quer 303 (corpo: %s)", status, corpo)
+	}
+
+	regs, err := a.repo.Todos(context.Background())
+	if err != nil {
+		t.Fatalf("todos: erro = %v, quer nil", err)
+	}
+	if len(regs) != 1 {
+		t.Fatalf("upstreams gravados = %d, quer 1", len(regs))
+	}
+	if got := regs[0].ModoEfetivo(); got != upstream.ModoEstatica {
+		t.Errorf("modo gravado = %q, quer estatica", got)
+	}
 }
