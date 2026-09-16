@@ -91,7 +91,7 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 	}) {
 		if len(linhas) == 0 {
 			@webui.Vazio("Nenhum MCP ainda.",
-				"Cadastre o primeiro servidor MCP que o patchbay vai agregar: um servidor Streamable HTTP, um servidor SSE legado, ou um processo local que fala MCP pelo stdin e stdout.") {
+				"Cadastre o primeiro servidor MCP que o patchbay vai agregar: um servidor Streamable HTTP, um servidor SSE legado, ou um processo local que fala MCP pelo stdin e stdout. Se a documentação dele publica uma linha de instalação do claude mcp add, cole-a e o patchbay preenche o cadastro.") {
 				@botaoNovo()
 			}
 		} else {
@@ -145,16 +145,23 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta) {
 	}
 }
 
-// botaoNovo oferece os três tipos como ações separadas.
+// botaoNovo oferece os três tipos como ações separadas, mais o atalho de colar
+// o comando de instalação.
 //
 // O tipo é escolhido aqui e não dentro do formulário porque ele não muda depois:
 // HTTP, SSE e STDIO pedem campos diferentes, e um formulário com os três
 // conjuntos ao mesmo tempo obrigaria o admin a adivinhar quais valem.
+//
+// Colar o comando é a ação primária, e os três tipos ficam secundários: quase
+// todo servidor MCP publica a instalação como uma linha de `claude mcp add`, e
+// transcrever aquela linha campo a campo é onde nascem o transporte errado e o
+// header com nome trocado. Quem não tem o comando continua com os três botões.
 templ botaoNovo() {
-	<div class="flex items-center gap-2">
+	<div class="flex flex-wrap items-center gap-2">
 		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoSTDIO) } class="pb-botao pb-botao-secundario">Novo processo STDIO</a>
 		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoSSE) } class="pb-botao pb-botao-secundario">Novo MCP SSE</a>
-		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoHTTP) } class="pb-botao pb-botao-primario">Novo MCP HTTP</a>
+		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoHTTP) } class="pb-botao pb-botao-secundario">Novo MCP HTTP</a>
+		<a href={ templ.SafeURL(rotaImportar()) } class="pb-botao pb-botao-primario">Colar comando de instalação</a>
 	</div>
 }
 

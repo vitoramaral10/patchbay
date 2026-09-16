@@ -51,6 +51,20 @@ linters:
       - linters: [contextcheck]
         text: "should pass the context parameter"
         source: "webui.Renderizar"
+      # A mesma falsa positiva, um salto adiante: as duas ajudantes de
+      # comando_http.go renderizam pelo webui.Renderizar, e o contextcheck
+      # atravessa as closures do templ e aponta a linha que as chama, não a do
+      # Renderizar — que a exclusão acima já cobre.
+      - linters: [contextcheck]
+        text: "should pass the context parameter"
+        source: 'a\.(recusar|textoDoPedido)\('
+      # comando.go devolve erro que é texto de tela: a caixa de colar mostra a
+      # frase inteira ao admin, com maiúscula e ponto final. ST1005 pede o
+      # contrário, e o contrário aqui produziria "cole o comando de instalação"
+      # em minúscula no meio de um alerta.
+      - path: internal/upstream/comando\.go$
+        linters: [staticcheck]
+        text: "ST1005"
 
 formatters:
   enable:
