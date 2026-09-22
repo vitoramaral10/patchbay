@@ -818,10 +818,35 @@ func (g *Gerente) descobrir(ctx context.Context, id int64, cfg Config, sessao *m
 	return nil
 }
 
+// semValoresDoCliente carrega o cancelamento e o prazo do contexto de origem, e
+// nenhum valor.
+//
+// A go-sdk carimba no contexto da requisição a revisão que veio no header
+// Mcp-Protocol-Version do cliente (mcp/streamable.go, no ServeHTTP do
+// servidor), e o transporte do lado cliente prefere esse valor ao que ele
+// mesmo negociou no initialize daquela sessão. Repassar o contexto inteiro da
+// requisição para o upstream, portanto, faz a revisão de uma sessão vazar para
+// a outra: um cliente em 2026-07-28 manda esse header para um upstream que só
+// conhece até 2025-11-25, e o upstream recusa o tools/call com 400 sem nunca
+// ter concordado com essa revisão.
+//
+// Cada sessão negocia a sua própria revisão, e a do cliente não é assunto do
+// upstream. O que atravessa esta borda é o cancelamento, não o protocolo.
+type semValoresDoCliente struct {
+	//nolint:containedctx // deliberado: é o contexto embrulhado, não estado guardado no struct.
+	context.Context
+}
+
+// Value corta a busca: o contexto embrulhado leva prazo e cancelamento, e mais
+// nada.
+func (semValoresDoCliente) Value(any) any { return nil }
+
 // Chamar executa um tools/call no upstream, com timeout.
 //
 // É a única operação de upstream que o caminho da requisição do cliente
-// dispara, e ela usa a sessão já aberta: não conecta, não descobre.
+// dispara, e ela usa a sessão já aberta: não conecta, não descobre. Também é a
+// borda entre a sessão do cliente e a do upstream: o contexto que desce é o de
+// semValoresDoCliente, pela razão registrada lá.
 func (g *Gerente) Chamar(ctx context.Context, upstreamID int64, nome string, args json.RawMessage) (*mcp.CallToolResult, error) {
 	g.mu.RLock()
 	s, ok := g.servidores[upstreamID]
@@ -842,7 +867,7 @@ func (g *Gerente) Chamar(ctx context.Context, upstreamID int64, nome string, arg
 		return nil, fmt.Errorf("%w: %s", ErrIndisponivel, upNome)
 	}
 
-	ctxChamada, cancelar := context.WithTimeout(ctx, timeout)
+	ctxChamada, cancelar := context.WithTimeout(semValoresDoCliente{Context: ctx}, timeout)
 	defer cancelar()
 
 	res, err := sessao.CallTool(ctxChamada, &mcp.CallToolParams{Name: nome, Arguments: args})
