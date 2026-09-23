@@ -586,3 +586,75 @@ func TestComandoExport_NaoSobrescreveSemForcar(t *testing.T) {
 		t.Fatalf("o arquivo foi sobrescrito sem --forcar: %q", lido)
 	}
 }
+
+// TestImport_PreservaModoDeCredencial: o YAML não carrega o modo de credencial nem
+// o cliente OAuth, então o import que atualizava um upstream o gravava como
+// "estática" — e sair do modo OAuth apaga a linha de OAuth inteira, concessão
+// junto. Trocar só a URL no arquivo desfazia a configuração feita na tela.
+func TestImport_PreservaModoDeCredencial(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	inst := novaInstalacao(t, nil)
+
+	for nome, form := range map[string]upstream.Form{
+		"com-oauth": {
+			Nome: "com-oauth", Tipo: upstream.TipoHTTP, URL: "http://127.0.0.1:8000/mcp",
+			TimeoutMS: 15000, Habilitado: true, OAuthDisponivel: true,
+			Modo: upstream.ModoOAuth, OAuthClientID: "cliente-google",
+			OAuthSegredo: cripto.Segredo("segredo-google"),
+			OAuthIssuer:  "https://accounts.google.com",
+		},
+		"aberto": {
+			Nome: "aberto", Tipo: upstream.TipoHTTP, URL: "http://aberto:8000/mcp",
+			TimeoutMS: 15000, Habilitado: true, Modo: upstream.ModoNenhum,
+		},
+	} {
+		if !form.Validar() {
+			t.Fatalf("formulário %s recusado: %v", nome, form.Erros)
+		}
+		if _, err := inst.upstreams.Criar(ctx, form); err != nil {
+			t.Fatalf("Criar(%s) erro = %v, quer nil", nome, err)
+		}
+	}
+
+	dados, err := inst.servico.Exportar(ctx)
+	if err != nil {
+		t.Fatalf("Exportar() erro = %v, quer nil", err)
+	}
+	alterado := strings.ReplaceAll(string(dados), "timeout_ms: 15000", "timeout_ms: 30000")
+
+	plano, err := inst.servico.Planejar(ctx, []byte(alterado), configuracao.Opcoes{})
+	if err != nil {
+		t.Fatalf("Planejar() erro = %v, quer nil", err)
+	}
+	if _, err := inst.servico.Aplicar(ctx, plano); err != nil {
+		t.Fatalf("Aplicar() erro = %v, quer nil", err)
+	}
+
+	regs, err := inst.upstreams.Todos(ctx)
+	if err != nil {
+		t.Fatalf("Todos() erro = %v, quer nil", err)
+	}
+	quer := map[string]string{"com-oauth": upstream.ModoOAuth, "aberto": upstream.ModoNenhum}
+	for _, reg := range regs {
+		if reg.TimeoutMS != 30000 {
+			t.Errorf("%s: timeout = %d, quer 30000 (o import não aplicou)", reg.Nome, reg.TimeoutMS)
+		}
+		if got := reg.ModoEfetivo(); got != quer[reg.Nome] {
+			t.Errorf("%s: modo = %q depois do import, quer %q", reg.Nome, got, quer[reg.Nome])
+		}
+		if reg.Nome != "com-oauth" {
+			continue
+		}
+		cliente, err := inst.upstreams.ClienteOAuth(ctx, reg.ID)
+		if err != nil {
+			t.Fatalf("ClienteOAuth() erro = %v, quer nil", err)
+		}
+		if cliente.ClientID != "cliente-google" || cliente.Segredo.Revelar() != "segredo-google" ||
+			cliente.Issuer != "https://accounts.google.com" {
+			t.Errorf("cliente OAuth depois do import = %q/%t/%q, quer o gravado na tela",
+				cliente.ClientID, cliente.Segredo.Revelar() == "segredo-google", cliente.Issuer)
+		}
+	}
+}
