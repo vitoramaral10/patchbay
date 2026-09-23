@@ -905,6 +905,13 @@ nenhuma rede alcança a porta, e é por loopback (ou HTTPS) que a go-sdk aceita
 buscar a metadata OAuth. A imagem roda direto do venv: o `uv run` do `CMD`
 original baixa pacotes de desenvolvimento do PyPI a cada boot.
 
+#### Stack completo
+
+`exemplos/stack-mcp/` é o stack como roda em produção: o patchbay com basic-memory,
+WhatsApp, SiYuan e o workspace-mcp em modo provedor externo, todos sem porta
+publicada e alcançados pelo nome do serviço. Serve de referência para montar a sua
+rede de upstreams; os segredos vão no `.env` (veja `.env.exemplo`).
+
 ### Chave mestra: onde guardar e o que acontece se perder
 
 A chave mestra é gerada uma única vez pelo próprio binário
