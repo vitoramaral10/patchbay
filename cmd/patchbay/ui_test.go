@@ -455,6 +455,10 @@ func TestUI_RemoverUpstreamEsvaziaOEndpoint(t *testing.T) {
 // handler compartilhado, uma chave com escopo em dois endpoints abriria sessão em
 // /mcp/a e reusaria o mesmo id em /mcp/b — o middleware validaria o escopo de b e
 // quem atenderia seria o servidor de a. Um handler por endpoint fecha isso.
+//
+// Desde que o transporte roda Stateless não há sessão retida — o Mcp-Session-Id
+// vem vazio —, mas o teste continua valendo: um id de sessão qualquer mandado a
+// /mcp/beta não pode fazer beta responder com as ferramentas de alfa.
 func TestUI_SessaoNaoAtravessaEndpoint(t *testing.T) {
 	t.Parallel()
 
@@ -468,8 +472,10 @@ func TestUI_SessaoNaoAtravessaEndpoint(t *testing.T) {
 	esperarFerramentas(t, u, "alfa", 2)
 
 	sessaoA := conectarMCP(t, u, "alfa", chave)
-	if sessaoA.ID() == "" {
-		t.Fatal("sessão de /mcp/alfa sem Mcp-Session-Id, quer sessão retida")
+	idDaSessao := sessaoA.ID()
+	if idDaSessao == "" {
+		// Stateless: sem sessão retida. Um id forjado ocupa o lugar dela.
+		idDaSessao = "sessao-de-alfa"
 	}
 
 	// O endpoint beta não compõe upstream nenhum, então a sua resposta legítima é
@@ -483,7 +489,7 @@ func TestUI_SessaoNaoAtravessaEndpoint(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+chave)
-	req.Header.Set("Mcp-Session-Id", sessaoA.ID())
+	req.Header.Set("Mcp-Session-Id", idDaSessao)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -492,9 +498,8 @@ func TestUI_SessaoNaoAtravessaEndpoint(t *testing.T) {
 	defer func() { _ = res.Body.Close() }()
 
 	texto := corpo(t, res)
-	if res.StatusCode == http.StatusOK {
-		t.Fatalf("status = 200 com a sessão de alfa em /mcp/beta, quer recusa (corpo: %q)", texto)
-	}
+	// Stateless, beta atende com o próprio servidor — 200 com a lista vazia é a
+	// resposta certa. O furo seria a lista de alfa aparecer aqui.
 	if strings.Contains(texto, "somar") {
 		t.Errorf("resposta de /mcp/beta traz ferramenta de alfa: %q", texto)
 	}
