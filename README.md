@@ -878,6 +878,33 @@ $EDITOR docker-compose.yml                            # troque PATCHBAY_PUBLIC_U
 docker compose up -d
 ```
 
+#### Google Workspace (opcional)
+
+O perfil `google` do mesmo arquivo sobe o
+[workspace-mcp](https://github.com/taylorwilsdon/google_workspace_mcp) ao lado do
+gateway: Gmail, Drive, Docs, Sheets, Slides, Forms, Calendar, Tasks e Contacts
+pelas APIs comuns do Google, o que funciona com conta pessoal — o MCP hospedado do
+Google (`drivemcp.googleapis.com`) recusa todo `tools/call` com "The caller does not
+have permission" fora do Workspace Developer Preview.
+
+Ele roda como provedor OAuth externo: só valida o Bearer e aponta para
+`accounts.google.com` na metadata de recurso protegido. Quem faz o consentimento e
+renova o token é o patchbay.
+
+1. No Google Cloud, crie um client OAuth do tipo **Web** com o redirect
+   `<PATCHBAY_PUBLIC_URL>/admin/upstreams/oauth/callback`, ative as APIs dos
+   serviços usados e publique o app ("Em produção") — em "Teste" o Google invalida
+   o refresh token em 7 dias.
+2. `cp google.env.exemplo google.env`, preencha, e
+   `docker compose --profile google up -d`.
+3. Na administração, cadastre o upstream HTTP `http://127.0.0.1:8000/mcp` com
+   credencial **OAuth**, o mesmo client ID e secret, e clique em **Autorizar**.
+
+Ele roda como sidecar no namespace de rede do patchbay, escutando só no loopback:
+nenhuma rede alcança a porta, e é por loopback (ou HTTPS) que a go-sdk aceita
+buscar a metadata OAuth. A imagem roda direto do venv: o `uv run` do `CMD`
+original baixa pacotes de desenvolvimento do PyPI a cada boot.
+
 ### Chave mestra: onde guardar e o que acontece se perder
 
 A chave mestra é gerada uma única vez pelo próprio binário
