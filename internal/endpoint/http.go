@@ -49,6 +49,12 @@ func (s *Servidores) novoHandler(srv *mcp.Server) http.Handler {
 		&mcp.StreamableHTTPOptions{
 			Logger:         s.log.With("componente", "streamable_http"),
 			SessionTimeout: SessionTimeoutPadrao,
+			// Stateless é o que habilita a revisão 2026-07-28 da spec (SEP-2575).
+			// O transporte streamable da go-sdk filtra essa versão fora quando a
+			// sessão é retida (mcp/streamable.go, SupportsProtocolVersion), então
+			// o server/discover responde sem ela e o conector do ChatGPT — que só
+			// fala 2026-07-28 — recusa em vez de cair para o initialize.
+			Stateless: true,
 			// DisableLocalhostProtection fica no default (falso): requisição que
 			// chega por endereço de loopback com Host não-loopback é recusada com
 			// 403, que é a proteção contra DNS rebinding
