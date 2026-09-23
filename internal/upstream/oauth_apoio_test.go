@@ -301,6 +301,10 @@ type recursoProtegido struct {
 	URLMCP     string
 	tentativas atomic.Int32
 	recusas    atomic.Int32
+	// semDesafio imita o MCP do Google Drive: requisição sem Authorization é
+	// atendida em vez de levar 401, e só o bearer válido conta em autorizadas.
+	semDesafio  atomic.Bool
+	autorizadas atomic.Int32
 }
 
 func novoRecursoProtegido(t *testing.T, as *asFalso, sse bool, ferramentas ...string) *recursoProtegido {
@@ -329,6 +333,13 @@ func novoRecursoProtegido(t *testing.T, as *asFalso, sse bool, ferramentas ...st
 	mux.Handle(caminho, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.tentativas.Add(1)
 		portador, _ := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer ")
+		if portador == "" && r.semDesafio.Load() {
+			protocolo.ServeHTTP(w, req)
+			return
+		}
+		if portador != "" && as.aceitaAcesso(portador) {
+			r.autorizadas.Add(1)
+		}
 		if portador == "" || !as.aceitaAcesso(portador) {
 			r.recusas.Add(1)
 			w.Header().Set("WWW-Authenticate",

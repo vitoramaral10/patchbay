@@ -485,6 +485,9 @@ func (g *Gerente) conectarEDescobrir(ctx context.Context, id int64) (chegouPront
 	if err := g.prepararOAuth(ctx, cfg); err != nil {
 		return false, err
 	}
+	if err := g.autorizarSemDesafio(ctx, cfg); err != nil {
+		return false, err
+	}
 	g.marcarConectando(id)
 
 	sessao, processo, err := g.conectar(ctx, cfg)
@@ -742,6 +745,19 @@ func (g *Gerente) prepararOAuth(ctx context.Context, cfg Config) error {
 	ctxLeitura, cancelar := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancelar()
 	return g.oauth.Preparar(ctxLeitura, cfg)
+}
+
+// autorizarSemDesafio conclui o consentimento pedido pela UI antes de conectar,
+// para o upstream que não responde 401 no handshake (ver
+// BrokerOAuth.AutorizarSemDesafio). O prazo é o mesmo da conexão com
+// consentimento: a chamada espera uma pessoa escolher a conta no provedor.
+func (g *Gerente) autorizarSemDesafio(ctx context.Context, cfg Config) error {
+	if g.oauth == nil || !cfg.UsaOAuth() {
+		return nil
+	}
+	ctxAut, cancelar := context.WithTimeout(ctx, g.prazoDeConexao(cfg))
+	defer cancelar()
+	return g.oauth.AutorizarSemDesafio(ctxAut, cfg)
 }
 
 // autorizacaoDe devolve o handler de OAuth do upstream.

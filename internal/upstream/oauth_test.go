@@ -235,6 +235,43 @@ func TestOAuth_ClientePreRegistrado(t *testing.T) {
 	}
 }
 
+// TestOAuth_UpstreamQueNaoDesafia é o caso do MCP do Google Drive: o servidor
+// atende initialize e tools/list sem credencial, então o 401 que dispararia o
+// fluxo do go-sdk nunca chega. Antes da correção o clique em "Autorizar"
+// esperava a URL de consentimento até o prazo e desistia; agora o patchbay
+// autoriza por conta própria e as requisições seguintes levam o bearer.
+func TestOAuth_UpstreamQueNaoDesafia(t *testing.T) {
+	t.Parallel()
+
+	as := novoASFalso(t)
+	as.preRegistrar("cliente-google", "segredo-google")
+	recurso := novoRecursoProtegido(t, as, false, "buscar")
+	recurso.semDesafio.Store(true)
+
+	a := novoAmbiente(t, func(string) []upstream.Form {
+		f := formOAuth("drive", recurso.URLMCP)
+		f.OAuthClientID = "cliente-google"
+		f.OAuthSegredo = "segredo-google"
+		return []upstream.Form{f}
+	}, opcoesAmbiente{})
+
+	const id int64 = 1
+	esperarEstado(t, a.gerente, id, upstream.EstadoSemConsentimento)
+	autorizarPelaUI(t, a, id)
+	esperarEstado(t, a.gerente, id, upstream.EstadoPronto)
+
+	estado, err := a.repo.EstadoOAuth(context.Background(), id)
+	if err != nil {
+		t.Fatalf("estado OAuth: erro = %v, quer nil", err)
+	}
+	if estado.ClientIDEfetivo != "cliente-google" {
+		t.Errorf("client_id efetivo = %q, quer cliente-google (a concessão não foi gravada)", estado.ClientIDEfetivo)
+	}
+	if n := recurso.autorizadas.Load(); n == 0 {
+		t.Error("nenhuma requisição chegou com bearer válido depois do consentimento")
+	}
+}
+
 // TestOAuth_TokenRevogadoVoltaParaSemConsentimento é o requisito de "sem loop":
 // quando o provedor recusa o refresh, o upstream para e espera o clique, em vez
 // de reconectar em laço para tomar 401.
