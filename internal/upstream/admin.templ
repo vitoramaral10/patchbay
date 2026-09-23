@@ -977,24 +977,50 @@ templ cartaoDaSonda(f Form) {
 // e OAuth montam o mesmo header Authorization, e uma tela que oferece os dois ao
 // mesmo tempo convida a preencher os dois — o servidor então escolhe um sem dizer
 // qual, e o sintoma é 401 intermitente que ninguém liga a este formulário.
-// Trocar o modo e salvar recarrega a tela com os campos do outro, sem JavaScript.
+//
+// Os três blocos vão no HTML e é o CSS que mostra só o do modo marcado, na hora
+// do clique, sem JavaScript e sem salvar antes (estiloAlternanciaDeModo). Antes o
+// bloco era escolhido no servidor, e marcar "OAuth" não mostrava campo nenhum até
+// um salvamento que ninguém adivinhava que precisava fazer. Os campos do modo não
+// escolhido chegam no POST e o servidor os ignora: aplicarOAuth apaga a linha de
+// OAuth fora do modo oauth, e validarOAuth barra bearer junto com OAuth.
 //
 // O seletor aparece sempre, inclusive sem broker de OAuth: é ele que diz, para
 // quem está cadastrando um MCP público, que existe a opção de não preencher
 // credencial nenhuma. Sem ele, a tela abria direto no campo de bearer e a única
 // saída visível era inventar um token.
 templ credenciaisHTTP(f Form) {
-	<div class="flex flex-col gap-6">
+	@estiloAlternanciaDeModo()
+	<div class="pb-modos flex flex-col gap-6">
 		@seletorDeModo(f)
-		switch f.ModoEfetivo() {
-			case ModoNenhum:
-				@semAutenticacao(f)
-			case ModoOAuth:
+		<div data-bloco-modo={ ModoNenhum }>
+			@semAutenticacao(f)
+		</div>
+		<div data-bloco-modo={ ModoEstatica }>
+			@credenciaisEstaticas(f)
+		</div>
+		if f.OAuthDisponivel {
+			<div data-bloco-modo={ ModoOAuth }>
 				@credenciaisOAuth(f)
-			default:
-				@credenciaisEstaticas(f)
+			</div>
 		}
 	</div>
+}
+
+// estiloAlternanciaDeModo mostra só o bloco do modo marcado no seletor.
+//
+// Dentro de @supports: navegador sem :has() mostra os três blocos em vez de
+// esconder todos, e o formulário continua utilizável — o servidor decide pelo
+// rádio marcado de qualquer jeito.
+templ estiloAlternanciaDeModo() {
+	<style>
+		@supports selector(:has(*)) {
+			.pb-modos [data-bloco-modo] { display: none; }
+			.pb-modos:has(input[name=modo][value=nenhum]:checked) [data-bloco-modo="nenhum"],
+			.pb-modos:has(input[name=modo][value=estatica]:checked) [data-bloco-modo="estatica"],
+			.pb-modos:has(input[name=modo][value=oauth]:checked) [data-bloco-modo="oauth"] { display: block; }
+		}
+	</style>
 }
 
 // seletorDeModo escolhe entre MCP aberto, credencial estática e OAuth.
@@ -1057,9 +1083,6 @@ templ seletorDeModo(f Form) {
 				</span>
 			</label>
 		}
-		<p class="text-sm text-conteudo-tenue">
-			Trocar o modo e salvar recarrega o formulário com os campos do outro modo.
-		</p>
 	</fieldset>
 }
 
@@ -1089,6 +1112,21 @@ templ semAutenticacao(f Form) {
 // Document, então sem colar as duas coisas à mão ele simplesmente não funciona.
 templ credenciaisOAuth(f Form) {
 	<div class="flex flex-col gap-6">
+		if f.BearerDefinido {
+			// Com o bearer escondido neste modo, a validação que recusa bearer junto
+			// com OAuth deixaria o admin sem saída visível. A caixa manda o mesmo
+			// bearer_limpar do bloco estático.
+			<div class="flex flex-col gap-2 rounded-md border border-borda bg-superficie-alta px-3 py-2">
+				<p class="max-w-[65ch] text-sm text-conteudo-suave">
+					Este MCP tem um <strong>bearer estático</strong> gravado. No modo OAuth o
+					<code class="font-mono">Authorization</code> vem do token, então o bearer precisa sair.
+				</p>
+				<label class="flex items-center gap-2">
+					<input type="checkbox" name="bearer_limpar" value="1" class="h-4 w-4 accent-[var(--pb-acento)]"/>
+					<span class="text-sm text-conteudo-suave">Apagar o bearer estático ao salvar</span>
+				</label>
+			</div>
+		}
 		@webui.Campo(webui.DadosCampo{
 			Nome:         "oauth_client_id",
 			Rotulo:       "client_id (cliente pré-registrado)",
