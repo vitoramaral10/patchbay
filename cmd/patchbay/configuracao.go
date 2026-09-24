@@ -100,6 +100,9 @@ func (a upstreamsDaConfiguracao) Criar(ctx context.Context, u configuracao.Upstr
 func (a upstreamsDaConfiguracao) Atualizar(ctx context.Context, id int64, u configuracao.Upstream) error {
 	form := formDeUpstream(u)
 	form.ID = id
+	if err := a.preservarCredencial(ctx, id, &form); err != nil {
+		return err
+	}
 	if !form.Validar() {
 		return errosDeFormulario(form.Erros)
 	}
@@ -107,6 +110,34 @@ func (a upstreamsDaConfiguracao) Atualizar(ctx context.Context, id int64, u conf
 		return err
 	}
 	a.aplicarNoAr(ctx, id)
+	return nil
+}
+
+// preservarCredencial mantém o modo de credencial e o cliente OAuth gravados.
+//
+// O YAML não carrega nenhum dos dois — o modo não é exportado e o client_secret é
+// segredo —, e o formulário sem eles é "estática". Sem isto todo import que
+// tocasse o upstream o regravava assim, e sair do modo OAuth apaga a linha de
+// OAuth inteira: cliente, segredo e concessão. Trocar o modo continua sendo
+// coisa da tela.
+func (a upstreamsDaConfiguracao) preservarCredencial(ctx context.Context, id int64, form *upstream.Form) error {
+	reg, err := a.repo.Obter(ctx, id)
+	if err != nil {
+		return err
+	}
+	form.Modo = reg.ModoEfetivo()
+	if !form.UsaOAuth() {
+		return nil
+	}
+	cliente, err := a.repo.ClienteOAuth(ctx, id)
+	if err != nil {
+		return err
+	}
+	// Segredo em branco é "manter o gravado" em aplicarOAuth, e o client_id igual
+	// ao gravado é o que preserva a concessão.
+	form.OAuthClientID = cliente.ClientID
+	form.OAuthIssuer = cliente.Issuer
+	form.OAuthLoopback = cliente.RedirectLoopback
 	return nil
 }
 
