@@ -117,6 +117,21 @@ func (f *FonteToken) Token() (*oauth2.Token, error) {
 			ErrSemConsentimento, &oauth2.RetrieveError{ErrorCode: "invalid_grant"})
 	}
 
+	if f.semComoRenovar() {
+		// Mesmo desfecho de um invalid_grant, pelo mesmo motivo: o que falta é
+		// consentimento. O x/oauth2 devolveria aqui um erro comum ("refresh token
+		// is not set"), que o transporte trata como falha e aborta a requisição —
+		// o 401 nunca chegaria e nem o clique em "Autorizar" teria efeito.
+		f.morreu = true
+		f.esquecerConcessao()
+		f.mu.Unlock()
+		if f.aoRevogar != nil {
+			f.aoRevogar()
+		}
+		return nil, fmt.Errorf("upstream %s: token vencido e sem refresh token: %w: %w",
+			f.nome, ErrSemConsentimento, &oauth2.RetrieveError{ErrorCode: "invalid_grant"})
+	}
+
 	tok, err := f.base.Token()
 	if err != nil {
 		if f.refreshRecusado(err) {
@@ -147,6 +162,16 @@ func (f *FonteToken) Token() (*oauth2.Token, error) {
 	f.persistirSeNovo(tok)
 	f.mu.Unlock()
 	return tok, nil
+}
+
+// semComoRenovar diz se o token em mão venceu e não há refresh token para trocá-lo.
+//
+// Acontece com provedor que só emite refresh token a pedido — o Google, sem
+// access_type=offline — ou que deixou de emiti-lo. Token sem prazo declarado
+// não entra aqui: ele vale até o provedor dizer o contrário.
+func (f *FonteToken) semComoRenovar() bool {
+	return f.atual != nil && f.atual.RefreshToken == "" &&
+		!f.atual.Expiry.IsZero() && !f.relogio.Agora().Before(f.atual.Expiry)
 }
 
 // PertoDeExpirar informa se o token em vigor vence dentro de margem.

@@ -381,3 +381,61 @@ func TestFonteToken_PertoDeExpirar(t *testing.T) {
 		})
 	}
 }
+
+// TestFonteToken_VencidoSemRefreshViraSemConsentimento: provedor que não emitiu
+// refresh token (o Google, sem access_type=offline) deixa uma concessão que vence e
+// não tem como renovar. O x/oauth2 devolve um erro comum, não invalid_grant; sem
+// tratar o caso, o transporte abortava toda requisição antes do 401, e nem o
+// clique em "Autorizar" conseguia disparar um consentimento novo.
+func TestFonteToken_VencidoSemRefreshViraSemConsentimento(t *testing.T) {
+	t.Parallel()
+
+	base := &fonteContada{}
+	cofre := &cofreEspiao{}
+	avisos := 0
+	sut := fonteDeTeste(t, base, cofre, func() { avisos++ })
+	sut.atual = &oauth2.Token{
+		AccessToken: "vencido",
+		Expiry:      time.Unix(1_700_000_000, 0).Add(-time.Hour),
+	}
+
+	_, err := sut.Token()
+	if !errors.Is(err, ErrSemConsentimento) {
+		t.Fatalf("erro = %v, quer %v", err, ErrSemConsentimento)
+	}
+	var recusa *oauth2.RetrieveError
+	if !errors.As(err, &recusa) || recusa.ErrorCode != "invalid_grant" {
+		t.Errorf("erro = %v, quer um invalid_grant para o transporte seguir até o 401", err)
+	}
+	if !sut.Morreu() {
+		t.Error("fonte não morreu, quer morta com o token vencido e sem refresh")
+	}
+	if avisos != 1 {
+		t.Errorf("avisos de revogação = %d, quer 1", avisos)
+	}
+	if _, apagadas := cofre.contagem(); apagadas != 1 {
+		t.Errorf("apagamentos = %d, quer 1", apagadas)
+	}
+	if n := base.chamadas.Load(); n != 0 {
+		t.Errorf("idas à fonte de baixo = %d, quer 0 (não há o que renovar)", n)
+	}
+}
+
+// TestFonteToken_ValidoSemRefreshContinuaServindo: sem refresh token mas ainda no
+// prazo, o token vale até vencer.
+func TestFonteToken_ValidoSemRefreshContinuaServindo(t *testing.T) {
+	t.Parallel()
+
+	base := &fonteContada{}
+	sut := fonteDeTeste(t, base, &cofreEspiao{}, func() { t.Error("revogou um token ainda válido") })
+	sut.atual = &oauth2.Token{
+		AccessToken: "valido",
+		Expiry:      time.Unix(1_700_000_000, 0).Add(time.Hour),
+	}
+	if _, err := sut.Token(); err != nil {
+		t.Fatalf("erro = %v, quer nil", err)
+	}
+	if sut.Morreu() {
+		t.Error("fonte morreu com o token ainda no prazo")
+	}
+}
