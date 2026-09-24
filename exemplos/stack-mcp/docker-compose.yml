@@ -1,0 +1,298 @@
+# Stack MCP completo, como roda em produção: o patchbay e os servidores que ele
+# agrega (basic-memory, WhatsApp, SiYuan e Google Workspace). Os dados de cada
+# serviço ficam em diretórios ao lado deste arquivo; segredos no `.env` (veja
+# `.env.exemplo`). A rede `tunnel_default` é criada pelo stack do túnel
+# (cloudflared) que publica o patchbay.
+name: mcp
+
+services:
+
+    # Gateway MCP: um conector só na frente de todos os servidores abaixo.
+    patchbay:
+        image: ghcr.io/vitoramaral10/patchbay:latest
+        restart: unless-stopped
+        env_file:
+          - .env
+        environment:
+          PATCHBAY_LISTEN: 0.0.0.0:8787
+          PATCHBAY_LOG_LEVEL: info
+          PATCHBAY_DATA_DIR: /dados
+          # Esquema https e o host público: é o que a UI mostra ao cliente MCP e
+          # o que decide o atributo Secure do cookie de sessão. O TLS em si é
+          # terminado pelo proxy da sua frente, não pelo patchbay.
+          PATCHBAY_PUBLIC_URL: https://patchbay.exemplo.com
+        # Volume nomeado, e não bind mount, de propósito: a imagem carrega /dados
+        # com dono 65532, e o Docker replica esse dono ao inicializar um volume
+        # vazio. Num bind mount quem manda é o dono do diretório no host, então
+        # trocar por `./dados:/dados` exige um `chown 65532:65532 ./dados` antes do
+        # primeiro `up` — sem isso o SQLite falha com "unable to open database
+        # file (14)".
+        #
+        # Além do banco, /dados guarda o cache de npx e uvx (`/dados/cache`). É de
+        # propósito: com o rootfs somente leitura, ele é o único lugar gravável, e
+        # cache em volume é o que impede cada reinício de rebaixar todo pacote de
+        # MCP de processo local de novo.
+        volumes:
+          - patchbay-dados:/dados
+        # Rootfs somente leitura: o único diretório que o processo escreve é o
+        # data dir, montado à parte como volume. /tmp entra por tmpfs porque npx e
+        # uvx descompactam pacote ali antes de mover para o cache.
+        read_only: true
+        tmpfs:
+          - /tmp
+        cap_drop:
+          - ALL
+        security_opt:
+          - no-new-privileges:true
+        # Os dois limites subiram quando a imagem passou a rodar MCP de processo
+        # local. Cada um desses MCPs é um processo Node ou Python vivo ao lado do
+        # gateway: com 512m e 200 PIDs, três deles já derrubavam o container por
+        # OOM, e o modo de falha (morte do PID 1) é bem pior que a lentidão que os
+        # limites evitam. Quem só usa MCP remoto pode voltar aos valores antigos.
+        pids_limit: 512
+        mem_limit: 2g
+        networks:
+            - tunnel_default
+
+    # Base de conhecimento pessoal em markdown, servida como MCP.
+    # Servidores MCP sem autenticação própria: nenhuma porta publicada, e só
+    # quem está na rede do túnel (o patchbay) alcança pelo nome do serviço.
+    basic-memory:
+        mem_limit: 1536m
+        image: ghcr.io/basicmachines-co/basic-memory:latest
+        user: 1000:1000
+
+        volumes:
+          # Configuração e banco de índice. O container roda como `appuser`
+          # (USER do Dockerfile), então o diretório de config do CLI fica sob
+          # /home/appuser, não /root.
+          - ./basic-memory/config:/home/appuser/.basic-memory:rw
+
+          # O cofre de notas em si. Perder este diretório é perder a base.
+          - ./basic-memory/knowledge:/app/data:rw
+
+        environment:
+          - BASIC_MEMORY_DEFAULT_PROJECT=main
+          # Sincronização em tempo real dos arquivos (recomendado no Docker).
+          - BASIC_MEMORY_SYNC_CHANGES=true
+          - BASIC_MEMORY_LOG_LEVEL=INFO
+          # Atraso do sync em ms: desempenho vs. responsividade.
+          - BASIC_MEMORY_SYNC_DELAY=1000
+
+        # streamable-http, como os outros servidores do gateway.
+        # ATENÇÃO: os endpoints SSE e streamable-http não têm auth própria --
+        # a porta não é publicada no host justamente por isso; quem alcança é
+        # o patchbay, pela tunnel_default.
+        command: ["basic-memory", "mcp", "--transport", "streamable-http", "--host", "0.0.0.0", "--port", "8000"]
+
+        restart: unless-stopped
+
+        healthcheck:
+          test: ["CMD", "basic-memory", "--version"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+          start_period: 30s
+
+        networks:
+            - tunnel_default
+
+
+    # WhatsApp pela ponte whatsmeow, servido como MCP.
+    whatsapp-mcp:
+        mem_limit: 256m
+        build:
+            context: ./whatsapp-mcp/src
+        # Build local de um fork do whatsapp-mcp em ./whatsapp-mcp/src.
+        image: mcp/whatsapp-mcp:latest
+        user: 1000:1000
+
+        volumes:
+          # Sessão do WhatsApp (whatsapp.db) + histórico (messages.db) + mídia
+          # baixada. Perder este diretório significa reler o QR code.
+          - ./whatsapp-mcp/store:/app/whatsapp-bridge/store:rw
+
+        ports:
+          # Só loopback, e só para debug: os clientes chegam pelo patchbay.
+          - "127.0.0.1:8100:8000"
+
+        environment:
+          - MCP_TRANSPORT=streamable-http
+          - MCP_HOST=0.0.0.0
+          - MCP_PORT=8000
+          - WHATSAPP_API_BASE_URL=http://127.0.0.1:8080/api
+          # download_media devolve um caminho de dentro do container, que o
+          # chamador não consegue abrir. Isto reescreve para o lado host do
+          # bind mount acima.
+          - WHATSAPP_MEDIA_HOST_PATH=${WHATSAPP_MEDIA_HOST_PATH:?caminho absoluto de ./whatsapp-mcp/store no host}
+          # DEBUG quando uma mensagem parece nunca chegar: a ponte passa a
+          # logar os campos protobuf de tudo que descarta por não ter texto
+          # legível, o que nomeia o tipo que ainda falta suportar.
+          - WHATSAPP_LOG_LEVEL=DEBUG
+
+        # stdin/tty abertos para o QR code renderizar direito no
+        # `docker compose logs` do primeiro login.
+        stdin_open: true
+        tty: true
+
+        restart: unless-stopped
+
+        healthcheck:
+          test: ["CMD", "python3", "-c", "import socket,sys; socket.create_connection(('127.0.0.1',8000),3)"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+          start_period: 60s
+
+        networks:
+            - tunnel_default
+
+
+    # Substituto self-hosted do Notion: editor de blocos, documentos aninhados,
+    # notebooks e databases (Attribute View). Escolhido em 2026-09-19 no lugar de
+    # Outline, Docmost, AFFiNE e AppFlowy por dois motivos que se reforçam:
+    #
+    #  1. É UM container Go (imagem de 96 MiB), sem Postgres, sem Redis e sem
+    #     S3/MinIO. Todos os concorrentes custam de 2 a 3 containers extras, e
+    #     este host tem 11 GiB com a swap já estourada uma vez.
+    #  2. O servidor MCP é de primeira parte e vive DENTRO do kernel, em
+    #     POST/GET/DELETE /mcp (kernel/mcp/server.go), em streamable HTTP
+    #     stateless. Não há bridge de terceiro a manter nem processo extra a
+    #     pagar: o MCP custa zero RAM além do próprio app.
+    #
+    # Os rejeitados, para não refazer a pesquisa: Docmost tem MCP e API REST
+    # atrás da licença Enterprise; AppFlowy-Cloud foi arquivado e o self-host
+    # virou licença comercial de 1 assento; o backend do AFFiNE está sob EE
+    # License e pede 2-3 GB; Outline é o segundo lugar legítimo (MCP oficial
+    # também) mas traz Postgres + Redis e é BSL 1.1.
+    siyuan:
+        image: b3log/siyuan:v3.8.5
+        labels:
+          # Só minor/patch da v3; major novo entra na mão, depois de ler as
+          # notas de versão — o índice do workspace é reconstruído no primeiro
+          # boot de cada versão nova.
+          wud.tag.include: '^v3\.\d+\.\d+$'
+
+        # `serve` é obrigatório desde a v3.7.0: sem o subcomando o container
+        # não sobe. O accessAuthCode é a senha de bloqueio; sem ela todo acesso
+        # que não venha de 127.0.0.1 recebe 401.
+        command:
+          - "serve"
+          - "--workspace=/siyuan/workspace/"
+          - "--accessAuthCode=${SIYUAN_ACCESS_AUTH_CODE}"
+
+        environment:
+          TZ: America/Sao_Paulo
+          # O entrypoint cria o usuário com este PUID/PGID. Tem de bater com o
+          # dono de ./siyuan/workspace no host (1000:1000), senão o
+          # kernel não consegue escrever e o boot falha.
+          PUID: "1000"
+          PGID: "1000"
+
+        volumes:
+          # Os dados em si: arquivos .sy + assets + o índice SQLite. Perder
+          # este diretório é perder a base inteira.
+          #
+          # UM kernel por workspace: nunca apontar o app desktop ou um segundo
+          # container para cá, o índice corrompe.
+          - ./siyuan/workspace:/siyuan/workspace:rw
+
+        ports:
+          # Só loopback: o navegador chega pelo proxy ou túnel da frente. A porta
+          # também é protegida pela senha de bloqueio acima.
+          - "127.0.0.1:6806:6806"
+
+        restart: unless-stopped
+
+        # Teto de segurança, não medição: não há número publicado de consumo em
+        # repouso do kernel headless. Medir com `docker stats` depois de alguns
+        # dias e apertar.
+        mem_limit: 1g
+        cpus: "1.0"
+        pids_limit: 128
+
+        security_opt:
+          - no-new-privileges:true
+
+        healthcheck:
+          # A imagem e alpine e NAO traz curl, so wget -- o healthcheck com curl
+          # falha com "curl: not found" e o container fica unhealthy de mentira.
+          # /api/system/version nao exige autenticacao: separa "kernel de pe" de
+          # "senha errada".
+          test: ["CMD-SHELL", "wget -q -O /dev/null --post-data='' http://127.0.0.1:6806/api/system/version || exit 1"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+          start_period: 40s
+
+        networks:
+            - tunnel_default
+
+
+    # MCP do Google (workspace-mcp, comunidade) pelas APIs comuns. O MCP hospedado
+    # do Google (drivemcp.googleapis.com) exige o Workspace Developer Preview e
+    # recusa conta pessoal. Auditado em bd3405a (2026-09-23).
+    #
+    # Sidecar do patchbay: divide o namespace de rede dele e escuta só em
+    # 127.0.0.1, então nenhuma rede alcança a porta 8000 — só o processo do
+    # patchbay, por http://127.0.0.1:8000/mcp. Loopback também é exigência da
+    # go-sdk: ela só busca metadata OAuth (RFC 9728/8414) por HTTPS ou loopback,
+    # e recusava http://google-drive:8000. Recriar o patchbay exige recriar este.
+    #
+    # Entrypoint direto no venv: o CMD da imagem é `uv run`, que no boot baixa do
+    # PyPI os pacotes de dev e reconstrói o projeto — supply chain em runtime e
+    # incompatível com rootfs somente leitura.
+    google-drive:
+        image: ghcr.io/taylorwilsdon/google_workspace_mcp:latest
+        restart: unless-stopped
+        entrypoint: ["/app/.venv/bin/python", "main.py"]
+        command: ["--transport", "streamable-http", "--tools",
+                  "drive", "docs", "sheets", "slides", "forms", "gmail", "calendar", "tasks", "contacts"]
+        environment:
+          GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:?defina no .env}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:?defina no .env}
+          WORKSPACE_MCP_CREDENTIALS_DIR: /app/store_creds
+          # Provedor OAuth externo: quem faz o consentimento e renova o token é o
+          # patchbay (upstream em modo OAuth, client Web pré-registrado). Aqui o
+          # /mcp só aceita Bearer do Google, validado no userinfo, e a metadata de
+          # recurso protegido aponta o patchbay para accounts.google.com.
+          MCP_ENABLE_OAUTH21: "true"
+          EXTERNAL_OAUTH21_PROVIDER: "true"
+          # Vira o `resource` da metadata: tem de ser a URL que o patchbay usa.
+          WORKSPACE_EXTERNAL_URL: http://127.0.0.1:8000
+          # Só loopback do namespace compartilhado com o patchbay.
+          WORKSPACE_MCP_HOST: 127.0.0.1
+          # Nenhuma ferramenta lê ou grava caminho local; some do schema também.
+          WORKSPACE_MCP_DISABLE_LOCAL_FILES: "true"
+          WORKSPACE_MCP_MAX_FILE_BYTES: "26214400"
+          FASTMCP_CHECK_FOR_UPDATES: "off"
+          PYTHONDONTWRITEBYTECODE: "1"
+        volumes:
+          - google-drive-creds:/app/store_creds
+        read_only: true
+        tmpfs:
+          - /tmp:size=256m
+          # Anexos temporários (~/.workspace-mcp) e log do servidor.
+          - /home/app:size=256m,uid=1000,gid=1000,mode=0700
+        cap_drop:
+          - ALL
+        security_opt:
+          - no-new-privileges:true
+        mem_limit: 1g
+        pids_limit: 256
+        network_mode: service:patchbay
+        depends_on:
+            - patchbay
+
+volumes:
+    # Volume nomeado pelo motivo explicado no serviço patchbay: a imagem traz
+    # /dados com dono 65532 e o Docker replica esse dono ao inicializar um
+    # volume vazio — num bind mount o dono seria o do diretório no host e o
+    # SQLite falharia com "unable to open database file (14)".
+    patchbay-dados:
+    google-drive-creds:
+
+
+networks:
+    tunnel_default:
+        external: true

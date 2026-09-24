@@ -59,5 +59,65 @@ services:
     pids_limit: 512
     mem_limit: 2g
 
+  # Opcional (perfil `google`): Gmail, Drive, Docs, Sheets, Slides, Forms,
+  # Calendar, Tasks e Contacts pelas APIs comuns do Google, via workspace-mcp
+  # (github.com/taylorwilsdon/google_workspace_mcp). Serve para conta pessoal,
+  # que o MCP hospedado do Google (drivemcp.googleapis.com) recusa fora do
+  # Workspace Developer Preview. Sobe com `docker compose --profile google up -d`
+  # e entra no patchbay como upstream HTTP `http://127.0.0.1:8000/mcp`.
+  #
+  # Roda como provedor OAuth externo: não guarda token nenhum. O /mcp exige
+  # Bearer do Google e a metadata de recurso protegido aponta para
+  # accounts.google.com, então o patchbay faz o consentimento (upstream em modo
+  # OAuth com o client Web pré-registrado; redirect
+  # <PATCHBAY_PUBLIC_URL>/admin/upstreams/oauth/callback) e renova o token.
+  #
+  # Sidecar do patchbay: divide o namespace de rede dele e escuta só em
+  # 127.0.0.1, então nenhuma rede alcança a porta — só o processo do patchbay.
+  # Loopback também é exigência da go-sdk: ela só busca metadata OAuth por HTTPS
+  # ou loopback, e recusaria http://workspace-mcp:8000. Recriar o patchbay exige
+  # recriar este.
+  workspace-mcp:
+    image: ghcr.io/taylorwilsdon/google_workspace_mcp:latest
+    profiles: ["google"]
+    container_name: workspace-mcp
+    restart: unless-stopped
+    # Direto no venv: o CMD da imagem é `uv run`, que no boot baixa do PyPI os
+    # pacotes de dev e reconstrói o projeto — supply chain em runtime, e
+    # incompatível com rootfs somente leitura.
+    entrypoint: ["/app/.venv/bin/python", "main.py"]
+    command: ["--transport", "streamable-http", "--tools",
+              "drive", "docs", "sheets", "slides", "forms", "gmail", "calendar", "tasks", "contacts"]
+    # GOOGLE_OAUTH_CLIENT_ID e GOOGLE_OAUTH_CLIENT_SECRET (veja
+    # google.env.exemplo) — os mesmos que vão no upstream do patchbay.
+    env_file:
+      - google.env
+    environment:
+      MCP_ENABLE_OAUTH21: "true"
+      EXTERNAL_OAUTH21_PROVIDER: "true"
+      # Vira o `resource` da metadata: tem de ser a URL que o patchbay usa.
+      WORKSPACE_EXTERNAL_URL: http://127.0.0.1:8000
+      # Só o loopback do namespace compartilhado com o patchbay.
+      WORKSPACE_MCP_HOST: 127.0.0.1
+      # Nenhuma ferramenta lê ou grava caminho local do container.
+      WORKSPACE_MCP_DISABLE_LOCAL_FILES: "true"
+      WORKSPACE_MCP_MAX_FILE_BYTES: "26214400"
+      FASTMCP_CHECK_FOR_UPDATES: "off"
+      PYTHONDONTWRITEBYTECODE: "1"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+      # Anexos temporários (~/.workspace-mcp) e log do servidor.
+      - /home/app:size=256m,uid=1000,gid=1000,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    pids_limit: 256
+    network_mode: service:patchbay
+    depends_on:
+      - patchbay
+
 volumes:
   patchbay-dados:
