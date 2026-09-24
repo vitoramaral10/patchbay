@@ -727,7 +727,7 @@ func (s *sessaoOAuth) buscarCodigo(ctx context.Context, args *auth.Authorization
 	defer s.limparPendente(p)
 
 	select {
-	case p.urlPronta <- args.URL:
+	case p.urlPronta <- comRefreshDoGoogle(args.URL):
 	default:
 	}
 
@@ -844,4 +844,29 @@ func erroDeConsentimento(err error) string {
 	default:
 		return "consentimento_falhou"
 	}
+}
+
+// comRefreshDoGoogle pede refresh token ao Google, que só o emite por parâmetro
+// próprio: access_type=offline, e prompt=consent para que um reconsentimento
+// também traga um. O SDK segue a spec e pede offline_access só quando a metadata
+// do AS anuncia esse escopo, e a do Google não anuncia. Sem isto o consentimento
+// funciona, o upstream fica pronto, e uma hora depois o access token vence sem
+// nada com que renovar ("refresh token is not set").
+//
+// Só acrescenta: state, PKCE e redirect_uri seguem os que o SDK gerou, e um valor
+// que já venha na URL é respeitado.
+func comRefreshDoGoogle(bruta string) string {
+	u, err := url.Parse(bruta)
+	if err != nil || !strings.EqualFold(u.Hostname(), "accounts.google.com") {
+		return bruta
+	}
+	q := u.Query()
+	if q.Get("access_type") == "" {
+		q.Set("access_type", "offline")
+	}
+	if q.Get("prompt") == "" {
+		q.Set("prompt", "consent")
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
