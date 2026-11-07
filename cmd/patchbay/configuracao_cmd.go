@@ -178,7 +178,7 @@ func comandoImport(ctx context.Context, args []string, saida io.Writer) error {
 func servicoDeConfiguracao(
 	ctx context.Context, cfg Config, log *slog.Logger,
 ) (*configuracao.Servico, func(), error) {
-	cofre, err := cofreDoAmbiente()
+	cofre, err := cofreDoBoot(cfg.DataDir)
 	if err != nil {
 		return nil, nil, err
 	}

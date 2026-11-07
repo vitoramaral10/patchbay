@@ -69,12 +69,21 @@ func classesSelo(t Tom) string {
 
 func classesNav(ativo bool) string {
 	if ativo {
-		return "bg-acento-fraco text-acento"
+		return "bg-acento-fraco text-acento font-semibold"
 	}
 	return "text-conteudo-suave hover:bg-superficie-alta hover:text-conteudo"
 }
 
-// Pagina é o shell de toda tela da UI de administração.
+func classesAba(ativo bool) string {
+	if ativo {
+		return "bg-acento text-acento-fg shadow-sm"
+	}
+	return "text-conteudo-suave hover:bg-superficie hover:text-acento"
+}
+
+// Pagina é o shell de toda tela: menu lateral fixo no desktop, gaveta no
+// celular (checkbox + label, sem JS), barra superior em cartão e as abas do
+// item ativo do menu.
 templ Pagina(p DadosPagina) {
 	<!DOCTYPE html>
 	<html lang="pt-BR">
@@ -95,60 +104,155 @@ templ Pagina(p DadosPagina) {
 				Pular para o conteúdo
 			</a>
 			if p.Secao != "" {
-				@barra(p)
-			}
-			<main id="conteudo" class="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
-				<header class="mb-8 flex flex-wrap items-end justify-between gap-4">
-					<div class="min-w-0">
-						<h1 class="text-2xl font-semibold tracking-tight text-conteudo">{ p.Titulo }</h1>
-						if p.Subtitulo != "" {
-							<p class="mt-1 max-w-[65ch] text-conteudo-suave">{ p.Subtitulo }</p>
-						}
+				<input type="checkbox" id="pb-menu-aberto" class="peer sr-only" aria-hidden="true" tabindex="-1"/>
+				@menuLateral(p)
+				<label
+					for="pb-menu-aberto"
+					aria-hidden="true"
+					class="fixed inset-0 z-30 hidden bg-black/40 peer-checked:block lg:peer-checked:hidden"
+				></label>
+				<div class="lg:pl-64">
+					<div class="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6">
+						@barraSuperior(p)
 					</div>
-					if p.Acao != nil {
-						<div class="shrink-0">
-							@p.Acao
-						</div>
+					@conteudo(p) {
+						{ children... }
 					}
-				</header>
-				if p.Alerta != nil {
-					@AlertaCaixa(*p.Alerta)
+				</div>
+			} else {
+				@conteudo(p) {
+					{ children... }
 				}
-				{ children... }
-			</main>
+			}
 		</body>
 	</html>
 }
 
-templ barra(p DadosPagina) {
-	<div class="border-b border-borda bg-superficie">
-		<div class="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-			<a href={ templ.SafeURL(RotaPainel) } class="flex items-center gap-2 font-semibold tracking-tight text-conteudo">
-				<span aria-hidden="true" class="inline-block h-2.5 w-2.5 rounded-full bg-acento"></span>
-				patchbay
-			</a>
-			<nav aria-label="Seções" class="flex flex-1 flex-wrap items-center gap-1">
-				for _, item := range navegacao {
+templ conteudo(p DadosPagina) {
+	<main id="conteudo" class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+		<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+			<div class="min-w-0">
+				<h1 class="text-2xl font-semibold tracking-tight text-conteudo">{ p.Titulo }</h1>
+				if p.Subtitulo != "" {
+					<p class="mt-1 max-w-[65ch] text-conteudo-suave">{ p.Subtitulo }</p>
+				}
+			</div>
+			if p.Acao != nil {
+				<div class="shrink-0">
+					@p.Acao
+				</div>
+			}
+		</header>
+		if item, ok := itemAtivo(p.Secao); ok && len(item.Abas) > 1 {
+			<nav aria-label="Telas de { item.Rotulo }" class="mb-6 flex flex-wrap gap-2">
+				for _, aba := range item.Abas {
 					<a
-						href={ templ.SafeURL(item.Rota) }
-						class={ "rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 ease-out",
-							classesNav(item.Secao == p.Secao) }
-						if item.Secao == p.Secao {
+						href={ templ.SafeURL(aba.Rota) }
+						class={ "rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150 ease-out", classesAba(aba.Secao == p.Secao) }
+						if aba.Secao == p.Secao {
 							aria-current="page"
 						}
-					>
-						{ item.Rotulo }
-					</a>
+					>{ aba.Rotulo }</a>
 				}
 			</nav>
-			if p.Usuario != "" {
-				<form method="post" action={ templ.SafeURL(RotaSair) } class="flex items-center gap-3">
-					<span class="text-sm text-conteudo-tenue">{ p.Usuario }</span>
-					<button type="submit" class="pb-botao pb-botao-secundario px-2.5 py-1.5 text-xs">Sair</button>
-				</form>
-			}
-		</div>
+		}
+		if p.Alerta != nil {
+			@AlertaCaixa(*p.Alerta)
+		}
+		{ children... }
+	</main>
+}
+
+templ menuLateral(p DadosPagina) {
+	<aside
+		class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-superficie transition-transform duration-200 ease-out peer-checked:translate-x-0 lg:translate-x-0"
+		style="box-shadow: var(--pb-sombra-menu)"
+	>
+		<a href={ templ.SafeURL(RotaPainel) } class="flex h-16 items-center gap-2.5 px-6 text-xl font-bold tracking-tight text-conteudo">
+			<span aria-hidden="true" class="grid h-8 w-8 place-items-center rounded-md bg-acento text-acento-fg">
+				@Icone("logo")
+			</span>
+			patchbay
+		</a>
+		<nav aria-label="Seções" class="flex-1 overflow-y-auto px-3 py-2">
+			<ul class="flex flex-col gap-1">
+				for _, item := range navegacao {
+					<li>
+						<a
+							href={ templ.SafeURL(item.Rota) }
+							class={ "flex items-center gap-3 rounded-md px-3 py-2.5 text-[0.9375rem] transition-colors duration-150 ease-out", classesNav(item.ativo(p.Secao)) }
+							if item.ativo(p.Secao) {
+								aria-current="page"
+							}
+						>
+							@Icone(item.Icone)
+							{ item.Rotulo }
+						</a>
+					</li>
+				}
+			</ul>
+		</nav>
+	</aside>
+}
+
+templ barraSuperior(p DadosPagina) {
+	<div class="pb-cartao flex h-14 items-center gap-3 px-4">
+		<label for="pb-menu-aberto" class="pb-botao cursor-pointer px-2 text-conteudo-suave hover:text-conteudo lg:hidden">
+			@Icone("menu")
+			<span class="sr-only">Abrir o menu</span>
+		</label>
+		<span class="truncate text-sm text-conteudo-tenue">{ p.Titulo }</span>
+		if p.Usuario != "" {
+			<form method="post" action={ templ.SafeURL(RotaSair) } class="ml-auto flex items-center gap-3">
+				<span class="hidden text-sm text-conteudo-suave sm:inline">{ p.Usuario }</span>
+				<span aria-hidden="true" class="grid h-9 w-9 place-items-center rounded-full bg-acento-fraco text-sm font-semibold uppercase text-acento">
+					{ inicial(p.Usuario) }
+				</span>
+				<button type="submit" class="pb-botao pb-botao-secundario px-2.5 py-1.5 text-xs">
+					@Icone("sair")
+					Sair
+				</button>
+			</form>
+		}
 	</div>
+}
+
+func inicial(nome string) string {
+	for _, r := range nome {
+		return string(r)
+	}
+	return "?"
+}
+
+// Icone desenha um ícone de traço (estilo Lucide, ISC) em 20px, sempre
+// decorativo: o texto ao lado é quem informa.
+templ Icone(nome string) {
+	<svg aria-hidden="true" class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+		switch nome {
+			case "logo":
+				<path d="M12 22v-5"></path><path d="M9 8V2"></path><path d="M15 8V2"></path><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"></path>
+			case "inicio":
+				<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M9 22V12h6v10"></path>
+			case "endpoint":
+				<path d="M12 2v6"></path><path d="M6 8h12v4a6 6 0 0 1-12 0z"></path><path d="M12 18v4"></path>
+			case "mcp":
+				<rect x="2" y="3" width="20" height="7" rx="2"></rect><rect x="2" y="14" width="20" height="7" rx="2"></rect><path d="M6 6.5h.01"></path><path d="M6 17.5h.01"></path>
+			case "atividade":
+				<path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+			case "ajustes":
+				<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle>
+			case "menu":
+				<path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h16"></path>
+			case "sair":
+				<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path>
+			case "mais":
+				<path d="M12 5v14"></path><path d="M5 12h14"></path>
+			case "copiar":
+				<rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+			case "ok":
+				<path d="M20 6 9 17l-5-5"></path>
+		}
+	</svg>
 }
 
 // AlertaCaixa mostra o resultado da ação anterior. Erro diz o que houve e o que

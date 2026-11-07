@@ -30,8 +30,8 @@ func TestUI_TrilhaRegistraAChamadaEMostraNaTela(t *testing.T) {
 	u.setup(t)
 
 	upstreamID := u.criarUpstream(t, "falso", upstreamFalso(t))
-	u.criarEndpoint(t, "pessoal", "Pessoal", upstreamID)
-	chave := u.criarChave(t, "navegador", 1)
+	endpointID := u.criarEndpoint(t, "pessoal", "Pessoal", upstreamID)
+	chave := u.criarChave(t, "navegador", endpointID)
 	esperarFerramentas(t, u, "pessoal", 2)
 
 	// O stream de SSE é aberto *antes* da chamada: o log ao vivo não tem
@@ -86,8 +86,8 @@ func TestUI_TrilhaRegistraDesfechoRuim(t *testing.T) {
 	u.setup(t)
 
 	upstreamID := u.criarUpstream(t, "quebrado", upstreamQueFalha(t))
-	u.criarEndpoint(t, "pessoal", "Pessoal", upstreamID)
-	chave := u.criarChave(t, "navegador", 1)
+	endpointID := u.criarEndpoint(t, "pessoal", "Pessoal", upstreamID)
+	chave := u.criarChave(t, "navegador", endpointID)
 	esperarFerramentas(t, u, "pessoal", 1)
 
 	sessao := conectarMCP(t, u, "pessoal", chave)

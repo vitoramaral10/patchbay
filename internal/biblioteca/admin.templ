@@ -100,7 +100,7 @@ func rotuloDoTransporte(i Item) string {
 templ TelaBiblioteca(p Pagina) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "Biblioteca",
-		Subtitulo: "Servidores MCP da lista oficial do mcpservers.org. Adicionar abre o formulário de MCP preenchido com o que a página do servidor publica — você confere e salva.",
+		Subtitulo: "Mais de 600 servidores conhecidos. Ache o que quer e clique em Adicionar: o formulário já vem preenchido.",
 		Secao:     webui.SecaoBiblioteca,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Alerta:    p.Alerta,
@@ -132,7 +132,7 @@ templ TelaBiblioteca(p Pagina) {
 						<button type="submit" class="pb-botao pb-botao-secundario">Buscar</button>
 					</div>
 					<p id="q-ajuda" class="text-sm text-conteudo-tenue">
-						A busca procura no nome e na descrição da cópia local — por isso é instantânea. O catálogo é publicado em inglês; termo em português costuma não achar nada.
+						O catálogo é em inglês: busque por "github", "calendar", "database"…
 					</p>
 				</form>
 			}
@@ -151,24 +151,22 @@ templ TelaBiblioteca(p Pagina) {
 // se a idade estiver à vista.
 templ estadoDoCatalogo(p Pagina) {
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<p class="text-sm text-conteudo-suave">
-			Catálogo local: { idadeDoCatalogo(p.Estado) }
+		<p class="text-sm text-conteudo-tenue">
+			Lista { idadeDoCatalogo(p.Estado) }
 			if p.Estado.Servidores > 0 {
-				<span class="text-conteudo-tenue">— { strconv.Itoa(p.Estado.Servidores) } servidores na última varredura</span>
+				· { strconv.Itoa(p.Estado.Servidores) } servidores
 			}
-			if p.Estado.Erro != "" {
-				<span class="text-conteudo-tenue">— a última tentativa, em { horaDaTentativa(p.Estado) }, não terminou: { p.Estado.Erro }</span>
+			if p.Estado.Erro != "" && !p.EmCurso {
+				<span title={ "Em " + horaDaTentativa(p.Estado) + ": " + p.Estado.Erro }>· a última atualização, em { horaDaTentativa(p.Estado) }, não terminou; o patchbay tenta de novo sozinho</span>
 			}
 		</p>
-		<form method="post" action={ templ.SafeURL(webui.RotaBiblioteca + "/atualizar") }>
-			<button type="submit" class="pb-botao pb-botao-secundario" disabled?={ p.EmCurso }>
-				if p.EmCurso {
-					Atualizando...
-				} else {
-					Atualizar agora
-				}
-			</button>
-		</form>
+		if p.EmCurso {
+			<span class="text-sm text-conteudo-tenue">Atualizando em segundo plano…</span>
+		} else {
+			<form method="post" action={ templ.SafeURL(webui.RotaBiblioteca + "/atualizar") }>
+				<button type="submit" class="pb-botao pb-botao-secundario px-2.5 py-1.5 text-xs">Atualizar agora</button>
+			</form>
+		}
 	</div>
 }
 
@@ -179,10 +177,10 @@ templ Resultados(p Pagina) {
 		if len(p.Itens) == 0 {
 			if p.CatalogoVazio() {
 				@aviso("O catálogo ainda está sendo baixado.",
-					"Esta é a primeira varredura da lista oficial do mcpservers.org: são 22 páginas de índice e cerca de 650 páginas de detalhe, com pausa entre elas, e leva de 20 a 35 minutos. Recarregue daqui a pouco — ou cadastre o MCP à mão, que funciona desde já.")
+					"A primeira cópia leva uns 30 minutos. Enquanto isso, cole a URL ou o comando do servidor em Adicionar MCP.")
 			} else {
 				@aviso("Nenhum servidor com esse termo.",
-					"A busca é sobre o nome e a descrição, e o catálogo é escrito em inglês. Se o que você quer não está aqui, cadastre o MCP à mão.")
+					"Tente o termo em inglês. Se não estiver aqui, cole a URL ou o comando da documentação em Adicionar MCP.")
 			}
 		} else {
 			<p class="text-sm text-conteudo-suave">{ resumoDaPagina(p) }</p>
@@ -300,7 +298,7 @@ templ aviso(titulo, texto string) {
 	<div class="pb-cartao flex flex-col items-center gap-3 px-6 py-14 text-center">
 		<p class="text-base font-medium text-conteudo">{ titulo }</p>
 		<p class="max-w-[55ch] text-conteudo-suave">{ texto }</p>
-		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo") } class="pb-botao pb-botao-secundario">Cadastrar à mão</a>
+		<a href={ templ.SafeURL(webui.RotaUpstreams + "/adicionar") } class="pb-botao pb-botao-secundario">Cadastrar à mão</a>
 	</div>
 }
 

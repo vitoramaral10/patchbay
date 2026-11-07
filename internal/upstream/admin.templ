@@ -87,62 +87,52 @@ func proximaTentativa(t time.Time) string {
 templ TelaLista(linhas []Linha, alerta *webui.Alerta, colar DadosColar) {
 	@webui.Pagina(webui.DadosPagina{
 		Titulo:    "MCPs",
-		Subtitulo: "Cada MCP é um servidor externo que o patchbay consome. Ele mantém uma sessão por MCP, aberta fora do caminho da requisição do cliente.",
+		Subtitulo: "Os servidores que o patchbay junta e entrega aos seus clientes de IA.",
 		Secao:     webui.SecaoUpstreams,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Acao:      botaoNovo(),
 		Alerta:    alerta,
 	}) {
-		<div class="mb-6">
-			@CaixaDeColar(colar)
-		</div>
 		if len(linhas) == 0 {
 			@webui.Vazio("Nenhum MCP ainda.",
-				"Cadastre o primeiro servidor MCP que o patchbay vai agregar: um servidor Streamable HTTP, um servidor SSE legado, ou um processo local que fala MCP pelo stdin e stdout. Cole acima a linha de instalação que a documentação dele publica, e o patchbay cria o cadastro.") {
+				"Adicione o primeiro colando a URL, o comando ou o JSON que a documentação do servidor mostra — ou escolha um na biblioteca.") {
 				@botaoNovo()
 			}
 		} else {
 			@webui.Cartao("") {
-				@webui.Tabela("MCPs cadastrados, com estado da sessão e ferramentas") {
-					<thead class="border-b border-borda bg-superficie-alta text-xs uppercase tracking-wide text-conteudo-suave">
+				@webui.Tabela("MCPs cadastrados, com estado e ferramentas") {
+					<thead class="border-b border-borda text-xs uppercase tracking-wide text-conteudo-suave">
 						<tr>
-							<th scope="col" class="px-4 py-2.5 font-semibold">MCP</th>
-							<th scope="col" class="px-4 py-2.5 font-semibold">Estado</th>
-							<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Ferramentas</th>
-							<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Endpoints</th>
-							<th scope="col" class="px-4 py-2.5 font-semibold">Próxima tentativa</th>
-							<th scope="col" class="px-4 py-2.5 font-semibold" data-numero>Timeout</th>
+							<th scope="col" class="px-5 py-3 font-semibold">MCP</th>
+							<th scope="col" class="px-5 py-3 font-semibold">Estado</th>
+							<th scope="col" class="px-5 py-3 font-semibold" data-numero>Ferramentas</th>
+							<th scope="col" class="px-5 py-3 font-semibold" data-numero>Endpoints</th>
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-borda">
 						for _, l := range linhas {
 							<tr class="transition-colors duration-150 ease-out hover:bg-superficie-alta">
-								<td class="px-4 py-3">
-									<a href={ templ.SafeURL(rotaDo(l.ID)) } class="pb-link font-medium">{ l.Nome }</a>
-									<p class="mt-0.5 flex items-center gap-2">
-										@webui.Selo(webui.TomNeutro, rotuloDoTipo(l.Tipo))
-									</p>
-									<p class="max-w-[48ch] truncate font-mono text-xs text-conteudo-tenue" title={ l.Descricao() }>{ l.Descricao() }</p>
+								<td class="px-5 py-3.5">
+									<div class="flex items-center gap-3">
+										<span aria-hidden="true" class="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-acento-fraco text-sm font-semibold uppercase text-acento">{ primeiraLetra(l.Nome) }</span>
+										<div class="min-w-0">
+											<a href={ templ.SafeURL(rotaDo(l.ID)) } class="font-semibold text-conteudo hover:text-acento">{ l.Nome }</a>
+											<p class="max-w-[48ch] truncate font-mono text-xs text-conteudo-tenue" title={ l.Descricao() }>{ l.Descricao() }</p>
+										</div>
+									</div>
 								</td>
-								<td class="px-4 py-3">
+								<td class="px-5 py-3.5">
 									@webui.Selo(tomDoEstado(l.Estado, l.Habilitado, l.Supervisionado),
 										rotuloDoEstado(l.Estado, l.Habilitado, l.Supervisionado))
 									if l.UltimoErro != "" {
 										<p class="mt-1 max-w-[40ch] truncate text-xs text-perigo" title={ l.UltimoErro }>{ l.UltimoErro }</p>
 									}
-								</td>
-								<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Ferramentas) }</td>
-								<td class="px-4 py-3" data-numero>{ strconv.Itoa(l.Endpoints) }</td>
-								<td class="px-4 py-3 text-sm text-conteudo-suave">
-									{ proximaTentativa(l.ProximaEm) }
-									if l.Abandonos > 0 {
-										<p class="mt-1 text-xs text-conteudo-tenue">{ strconv.Itoa(l.Abandonos) } connect(s) abandonado(s)</p>
-									}
-									if l.AbandonosTotais > l.Abandonos {
-										<p class="text-xs text-conteudo-tenue">{ strconv.Itoa(l.AbandonosTotais) } no total</p>
+									if !l.ProximaEm.IsZero() {
+										<p class="mt-0.5 text-xs text-conteudo-tenue">nova tentativa { proximaTentativa(l.ProximaEm) }</p>
 									}
 								</td>
-								<td class="px-4 py-3" data-numero>{ strconv.FormatInt(l.TimeoutMS, 10) } ms</td>
+								<td class="px-5 py-3.5" data-numero>{ strconv.Itoa(l.Ferramentas) }</td>
+								<td class="px-5 py-3.5" data-numero>{ strconv.Itoa(l.Endpoints) }</td>
 							</tr>
 						}
 					</tbody>
@@ -152,25 +142,20 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta, colar DadosColar) {
 	}
 }
 
-// botaoNovo oferece os três tipos como ações separadas, mais o atalho de colar
-// o comando de instalação.
-//
-// O tipo é escolhido aqui e não dentro do formulário porque ele não muda depois:
-// HTTP, SSE e STDIO pedem campos diferentes, e um formulário com os três
-// conjuntos ao mesmo tempo obrigaria o admin a adivinhar quais valem.
-//
-// O atalho de colar leva para a caixa que está na própria tela, e não para
-// outra página: quase todo servidor MCP publica a instalação como uma linha de
-// `claude mcp add`, e transcrever aquela linha campo a campo é onde nascem o
-// transporte errado e o header com nome trocado. Quem não tem o comando
-// continua com os três botões.
+func primeiraLetra(s string) string {
+	for _, r := range s {
+		return string(r)
+	}
+	return "?"
+}
+
+// botaoNovo é a única porta de entrada: a página de adicionar descobre o
+// transporte e a autenticação sozinha.
 templ botaoNovo() {
-	<div class="flex flex-wrap items-center gap-2">
-		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoSTDIO) } class="pb-botao pb-botao-secundario">Novo processo STDIO</a>
-		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoSSE) } class="pb-botao pb-botao-secundario">Novo MCP SSE</a>
-		<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo?tipo=" + TipoHTTP) } class="pb-botao pb-botao-secundario">Novo MCP HTTP</a>
-		<a href="#colar" class="pb-botao pb-botao-primario">Colar comando de instalação</a>
-	</div>
+	<a href={ templ.SafeURL(RotaAdicionar) } class="pb-botao pb-botao-primario">
+		@webui.Icone("mais")
+		Adicionar MCP
+	</a>
 }
 
 // rotuloDoTipo nomeia o transporte na tela.
@@ -196,7 +181,10 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 		Alerta:    alerta,
 	}) {
 		<div class="flex flex-col gap-6">
-			@webui.Cartao("Estado") {
+			@cartaoSituacao(d)
+			<details class="pb-cartao">
+				<summary class="cursor-pointer select-none px-5 py-3 text-sm font-medium text-conteudo-suave">Detalhes técnicos</summary>
+				<div class="border-t border-borda">
 				<dl class="grid gap-x-6 gap-y-4 px-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
 					if !d.STDIO() {
 						@dado("Modo de credencial") {
@@ -255,7 +243,8 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 						</p>
 					</div>
 				}
-			}
+				</div>
+			</details>
 			if d.STDIO() {
 				@webui.Cartao("Processo") {
 					<div class="flex flex-col gap-4 px-4 py-4">
@@ -362,7 +351,16 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 					}
 				}
 			}
-			@cartaoSonda(d)
+			if d.Sonda.Habilitada {
+				@cartaoSonda(d)
+			} else {
+				<details class="pb-cartao">
+					<summary class="cursor-pointer select-none px-5 py-3 text-sm font-medium text-conteudo-suave">Teste automático: desligado</summary>
+					<div class="border-t border-borda">
+						@cartaoSonda(d)
+					</div>
+				</details>
+			}
 			if d.UsaOAuth() {
 				@cartaoOAuth(d)
 			}
@@ -658,6 +656,51 @@ templ cartaoOAuth(d Detalhe) {
 	}
 }
 
+// situacao é a frase que diz, sem vocabulário de protocolo, em que pé o MCP
+// está e o que fazer.
+func situacao(d Detalhe) (webui.Tom, string, string) {
+	n := strconv.Itoa(len(d.Ferramentas))
+	switch {
+	case !d.Habilitado:
+		return webui.TomNeutro, "Desligado", "As ferramentas dele estão fora de todos os endpoints. Ligue de novo em Editar."
+	case (d.Estado == EstadoSemConsentimento || (d.PodeAutorizar() && !d.OAuth.Consentido)) &&
+		strings.Contains(d.UltimoErro, "no prazo"):
+		return webui.TomAlerta, "O login expirou antes de terminar", "Clique em Conectar conta de novo e termine em até 10 minutos, neste mesmo navegador. Depois disso o pedido vence, aqui e no site do servidor."
+	case d.Estado == EstadoSemConsentimento || (d.PodeAutorizar() && !d.OAuth.Consentido):
+		return webui.TomAlerta, "Falta conectar a sua conta", "Este servidor pede login. Clique em Conectar conta, entre no site dele e autorize em até 10 minutos, neste mesmo navegador: o patchbay guarda e renova o acesso sozinho."
+	case d.Estado == EstadoPronto:
+		return webui.TomSucesso, "Funcionando", n + " ferramentas disponíveis nos endpoints."
+	case d.Estado == EstadoSondaFalhou:
+		return webui.TomPerigo, "Responde, mas a ferramenta de teste falhou", "As ferramentas saíram dos endpoints até o teste voltar a passar. Veja abaixo o que falhou."
+	case d.Estado == EstadoNovo || d.Estado == EstadoConectando:
+		return webui.TomInfo, "Conectando…", "Recarregue em alguns segundos."
+	case d.Estado == EstadoDesabilitado:
+		return webui.TomPerigo, "Parou de tentar", "Travou ao conectar vezes demais seguidas. Confira a URL ou o comando e clique em Reconectar."
+	default:
+		return webui.TomPerigo, "Sem conexão", "O patchbay tenta de novo sozinho, com intervalos cada vez maiores. O erro está abaixo."
+	}
+}
+
+templ cartaoSituacao(d Detalhe) {
+	{{ tom, titulo, texto := situacao(d) }}
+	<section class="pb-cartao flex flex-wrap items-center gap-4 px-5 py-5">
+		<div class="min-w-0 flex-1">
+			<p class="flex items-center gap-2 text-lg font-semibold text-conteudo">
+				@webui.Selo(tom, titulo)
+			</p>
+			<p class="mt-2 max-w-[65ch] text-conteudo-suave">{ texto }</p>
+			if d.UltimoErro != "" && d.Estado != EstadoPronto {
+				<p class="mt-2 max-w-[80ch] break-words font-mono text-xs text-perigo">{ d.UltimoErro }</p>
+			}
+		</div>
+		if d.PodeAutorizar() && !d.OAuth.Consentido {
+			<form method="post" action={ templ.SafeURL(rotaDo(d.ID) + "/autorizar") }>
+				<button type="submit" class="pb-botao pb-botao-primario px-5 py-2.5 text-base">Conectar conta</button>
+			</form>
+		}
+	</section>
+}
+
 func botaoDeAutorizar(d Detalhe) string {
 	if d.OAuth.Consentido {
 		return "pb-botao pb-botao-secundario"
@@ -674,9 +717,9 @@ templ acoesDoDetalhe(d Detalhe) {
 			>
 				<button type="submit" class={ botaoDeAutorizar(d) }>
 					if d.OAuth.Consentido {
-						Reautorizar
+						Reconectar conta
 					} else {
-						Autorizar
+						Conectar conta
 					}
 				</button>
 			</form>
@@ -752,7 +795,7 @@ templ TelaForm(f Form) {
 						Nome:        "nome",
 						Rotulo:      "Nome",
 						Valor:       f.Nome,
-						Ajuda:       "Como o MCP aparece nesta administração e no log.",
+						Ajuda:       "Também vira o prefixo das ferramentas: github → github_buscar.",
 						Erro:        f.Erros["nome"],
 						Obrigatorio: true,
 					})
@@ -761,7 +804,7 @@ templ TelaForm(f Form) {
 							Nome:         "comando",
 							Rotulo:       "Comando",
 							Valor:        f.Comando,
-							Ajuda:        "O programa a executar, resolvido pelo PATH do processo patchbay. Por exemplo npx, uvx, node ou um caminho completo.",
+							Ajuda:        "Por exemplo npx, uvx, docker ou o caminho completo do programa.",
 							Erro:         f.Erros["comando"],
 							Obrigatorio:  true,
 							Monoespacado: true,
@@ -781,7 +824,7 @@ templ TelaForm(f Form) {
 							Nome:        "args",
 							Rotulo:      "Argumentos",
 							Valor:       f.ArgsTexto,
-							Ajuda:       "Um argumento por linha. Nada de linha de comando partida por espaço: argumento com espaço dentro é normal, e um separador escolhido aqui viraria uma regra de escape para você descobrir errando.",
+							Ajuda:       "Um por linha. Nada de linha de comando partida por espaço: argumento com espaço dentro é normal, e um separador escolhido aqui viraria uma regra de escape para você descobrir errando.",
 							Erro:        f.Erros["args"],
 							Placeholder: "-y\n@modelcontextprotocol/server-filesystem\nC:\\dados",
 						})
@@ -789,14 +832,14 @@ templ TelaForm(f Form) {
 							Nome:        "env",
 							Rotulo:      "Variáveis de ambiente (não sensíveis)",
 							Valor:       f.EnvTexto,
-							Ajuda:       "NOME=valor, uma por linha. Vão em claro no banco e aparecem na tela — é o lugar de PATH extra e nível de log, nunca de token. Segredo vai no bloco cifrado abaixo.",
+							Ajuda:       "NOME=valor, uma por linha. Ficam visíveis: token e senha vão em Credenciais, abaixo.",
 							Erro:        f.Erros["env"],
 							Placeholder: "NODE_ENV=production",
 						})
 					} else {
 						@webui.Campo(webui.DadosCampo{
 							Nome:         "url",
-							Rotulo:       "URL do endpoint MCP",
+							Rotulo:       "URL",
 							Tipo:         "url",
 							Valor:        f.URL,
 							Ajuda:        ajudaDaURL(f),
@@ -806,16 +849,6 @@ templ TelaForm(f Form) {
 							Placeholder:  marcadorDaURL(f),
 						})
 					}
-					@webui.Campo(webui.DadosCampo{
-						Nome:         "timeout_ms",
-						Rotulo:       "Timeout (ms)",
-						Tipo:         "number",
-						Valor:        strconv.FormatInt(f.TimeoutMS, 10),
-						Ajuda:        "Vale para conectar, listar e chamar ferramenta neste MCP. Entre 250 e 120000.",
-						Erro:         f.Erros["timeout_ms"],
-						Obrigatorio:  true,
-						Monoespacado: true,
-					})
 					<label class="flex items-start gap-3">
 						<input
 							type="checkbox"
@@ -825,9 +858,9 @@ templ TelaForm(f Form) {
 							checked?={ f.Habilitado }
 						/>
 						<span>
-							<span class="text-sm font-medium text-conteudo">Habilitado</span>
+							<span class="text-sm font-medium text-conteudo">Ligado</span>
 							<span class="block text-sm text-conteudo-tenue">
-								Desmarcar fecha a sessão na hora e tira as ferramentas dos endpoints, sem apagar o cadastro.
+								Desligado, as ferramentas saem dos endpoints, mas o cadastro fica.
 							</span>
 						</span>
 					</label>
@@ -836,9 +869,8 @@ templ TelaForm(f Form) {
 			@webui.Cartao("Credenciais") {
 				<div class="flex flex-col gap-6 px-4 py-5">
 					<p class="max-w-[65ch] text-sm text-conteudo-suave">
-						O que o patchbay <strong>apresenta</strong> ao MCP é cifrado em repouso com
-						AES-256-GCM e nunca é reexibido aqui. Campo em branco mantém o valor gravado;
-						para tirar a credencial, marque <em>limpar</em>.
+						Tokens e senhas ficam cifrados e não voltam para esta tela. Em branco mantém o que
+						já está gravado.
 					</p>
 					if f.STDIO() {
 						<fieldset class="flex flex-col gap-3">
@@ -860,7 +892,22 @@ templ TelaForm(f Form) {
 					}
 				</div>
 			}
-			@cartaoDaSonda(f)
+			<details class="pb-cartao" open?={ f.Erros["timeout_ms"] != "" || f.SondaHabilitada }>
+				<summary class="cursor-pointer select-none px-5 py-3 text-sm font-medium text-conteudo-suave">Avançado: tempo limite e teste automático</summary>
+				<div class="flex flex-col gap-6 border-t border-borda px-4 py-5">
+					@webui.Campo(webui.DadosCampo{
+						Nome:         "timeout_ms",
+						Rotulo:       "Timeout (ms)",
+						Tipo:         "number",
+						Valor:        strconv.FormatInt(f.TimeoutMS, 10),
+						Ajuda:        "Quanto esperar o MCP responder antes de desistir. O padrão serve para quase todos.",
+						Erro:         f.Erros["timeout_ms"],
+						Obrigatorio:  true,
+						Monoespacado: true,
+					})
+					@cartaoDaSonda(f)
+				</div>
+			</details>
 			<div class="flex items-center gap-3">
 				<button type="submit" class="pb-botao pb-botao-primario">
 					if f.ID == 0 {
@@ -1044,8 +1091,7 @@ templ seletorDeModo(f Form) {
 			<span>
 				<span class="text-sm font-medium text-conteudo">Sem autenticação</span>
 				<span class="block text-sm text-conteudo-tenue">
-					O MCP é aberto, ou está numa rede em que só o patchbay chega nele. Nenhum
-					<code class="font-mono">Authorization</code> e nenhum header sai daqui.
+					O servidor é aberto, não pede nada.
 				</span>
 			</span>
 		</label>
@@ -1058,9 +1104,9 @@ templ seletorDeModo(f Form) {
 				checked?={ f.ModoEfetivo() == ModoEstatica }
 			/>
 			<span>
-				<span class="text-sm font-medium text-conteudo">Credencial estática</span>
+				<span class="text-sm font-medium text-conteudo">Token ou chave de API</span>
 				<span class="block text-sm text-conteudo-tenue">
-					Bearer e headers colados por você. Não expira sozinho e não precisa de consentimento.
+					Você cola o token que o serviço te deu.
 				</span>
 			</span>
 		</label>
@@ -1074,11 +1120,10 @@ templ seletorDeModo(f Form) {
 					checked?={ f.UsaOAuth() }
 				/>
 				<span>
-					<span class="text-sm font-medium text-conteudo">OAuth (authorization code com PKCE)</span>
+					<span class="text-sm font-medium text-conteudo">Login pelo navegador (OAuth)</span>
 					<span class="block text-sm text-conteudo-tenue">
-						O patchbay descobre o authorization server do MCP, você autoriza no navegador,
-						e o token renovado fica cifrado em repouso. Salve primeiro; depois use
-						<em>Autorizar</em> na tela do MCP.
+						Você entra no site do serviço e autoriza. Salve primeiro; depois clique em
+						<em>Conectar conta</em> na tela do MCP.
 					</span>
 				</span>
 			</label>
@@ -1091,9 +1136,7 @@ templ seletorDeModo(f Form) {
 templ semAutenticacao(f Form) {
 	<div class="flex flex-col gap-3">
 		<p class="max-w-[65ch] text-sm text-conteudo-suave">
-			Nada a preencher. O patchbay fala com este MCP sem
-			<code class="font-mono">Authorization</code> e sem header nenhum — é o certo para
-			servidor público e para MCP que só a rede interna alcança.
+			Nada a preencher.
 		</p>
 		if f.TemCredencialDeHeader() {
 			<p class="max-w-[65ch] rounded-md border border-borda bg-superficie-alta px-3 py-2 text-sm text-conteudo-suave">
@@ -1366,26 +1409,22 @@ func tituloDoForm(f Form) string {
 	}
 	switch f.TipoEfetivo() {
 	case TipoSTDIO:
-		return acao + " MCP STDIO"
+		return acao + " MCP: processo local"
 	case TipoSSE:
-		return acao + " MCP SSE"
+		return acao + " MCP: servidor SSE"
 	default:
-		return acao + " MCP HTTP"
+		return acao + " MCP: servidor remoto"
 	}
 }
 
 func subtituloDoForm(f Form) string {
 	switch f.TipoEfetivo() {
 	case TipoSTDIO:
-		return "Um processo local que fala MCP pelo stdin e stdout. O patchbay mantém um processo por MCP, " +
-			"compartilhado por todas as sessões, e mata a árvore inteira ao encerrar. " +
-			"Variáveis sensíveis são cifradas em repouso e nunca voltam para esta tela."
+		return "Um programa que roda nesta máquina (npx, uvx, docker…). O patchbay o inicia e o reinicia se cair."
 	case TipoSSE:
-		return "O HTTP+SSE da revisão 2024-11-05 do MCP: um GET pendurado para os eventos do servidor e " +
-			"um POST por mensagem do cliente. Mesmas credenciais do Streamable HTTP, cifradas em repouso " +
-			"e nunca de volta para esta tela."
+		return "O formato antigo de servidor remoto, com endereço terminando em /sse."
 	default:
-		return "MCP Streamable HTTP. Credenciais são cifradas em repouso e nunca voltam para esta tela."
+		return "Um servidor na internet ou na sua rede, acessado por uma URL."
 	}
 }
 
@@ -1394,10 +1433,9 @@ func subtituloDoForm(f Form) string {
 // eventos, e é o servidor que anuncia depois onde os POSTs vão.
 func ajudaDaURL(f Form) string {
 	if f.TipoEfetivo() == TipoSSE {
-		return "O endereço do stream de eventos, normalmente terminando em /sse. " +
-			"O endereço dos POSTs vem no primeiro evento da sessão, não daqui."
+		return "Normalmente termina em /sse."
 	}
-	return "O endereço Streamable HTTP do servidor, normalmente terminando em /mcp."
+	return "Normalmente termina em /mcp."
 }
 
 func marcadorDaURL(f Form) string {

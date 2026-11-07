@@ -208,3 +208,55 @@ func TestAjustarModoPorDescoberta_Guardas(t *testing.T) {
 		})
 	}
 }
+
+// Context7: publica o metadado OAuth e atende o initialize sem credencial. A
+// pessoa não pode ser mandada para um consentimento de que não precisa.
+func TestDetector_ServidorAbertoNaoPedeOAuth(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/mcp":
+			if r.Header.Get("Authorization") != "" {
+				t.Error("a detecção mandou credencial")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+		case r.URL.Path == "/.well-known/oauth-protected-resource/mcp":
+			_, _ = w.Write([]byte(`{"authorization_servers":["https://as.test"]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	if novoDetectorPorMetadados(srv.Client())(context.Background(), srv.URL+"/mcp") {
+		t.Fatal("servidor que atende anônimo foi marcado como OAuth")
+	}
+}
+
+// 200 que não é JSON-RPC (página de login de proxy) não prova servidor aberto;
+// resposta SSE com result prova.
+func TestAtendeSemCredencial_ExigeRespostaMCP(t *testing.T) {
+	t.Parallel()
+	casos := map[string]struct {
+		tipo, corpo string
+		quer        bool
+	}{
+		"login html":   {"text/html", "<html>entre</html>", false},
+		"json de erro": {"application/json", `{"jsonrpc":"2.0","id":1,"error":{"code":-32001}}`, false},
+		"json ok":      {"application/json", `{"jsonrpc":"2.0","id":1,"result":{}}`, true},
+		"sse ok":       {"text/event-stream", "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n", true},
+	}
+	for nome, c := range casos {
+		t.Run(nome, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", c.tipo)
+				_, _ = w.Write([]byte(c.corpo))
+			}))
+			t.Cleanup(srv.Close)
+			if got := atendeSemCredencial(context.Background(), srv.Client(), srv.URL+"/mcp"); got != c.quer {
+				t.Fatalf("atendeSemCredencial = %v, quer %v", got, c.quer)
+			}
+		})
+	}
+}

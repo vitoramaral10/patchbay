@@ -143,9 +143,9 @@ func TestAdmin_ColarComandoRecusado(t *testing.T) {
 	if !strings.Contains(corpo, "mcp.exemplo.invalid") {
 		t.Error("a recusa não devolve o comando para edição")
 	}
-	// E volta na tela de MCPs, não numa página de erro à parte.
-	if !strings.Contains(corpo, "Adicionar colando o comando de instalação") {
-		t.Error("a recusa não volta para a caixa de colar da lista")
+	// E volta na página de adicionar, não numa página de erro à parte.
+	if !strings.Contains(corpo, "Cole aqui") {
+		t.Error("a recusa não volta para a caixa de colar")
 	}
 
 	if regs, err := a.repo.Todos(context.Background()); err != nil {

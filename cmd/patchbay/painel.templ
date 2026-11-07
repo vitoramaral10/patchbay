@@ -21,43 +21,94 @@ type dadosPainel struct {
 	Chaves           int
 	ChavesAtivas     int
 	URLPublica       string
+	URLLocal         bool
+	ClientesOAuth    int
+	PrimeiroEndpoint string
+}
+
+// passoInicio é um item do "comece aqui".
+type passoInicio struct {
+	Titulo, Texto, Rota, Botao string
+	Feito                      bool
+}
+
+func passosDoInicio(d dadosPainel) []passoInicio {
+	return []passoInicio{
+		{
+			Titulo: "Adicione um MCP",
+			Texto:  "Cole a URL, o comando ou o JSON que a documentação do servidor mostra.",
+			Rota:   webui.RotaUpstreams + "/adicionar", Botao: "Adicionar MCP",
+			Feito: d.Upstreams > 0,
+		},
+		{
+			Titulo: "Diga onde o patchbay está",
+			Texto:  "Para o claude.ai chegar aqui, informe o domínio público. Uso só nesta máquina dispensa.",
+			Rota:   webui.RotaConfiguracao, Botao: "Abrir Ajustes",
+			Feito: !d.URLLocal,
+		},
+		{
+			Titulo: "Conecte o seu cliente de IA",
+			Texto:  "A tela do endpoint mostra o que copiar para o claude.ai, o Claude Code ou o Cursor.",
+			Rota:   d.PrimeiroEndpoint, Botao: "Ver como conectar",
+			Feito: d.ClientesOAuth > 0 || d.ChavesAtivas > 0,
+		},
+	}
+}
+
+func faltaAlgum(ps []passoInicio) bool {
+	for _, p := range ps {
+		if !p.Feito {
+			return true
+		}
+	}
+	return false
 }
 
 // telaPainel é a primeira tela depois do login: o que está no ar, e o próximo
 // passo quando não há nada.
 templ telaPainel(d dadosPainel, alerta *webui.Alerta) {
 	@webui.Pagina(webui.DadosPagina{
-		Titulo:    "Painel",
-		Subtitulo: "O que está no ar agora. Toda mudança feita nesta administração vale na hora, sem reiniciar o patchbay.",
+		Titulo:    "Início",
+		Subtitulo: "Tudo o que você muda aqui vale na hora.",
 		Secao:     webui.SecaoPainel,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Alerta:    alerta,
 	}) {
-		if d.Upstreams == 0 && d.Endpoints == 0 {
-			@webui.Vazio("O patchbay está vazio.",
-				"O caminho é: cadastrar um MCP, criar um endpoint que o inclua e emitir uma chave de API. Depois disso um cliente MCP conecta.") {
-				<a href={ templ.SafeURL(webui.RotaUpstreams + "/novo") } class="pb-botao pb-botao-primario">Cadastrar o primeiro MCP</a>
-			}
-		} else {
-			<div class="flex flex-col gap-6">
-				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-					@indicador("MCPs", strconv.Itoa(d.Upstreams), rodapeUpstreams(d), webui.RotaUpstreams)
-					@indicador("Endpoints", strconv.Itoa(d.Endpoints), "no ar", webui.RotaEndpoints)
-					@indicador("Ferramentas expostas", valorFerramentas(d), "somando todos os endpoints", webui.RotaEndpoints)
-					@indicador("Chaves ativas", strconv.Itoa(d.ChavesAtivas), rodapeChaves(d), webui.RotaChaves)
-				</div>
-				@webui.Cartao("URL pública") {
-					<div class="px-4 py-4">
-						<code class="font-mono text-sm break-all text-conteudo">{ d.URLPublica }</code>
-						<p class="mt-2 max-w-[65ch] text-conteudo-suave">
-							É esta a base das URLs de endpoint que os clientes registram. Ela vem da
-							configuração, não da requisição: o TLS é terminado por um proxy na frente do
-							patchbay, então ele não descobre o endereço externo olhando o que chega.
-						</p>
-					</div>
+		<div class="flex flex-col gap-6">
+			if ps := passosDoInicio(d); faltaAlgum(ps) {
+				@webui.Cartao("Comece aqui") {
+					<ol class="divide-y divide-borda">
+						for i, p := range ps {
+							<li class="flex flex-wrap items-center gap-4 px-5 py-4">
+								if p.Feito {
+									<span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-sucesso-fraco text-sucesso">
+										@webui.Icone("ok")
+										<span class="sr-only">Feito:</span>
+									</span>
+								} else {
+									<span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-acento-fraco font-semibold text-acento">{ strconv.Itoa(i + 1) }</span>
+								}
+								<div class="min-w-0 flex-1">
+									<p class={ "font-semibold", templ.KV("text-conteudo-tenue line-through", p.Feito), templ.KV("text-conteudo", !p.Feito) }>{ p.Titulo }</p>
+									if !p.Feito {
+										<p class="text-sm text-conteudo-suave">{ p.Texto }</p>
+									}
+								</div>
+								if !p.Feito && p.Rota != "" {
+									<a href={ templ.SafeURL(p.Rota) } class="pb-botao pb-botao-primario">{ p.Botao }</a>
+								}
+							</li>
+						}
+					</ol>
 				}
+			}
+			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+				@indicador("MCPs", strconv.Itoa(d.Upstreams), rodapeUpstreams(d), webui.RotaUpstreams)
+				@indicador("Endpoints", strconv.Itoa(d.Endpoints), "no ar", webui.RotaEndpoints)
+				@indicador("Ferramentas", valorFerramentas(d), "somando todos os endpoints", webui.RotaEndpoints)
+				@indicador("Apps conectados", strconv.Itoa(d.ClientesOAuth + d.ChavesAtivas), "por login ou chave", webui.RotaClientesOAuth)
 			</div>
-		}
+		</div>
 	}
 }
 
@@ -68,12 +119,12 @@ func valorFerramentas(d dadosPainel) string {
 	if d.Lapides == 0 {
 		return strconv.Itoa(d.Ferramentas)
 	}
-	return strconv.Itoa(d.Ferramentas) + " + " + strconv.Itoa(d.Lapides) + " lápides"
+	return strconv.Itoa(d.Ferramentas) + " + " + strconv.Itoa(d.Lapides) + " saindo"
 }
 
 func rodapeUpstreams(d dadosPainel) string {
 	if d.UpstreamsRuins > 0 {
-		return strconv.Itoa(d.UpstreamsProntos) + " prontos, " + strconv.Itoa(d.UpstreamsRuins) + " degradados"
+		return strconv.Itoa(d.UpstreamsProntos) + " prontos, " + strconv.Itoa(d.UpstreamsRuins) + " com problema"
 	}
 	return strconv.Itoa(d.UpstreamsProntos) + " prontos"
 }

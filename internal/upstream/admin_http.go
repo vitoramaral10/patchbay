@@ -32,6 +32,7 @@ type Admin struct {
 	// colado, que é o único caminho de cadastro sem campo de modo
 	// (deteccao.go).
 	detectarOAuth DetectorDeOAuth
+	aoCriar       func(ctx context.Context, id int64, nome string)
 }
 
 // NovoAdmin monta o CRUD de upstream.
@@ -58,10 +59,24 @@ func NovoAdmin(
 	}
 }
 
+// AoCriar registra o que roda depois que um MCP novo é gravado e antes de ele
+// entrar no ar. Injetado porque quem sabe ligar o MCP aos endpoints é a outra
+// feature, e upstream não pode importar endpoint.
+func (a *Admin) AoCriar(fn func(ctx context.Context, id int64, nome string)) { a.aoCriar = fn }
+
+func (a *Admin) avisarCriado(ctx context.Context, id int64, nome string) {
+	if a.aoCriar != nil {
+		a.aoCriar(ctx, id, nome)
+	}
+}
+
 // Rotas registra as telas de upstream. Todas exigem sessão de admin.
 func (a *Admin) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+webui.RotaUpstreams, a.listar)
 	mux.HandleFunc("GET "+webui.RotaUpstreams+"/novo", a.formNovo)
+	mux.HandleFunc("GET "+RotaAdicionar, func(w http.ResponseWriter, r *http.Request) {
+		webui.Renderizar(w, r, http.StatusOK, a.log, TelaAdicionar(DadosColar{}))
+	})
 	mux.HandleFunc("POST "+webui.RotaUpstreams, a.criar)
 	// Segmento literal, então não compete com o /{id} logo abaixo: o ServeMux
 	// resolve os dois sem ambiguidade, como já faz com /novo.
@@ -335,6 +350,7 @@ func (a *Admin) criar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	form.ID = id
+	a.avisarCriado(r.Context(), id, form.Nome)
 	a.aplicarNoAr(r.Context(), registroDoForm(id, form))
 	a.log.Info("upstream criado",
 		"upstream", form.Nome, "upstream_id", id, "tipo", form.TipoEfetivo())
@@ -789,12 +805,11 @@ func lerHeaders(campos url.Values) []CampoHeader {
 }
 
 var avisos = map[string]webui.Alerta{
-	"criado": {Tom: webui.TomSucesso, Titulo: "MCP criado.", Texto: "A conexão já está sendo tentada; o estado abaixo se atualiza a cada recarga."},
+	"criado": {Tom: webui.TomSucesso, Titulo: "MCP adicionado.", Texto: "Ele já entrou nos seus endpoints. Se pedir login, o botão Conectar conta aparece abaixo."},
 	"importado": {
 		Tom:    webui.TomSucesso,
-		Titulo: "MCP criado a partir do comando.",
-		Texto: "As credenciais do comando foram gravadas cifradas e não voltam à tela. " +
-			"A conexão já está sendo tentada; o estado abaixo se atualiza a cada recarga.",
+		Titulo: "MCP adicionado.",
+		Texto:  "Ele já entrou nos seus endpoints. Se pedir login, o botão Conectar conta aparece abaixo.",
 	},
 	"salvo":        {Tom: webui.TomSucesso, Titulo: "MCP salvo.", Texto: "A sessão antiga foi fechada e uma nova está sendo aberta com a configuração nova."},
 	"removido":     {Tom: webui.TomInfo, Titulo: "MCP removido.", Texto: "A sessão e a goroutine de supervisão foram encerradas, e os endpoints já refletem a remoção."},

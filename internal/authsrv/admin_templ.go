@@ -351,8 +351,8 @@ func TelaClientes(clientes []Cliente, alerta *webui.Alerta) templ.Component {
 			return nil
 		})
 		templ_7745c5c3_Err = webui.Pagina(webui.DadosPagina{
-			Titulo:    "Clientes OAuth",
-			Subtitulo: "Quem pode pedir um token ao authorization server do patchbay, e para quais endpoints. O consentimento acontece nesta sessão de administração. Linhas de DCR e de CIMD aparecem sozinhas, quando um cliente se registra ou publica o próprio documento — a coluna Origem diz qual é qual.",
+			Titulo:    "Apps conectados",
+			Subtitulo: "Os apps que entraram com o seu login (claude.ai, Claude Code, ChatGPT…). Eles aparecem aqui sozinhos; revogar desconecta na hora.",
 			Secao:     webui.SecaoOAuth,
 			Usuario:   webui.UsuarioDoContexto(ctx),
 			Acao:      botaoNovoCliente(),
@@ -399,7 +399,7 @@ func botaoNovoCliente() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"pb-botao pb-botao-primario\">Novo cliente</a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"pb-botao pb-botao-secundario\">Cadastrar app à mão</a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1391,7 +1391,7 @@ func TelaCliente(c Cliente, sessoes []Sessao, urlPublica string, alerta *webui.A
 		})
 		templ_7745c5c3_Err = webui.Pagina(webui.DadosPagina{
 			Titulo:    c.Nome,
-			Subtitulo: "Cada sessão abaixo é uma família de tokens: o access e todos os refresh que a rotação encadeou a partir de um consentimento.",
+			Subtitulo: "Cada linha abaixo é um login que você aprovou. Revogar desconecta aquele login.",
 			Secao:     webui.SecaoOAuth,
 			Usuario:   webui.UsuarioDoContexto(ctx),
 			Alerta:    alerta,

@@ -21,85 +21,93 @@
 /* O CSS é compilado a partir dos .templ de todas as features. */
 @source "../../../../**/*.templ";
 
+/*
+ * Paleta inspirada no Sneat (themeselection, MIT): roxo #696cff, fundo
+ * #f5f5f9, cartão branco com sombra suave. Os tons de texto e de estado são
+ * os do Sneat escurecidos o mínimo para passar 4.5:1 sobre branco e sobre o
+ * fundo — o #697a8d original dá 4.37:1.
+ */
+@font-face {
+    font-family: "Public Sans";
+    font-style: normal;
+    font-weight: 300 800;
+    font-display: swap;
+    src: url("../fontes/public-sans-latin.woff2") format("woff2");
+}
+
 :root {
     color-scheme: light dark;
 
-    /* Superfície — três níveis, e só um sinal por nível. */
-    --pb-fundo: oklch(0.983 0.004 235);
-    --pb-superficie: oklch(1 0 0);
-    --pb-superficie-alta: oklch(0.962 0.006 235);
+    --pb-fundo: #f5f5f9;
+    --pb-superficie: #ffffff;
+    --pb-superficie-alta: #f3f4f7;
 
-    /* Texto — três níveis, todos acima de 4.5:1 sobre fundo e superfície. */
-    --pb-conteudo: oklch(0.21 0.015 245);
-    --pb-conteudo-suave: oklch(0.5 0.014 245);
-    --pb-conteudo-tenue: oklch(0.52 0.01 245);
+    --pb-conteudo: #435971;
+    --pb-conteudo-suave: #5f6f81;
+    --pb-conteudo-tenue: #617283;
 
-    --pb-borda: oklch(0.9 0.008 235);
-    /* borda-forte é a borda de campo e de controle: precisa de 3:1 contra as
-     * superfícies, medido, não estimado. Em 0.72 dava 2.47:1. */
-    --pb-borda-forte: oklch(0.62 0.012 235);
+    --pb-borda: #e4e6ea;
+    /* borda de campo: 3:1 contra a superfície. */
+    --pb-borda-forte: #8592a3;
 
-    /* Ação — um accent só. Estado semântico não é accent. */
-    --pb-acento: oklch(0.5 0.1 205);
-    --pb-acento-hover: oklch(0.43 0.1 205);
-    --pb-acento-fg: oklch(0.99 0 0);
-    --pb-acento-fraco: oklch(0.955 0.025 205);
+    --pb-acento: #5457f5;
+    --pb-acento-hover: #4346d6;
+    --pb-acento-fg: #ffffff;
+    --pb-acento-fraco: #f0f0ff;
 
-    --pb-perigo: oklch(0.5 0.19 25);
-    --pb-perigo-fg: oklch(0.99 0 0);
-    --pb-perigo-fraco: oklch(0.96 0.03 25);
+    --pb-perigo: #c42e18;
+    --pb-perigo-fg: #ffffff;
+    --pb-perigo-fraco: #ffe0db;
 
-    --pb-alerta: oklch(0.5 0.13 70);
-    --pb-alerta-fraco: oklch(0.96 0.05 85);
+    --pb-alerta: #8a5d00;
+    --pb-alerta-fraco: #fff2d6;
 
-    --pb-sucesso: oklch(0.47 0.12 155);
-    --pb-sucesso-fraco: oklch(0.95 0.05 155);
+    --pb-sucesso: #2f7d12;
+    --pb-sucesso-fraco: #e8fadf;
 
-    --pb-info: oklch(0.5 0.1 255);
-    --pb-info-fraco: oklch(0.96 0.03 255);
+    --pb-info: #027693;
+    --pb-info-fraco: #d7f5fc;
 
-    --pb-anel: oklch(0.55 0.13 205);
+    --pb-anel: #5457f5;
+    --pb-sombra: 0 2px 6px 0 rgb(67 89 113 / 0.12);
+    --pb-sombra-menu: 0 0.125rem 0.375rem 0 rgb(161 172 184 / 0.12);
 }
 
-/*
- * Escuro não é inversão: é o mesmo conjunto de papéis com outros valores.
- * Nunca #000 (vibra com texto claro) nem #FFF (sangra); o accent dessatura e
- * clareia, porque saturado no escuro fica néon; elevação vem de superfície mais
- * clara, não de sombra.
- */
+/* Escuro: os valores do Sneat Pro escuro, com o mesmo cuidado de contraste. */
 @media (prefers-color-scheme: dark) {
     :root {
-        --pb-fundo: oklch(0.165 0.012 250);
-        --pb-superficie: oklch(0.208 0.013 250);
-        --pb-superficie-alta: oklch(0.25 0.014 250);
+        --pb-fundo: #232333;
+        --pb-superficie: #2b2c40;
+        --pb-superficie-alta: #34354d;
 
-        --pb-conteudo: oklch(0.93 0.006 250);
-        --pb-conteudo-suave: oklch(0.76 0.01 250);
-        --pb-conteudo-tenue: oklch(0.68 0.01 250);
+        --pb-conteudo: #e2e2f1;
+        --pb-conteudo-suave: #b4b4cc;
+        --pb-conteudo-tenue: #a3a4bd;
 
-        --pb-borda: oklch(0.32 0.014 250);
-        /* mesmo motivo do tema claro: em 0.46 dava 2.50:1. */
-        --pb-borda-forte: oklch(0.545 0.016 250);
+        --pb-borda: #444564;
+        --pb-borda-forte: #7e7f9c;
 
-        --pb-acento: oklch(0.78 0.08 200);
-        --pb-acento-hover: oklch(0.86 0.07 200);
-        --pb-acento-fg: oklch(0.17 0.02 250);
-        --pb-acento-fraco: oklch(0.28 0.04 205);
+        --pb-acento: #9ea0ff;
+        --pb-acento-hover: #b4b5ff;
+        --pb-acento-fg: #1c1c2b;
+        --pb-acento-fraco: #393a66;
 
-        --pb-perigo: oklch(0.75 0.13 25);
-        --pb-perigo-fg: oklch(0.17 0.02 25);
-        --pb-perigo-fraco: oklch(0.29 0.06 25);
+        --pb-perigo: #ff8b77;
+        --pb-perigo-fg: #1c1c2b;
+        --pb-perigo-fraco: #4d2e33;
 
-        --pb-alerta: oklch(0.82 0.11 80);
-        --pb-alerta-fraco: oklch(0.3 0.05 80);
+        --pb-alerta: #ffc85c;
+        --pb-alerta-fraco: #4a3f2c;
 
-        --pb-sucesso: oklch(0.78 0.11 155);
-        --pb-sucesso-fraco: oklch(0.27 0.05 155);
+        --pb-sucesso: #97e86d;
+        --pb-sucesso-fraco: #304535;
 
-        --pb-info: oklch(0.79 0.09 255);
-        --pb-info-fraco: oklch(0.28 0.05 255);
+        --pb-info: #5fdcf7;
+        --pb-info-fraco: #26445a;
 
-        --pb-anel: oklch(0.72 0.11 200);
+        --pb-anel: #9ea0ff;
+        --pb-sombra: 0 2px 8px 0 rgb(20 20 29 / 0.24);
+        --pb-sombra-menu: 0 0.125rem 0.5rem 0 rgb(20 20 29 / 0.3);
     }
 }
 
@@ -136,11 +144,11 @@
     --color-anel: var(--pb-anel);
 
     --radius-sm: 0.375rem;
-    --radius-md: 0.5rem;
-    --radius-lg: 0.75rem;
+    --radius-md: 0.375rem;
+    --radius-lg: 0.5rem;
 
     --font-sans:
-        ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        "Public Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
         "Helvetica Neue", Arial, sans-serif;
     --font-mono:
         ui-monospace, "Cascadia Mono", "Segoe UI Mono", "JetBrains Mono",
@@ -197,6 +205,7 @@
     }
     .pb-botao-primario {
         @apply bg-acento text-acento-fg;
+        box-shadow: 0 0.125rem 0.25rem 0 rgb(84 87 245 / 0.35);
     }
     .pb-botao-primario:hover:not(:disabled) {
         @apply bg-acento-hover;
@@ -226,7 +235,8 @@
     }
 
     .pb-cartao {
-        @apply rounded-lg border border-borda bg-superficie;
+        @apply rounded-lg bg-superficie;
+        box-shadow: var(--pb-sombra);
     }
 
     .pb-selo {

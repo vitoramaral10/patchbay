@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/vitoramaral10/patchbay/internal/catalogo"
 )
@@ -75,10 +76,13 @@ func (f *Form) Validar() bool {
 	f.regras = map[int64][]catalogo.Regra{}
 
 	if !f.SlugFixo {
+		if strings.TrimSpace(f.Slug) == "" {
+			f.Slug = f.Nome // o nome "Trabalho" vira /mcp/trabalho
+		}
 		f.Slug = NormalizarSlug(f.Slug)
 		switch {
 		case f.Slug == "":
-			f.Erros["slug"] = "Escolha um slug: ele é o que vai na URL do endpoint."
+			f.Erros["slug"] = "Dê um nome ao endpoint: o endereço sai dele."
 		case !slugValido.MatchString(f.Slug):
 			f.Erros["slug"] = "Use minúsculas, números e hífen, começando e terminando com letra ou número."
 		}
@@ -156,6 +160,22 @@ type UpstreamOpcao struct {
 	// escrita contra o nome já prefixado. Não impede salvar: o upstream pode
 	// reconectar depois com um catálogo diferente em que a regra passa a casar.
 	AvisoRegras string
+
+	// Itens e RegrasAvancadas são Regras repartidas para a tela: uma linha por
+	// ferramenta do catálogo vivo, e o que não cabe nelas.
+	Itens           []ItemFerramenta
+	RegrasAvancadas string
+}
+
+// Ligadas conta as ferramentas marcadas na lista.
+func (o UpstreamOpcao) Ligadas() int {
+	n := 0
+	for _, i := range o.Itens {
+		if i.Ligada {
+			n++
+		}
+	}
+	return n
 }
 
 // Upstreams é o que a tela de composição precisa saber dos upstreams.

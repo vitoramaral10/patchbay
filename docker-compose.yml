@@ -14,15 +14,17 @@ services:
     build: .
     container_name: patchbay
     restart: unless-stopped
+    # Opcional: sem secrets.env, a chave mestra nasce em /dados/chave-mestra
+    # no primeiro boot. Use o arquivo para guardar a chave fora do volume.
     env_file:
-      - secrets.env
+      - path: secrets.env
+        required: false
     environment:
       PATCHBAY_LISTEN: 0.0.0.0:8787
       PATCHBAY_DATA_DIR: /dados
-      # Esquema https e o host público: é o que a UI mostra ao cliente MCP e
-      # o que decide o atributo Secure do cookie de sessão. O TLS em si é
-      # terminado pelo proxy da sua frente, não pelo patchbay.
-      PATCHBAY_PUBLIC_URL: https://patchbay.exemplo.com
+      # Opcional: o endereço público também se define na tela, em Ajustes.
+      # Com a variável, ele fica travado na tela.
+      # PATCHBAY_PUBLIC_URL: https://patchbay.exemplo.com
     # Só no loopback do host: quem atende a internet é o proxy reverso, que
     # repassa para cá. Se o seu proxy for outro container, apague esta
     # publicação e ligue os dois por uma rede compartilhada.

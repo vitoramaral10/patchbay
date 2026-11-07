@@ -40,21 +40,53 @@ func tomDaOperacao(op Operacao) webui.Tom {
 type DadosTela struct {
 	Texto           string
 	RemoverAusentes bool
+	// URLPublica é o endereço por onde os clientes chegam; URLTravada diz que
+	// ele vem de PATCHBAY_PUBLIC_URL e não muda pela tela.
+	URLPublica string
+	URLTravada bool
 	Erro            string
 	Alerta          *webui.Alerta
 }
 
 // TelaConfiguracao é o export e o formulário de import.
+func ajudaDaURL(travada bool) string {
+	if travada {
+		return "Definida pela variável PATCHBAY_PUBLIC_URL. Para mudar aqui, remova a variável."
+	}
+	return "Salvar reinicia o patchbay por dentro, em um ou dois segundos."
+}
+
 templ TelaConfiguracao(d DadosTela) {
 	@webui.Pagina(webui.DadosPagina{
-		Titulo:    "Configuração",
-		Subtitulo: "O YAML é artefato de export e import. Ele nunca é lido na inicialização: aplicar é sempre um clique seu, e o plano aparece antes.",
+		Titulo:    "Ajustes",
+		Subtitulo: "O endereço do patchbay e a cópia de segurança da configuração.",
 		Secao:     webui.SecaoConfiguracao,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Alerta:    d.Alerta,
 	}) {
 		<div class="flex max-w-3xl flex-col gap-8">
-			@webui.Cartao("Exportar") {
+			@webui.Cartao("Endereço público") {
+				<form method="post" action={ templ.SafeURL(webui.RotaConfiguracao + "/url-publica") } class="flex flex-col gap-4 px-5 py-5">
+					<p class="max-w-[65ch] text-conteudo-suave">
+						O endereço que o claude.ai e os outros clientes usam para chegar aqui. Se o patchbay
+						está atrás de um domínio (Cloudflare Tunnel, proxy), coloque o domínio.
+					</p>
+					@webui.Campo(webui.DadosCampo{
+						Nome:         "url_publica",
+						Rotulo:       "URL",
+						Valor:        d.URLPublica,
+						Tipo:         "url",
+						Placeholder:  "https://patchbay.seudominio.com",
+						Monoespacado: true,
+						SoLeitura:    d.URLTravada,
+						Ajuda:        ajudaDaURL(d.URLTravada),
+					})
+					if !d.URLTravada {
+						<div><button type="submit" class="pb-botao pb-botao-primario">Salvar endereço</button></div>
+					}
+				</form>
+			}
+			@webui.Cartao("Cópia de segurança") {
 				<div class="flex flex-col gap-4 px-4 py-5">
 					<p class="max-w-[65ch] text-conteudo-suave">
 						Baixa a configuração inteira — MCPs, endpoints e a composição de cada um —

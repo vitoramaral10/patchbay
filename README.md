@@ -24,9 +24,32 @@ Binário único, sem dependência de stack externa. Estado em SQLite embutido.
 >
 > A especificação é `docs/estudos/2026-09-08-patchbay-estudo-previo.html`.
 
-> **O patchbay não sobe sem `PATCHBAY_MASTER_KEY`.** Gere a chave uma vez com
-> `patchbay chave-mestra gerar` e guarde-a onde você guarda segredo de produção.
-> Se ela mudar, o processo **se recusa a subir** — ver [Chave mestra](#chave-mestra).
+## Começar em dois minutos
+
+```bash
+docker run -d --name patchbay -p 127.0.0.1:8787:8787 -v patchbay:/dados ghcr.io/vitoramaral10/patchbay:latest
+```
+
+Abra `http://127.0.0.1:8787` e siga o **Comece aqui** da tela inicial:
+
+1. **Adicione um MCP** — cole o que a documentação do servidor mostra: a URL
+   (`https://mcp.context7.com/mcp`), o comando (`npx -y @x/server-github`), o JSON
+   `mcpServers` do Claude Desktop/Cursor ou a linha `claude mcp add`. O patchbay
+   descobre o transporte e se o servidor pede login; se pedir, aparece
+   **Conectar conta**.
+2. **Diga onde o patchbay está** — em Ajustes, o domínio público (só precisa para
+   o claude.ai chegar de fora).
+3. **Conecte o seu cliente** — a tela do endpoint mostra o que copiar para o
+   claude.ai, o Claude Code ou o Cursor, e gera chave de API para quem não faz login.
+
+Nada disso pede variável de ambiente. Todo MCP novo entra sozinho no endpoint
+`principal`; para separar, crie outro endpoint e escolha as ferramentas por caixa
+de seleção.
+
+> **Chave mestra.** Sem `PATCHBAY_MASTER_KEY`, ela é gerada no primeiro boot em
+> `<dados>/chave-mestra`. Com a variável, vale a do ambiente — é o caminho para
+> manter a chave fora do volume de dados. Trocá-la depois faz o processo
+> **se recusar a subir** — ver [Chave mestra](#chave-mestra).
 
 ## O que já funciona
 
