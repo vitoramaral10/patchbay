@@ -103,7 +103,7 @@ func TestBibliotecaApareceNoPainel(t *testing.T) {
 	if !strings.Contains(pagina, `href="`+webui.RotaBiblioteca+`"`) {
 		t.Error("a navegação do painel não tem o item Biblioteca")
 	}
-	if !strings.Contains(pagina, "Catálogo local:") {
+	if !strings.Contains(pagina, "Lista ") {
 		t.Error("a tela não diz de quando é a cópia")
 	}
 }
@@ -259,7 +259,7 @@ func TestBibliotecaComOrigemForaNaoDerrubaOPainel(t *testing.T) {
 	if !strings.Contains(pagina, "Cadastrar à mão") {
 		t.Error("a tela não oferece a saída que continua funcionando")
 	}
-	if !strings.Contains(pagina, "Catálogo local:") {
+	if !strings.Contains(pagina, "Lista ") {
 		t.Error("a tela não diz em que estado o catálogo está")
 	}
 	if res := u.abrir(t, webui.RotaUpstreams); res.StatusCode != http.StatusOK {

@@ -156,13 +156,9 @@ func TestTelaTrilha_MostraOContadorDeDescartes(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 
-	// Antes de qualquer descarte o contador já está na tela, zerado: um número
-	// que só existe quando há problema é um número que ninguém aprende a ler.
+	// v2: sem descarte, nada sobre descarte na tela.
 	html := abrir(t, ts.URL+webui.RotaTrilha)
-	if !strings.Contains(html, "Descartes da trilha") {
-		t.Fatal("a tela não mostra o contador de descartes")
-	}
-	if strings.Contains(html, "A trilha perdeu linhas") {
+	if strings.Contains(html, "não entraram nesta lista") {
 		t.Error("a tela avisa de perda sem ter havido nenhuma")
 	}
 
@@ -174,11 +170,8 @@ func TestTelaTrilha_MostraOContadorDeDescartes(t *testing.T) {
 	}
 
 	html = abrir(t, ts.URL+webui.RotaTrilha)
-	if !strings.Contains(html, "A trilha perdeu linhas") {
-		t.Error("a tela não avisa que a trilha perdeu linhas")
-	}
-	if !strings.Contains(html, ">4<") {
-		t.Errorf("a tela não mostra o número 4 de descartes:\n%s", recorte(html, "Descartes da trilha", 400))
+	if !strings.Contains(html, "4 chamadas não entraram nesta lista") {
+		t.Errorf("a tela não avisa os 4 descartes:\n%s", recorte(html, "não entraram", 400))
 	}
 }
 

@@ -302,7 +302,7 @@ func TelaLista(chaves []Chave, alerta *webui.Alerta) templ.Component {
 		})
 		templ_7745c5c3_Err = webui.Pagina(webui.DadosPagina{
 			Titulo:    "Chaves de API",
-			Subtitulo: "Cada chave dá acesso aos endpoints do escopo dela. É guardada como hash: o texto claro aparece uma vez, na criação.",
+			Subtitulo: "Para clientes que não fazem login pelo navegador. Cada chave abre só os endpoints escolhidos.",
 			Secao:     webui.SecaoChaves,
 			Usuario:   webui.UsuarioDoContexto(ctx),
 			Acao:      botaoNova(),
@@ -577,7 +577,7 @@ func TelaForm(f Form, opcoes []EndpointOpcao) templ.Component {
 		})
 		templ_7745c5c3_Err = webui.Pagina(webui.DadosPagina{
 			Titulo:    "Nova chave de API",
-			Subtitulo: "O escopo não se edita depois. Para mudar o que uma chave alcança, revogue e emita outra.",
+			Subtitulo: "Os endpoints da chave não mudam depois. Para mudar, revogue e gere outra.",
 			Secao:     webui.SecaoChaves,
 			Usuario:   webui.UsuarioDoContexto(ctx),
 		}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var17), templ_7745c5c3_Buffer)
@@ -747,7 +747,7 @@ func TelaCriada(c Criada) templ.Component {
 		})
 		templ_7745c5c3_Err = webui.Pagina(webui.DadosPagina{
 			Titulo:    "Chave emitida",
-			Subtitulo: "Copie agora. Ela é guardada como hash e não há como reexibi-la — se for perdida, emita outra.",
+			Subtitulo: "Copie agora: ela não aparece de novo. Se perder, gere outra.",
 			Secao:     webui.SecaoChaves,
 			Usuario:   webui.UsuarioDoContexto(ctx),
 			Alerta: &webui.Alerta{

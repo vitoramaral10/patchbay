@@ -83,7 +83,7 @@ func TestTelaMostraOCatalogoLocal(t *testing.T) {
 	}
 	// A idade do catálogo fica à vista: sem ela, não achar um servidor pode ser
 	// ele não existir ou a cópia ser velha, e o admin não tem como saber qual.
-	if !strings.Contains(corpo, "Catálogo local:") {
+	if !strings.Contains(corpo, "Lista ") {
 		t.Error("a tela não diz de quando é a lista")
 	}
 }

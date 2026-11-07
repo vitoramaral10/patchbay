@@ -107,11 +107,10 @@ func ouTraco(s string) string {
 // TelaTrilha é a trilha por chamada, filtrável pelos cinco eixos da seção 11.
 templ TelaTrilha(p Pagina) {
 	@webui.Pagina(webui.DadosPagina{
-		Titulo:    "Trilha de chamadas",
-		Subtitulo: "Uma linha por tools/call, gravada depois de responder. Ela guarda tamanho de entrada e de saída — nunca o conteúdo do argumento nem do resultado. A sondagem funcional aparece marcada como sonda; os contadores acima contam só chamada de cliente.",
+		Titulo:    "Atividade",
+		Subtitulo: "Cada ferramenta que um cliente chamou, com o resultado e o tempo. O conteúdo das chamadas não é guardado, só o tamanho.",
 		Secao:     webui.SecaoTrilha,
 		Usuario:   webui.UsuarioDoContexto(ctx),
-		Acao:      linkAoVivo(),
 	}) {
 		<div class="flex flex-col gap-6">
 			@contadores(p.Resumo, p.Descarte)
@@ -191,38 +190,32 @@ templ TelaTrilha(p Pagina) {
 	}
 }
 
-templ linkAoVivo() {
-	<a href={ templ.SafeURL(webui.RotaLogsAoVivo) } class="pb-botao pb-botao-secundario">Log ao vivo</a>
-}
-
 templ linkTrilha() {
 	<a href={ templ.SafeURL(webui.RotaTrilha) } class="pb-botao pb-botao-secundario">Trilha de chamadas</a>
 }
 
 // contadores é o painel da fatia: taxa, erros e — obrigatoriamente — descartes.
 //
-// O descarte aparece sempre, e não só quando é maior que zero: um contador que
-// só existe quando há problema é um contador que ninguém aprende a ler.
+// v2: descarte e falha de gravação só aparecem quando acontecem, e aí vêm com
+// o alerta que explica. Sempre à vista, eram dois números que ninguém sabia ler.
 templ contadores(r Resumo, d Descarte) {
-	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+	<div class="grid gap-4 sm:grid-cols-3">
 		@indicador("Chamadas por minuto", r.PorMinuto(), r.RotuloJanela(), webui.TomNeutro)
 		@indicador("Erros", strconv.FormatInt(r.Erros, 10), r.RotuloJanela(), tomSeHouver(r.Erros, webui.TomPerigo))
-		@indicador("Timeouts", strconv.FormatInt(r.Timeouts, 10), r.RotuloJanela(), tomSeHouver(r.Timeouts, webui.TomAlerta))
-		@indicador("Descartes da trilha", strconv.FormatUint(d.Eventos, 10), rodapeDescarte(d), tomSeHouver(int64(d.Eventos), webui.TomAlerta))
-		@indicador("Falhas de gravação", strconv.FormatUint(d.FalhasGravacao, 10), "aceitas na fila, recusadas pelo banco", tomSeHouver(int64(d.FalhasGravacao), webui.TomAlerta))
+		@indicador("Sem resposta a tempo", strconv.FormatInt(r.Timeouts, 10), r.RotuloJanela(), tomSeHouver(r.Timeouts, webui.TomAlerta))
 	</div>
 	if d.Eventos > 0 || d.Mensagens > 0 {
 		@webui.AlertaCaixa(webui.Alerta{
 			Tom:    webui.TomAlerta,
-			Titulo: "A trilha perdeu linhas desde que o processo subiu.",
-			Texto:  "A fila de gravação tem tamanho fixo e descarta quando enche, para que o log não segure o único escritor do SQLite. O número está aqui porque trilha que mente é pior que trilha faltando: as chamadas descartadas aconteceram e não estão na tabela abaixo.",
+			Titulo: strconv.FormatUint(d.Eventos, 10) + " chamadas não entraram nesta lista.",
+			Texto:  "Chegaram mais rápido do que o registro consegue gravar. Elas aconteceram normalmente; só não estão abaixo.",
 		})
 	}
 	if d.FalhasGravacao > 0 {
 		@webui.AlertaCaixa(webui.Alerta{
 			Tom:    webui.TomAlerta,
-			Titulo: "O banco recusou gravar algumas chamadas.",
-			Texto:  "Estas chamadas saíram da fila — não foi fila cheia — mas a escrita no SQLite falhou. É outro problema do descarte acima, e o log do processo tem o erro de cada tentativa.",
+			Titulo: strconv.FormatUint(d.FalhasGravacao, 10) + " chamadas não puderam ser gravadas.",
+			Texto:  "O banco recusou a escrita. A aba Ao vivo mostra o erro.",
 		})
 	}
 }
@@ -254,7 +247,9 @@ templ indicador(rotulo, valor, rodape string, tom webui.Tom) {
 // filtros é um formulário GET comum: o recorte vive na URL, então uma tela
 // filtrada é um link que se manda para outra pessoa.
 templ filtros(f Filtro, o Opcoes) {
-	@webui.Cartao("Filtro") {
+	<details class="pb-cartao" open?={ !f.Vazio() }>
+		<summary class="cursor-pointer select-none px-5 py-3 text-sm font-medium text-conteudo">Filtrar</summary>
+		<div class="border-t border-borda">
 		<form method="get" action={ templ.SafeURL(webui.RotaTrilha) } class="flex flex-col gap-4 px-4 py-4">
 			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
 				@seletor("endpoint", "Endpoint", "todos", f.Endpoint, o.Endpoints)
@@ -287,7 +282,8 @@ templ filtros(f Filtro, o Opcoes) {
 				<a href={ templ.SafeURL(webui.RotaTrilha) } class="pb-botao pb-botao-secundario">Limpar</a>
 			</div>
 		</form>
-	}
+		</div>
+	</details>
 }
 
 templ seletor(nome, rotulo, vazio, escolhido string, opcoes []string) {
@@ -381,8 +377,8 @@ func ultimoCursor(eventos []Evento) (int64, int64) {
 // custa um atributo.
 templ TelaAoVivo(d Descarte, limite int) {
 	@webui.Pagina(webui.DadosPagina{
-		Titulo:    "Log ao vivo",
-		Subtitulo: "O que o processo está registrando agora, por SSE. Chave sensível (token, senha, header de autorização) e marca de credencial reconhecível (JWT, chave do patchbay, ghp_, sk-ant-, AKIA...) saem redigidas antes de o log ser escrito, não só antes de aparecer aqui. O que isto não alcança: um header estático de MCP que não segue nenhum desses formatos passa como texto livre.",
+		Titulo:    "Atividade",
+		Subtitulo: "O que o patchbay está fazendo agora. Tokens e senhas aparecem apagados.",
 		Secao:     webui.SecaoLogs,
 		Usuario:   webui.UsuarioDoContexto(ctx),
 		Acao:      linkTrilha(),
