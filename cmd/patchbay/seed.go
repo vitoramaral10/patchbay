@@ -150,7 +150,7 @@ func comandoSeed(ctx context.Context, args []string, saida io.Writer) error {
 	// chave mestra não se abre, e com a chave errada o canário barra antes de
 	// qualquer escrita. Um seed que rodasse com outra chave gravaria o canário
 	// de um banco que o serve depois recusaria.
-	cofre, err := cofreDoAmbiente()
+	cofre, err := cofreDoBoot(cfg.DataDir)
 	if err != nil {
 		return err
 	}

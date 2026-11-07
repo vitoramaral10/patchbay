@@ -721,10 +721,11 @@ func TestUI_ValidacaoDosFormularios(t *testing.T) {
 			campos:     url.Values{"slug": {"Slug Com Espaço"}, "nome": {"x"}},
 			querTrecho: "minúsculas, números e hífen",
 		},
-		"endpoint sem slug": {
+		// Sem slug, ele sai do nome; sem os dois, não há de onde tirar a URL.
+		"endpoint sem nome nem slug": {
 			rota:       webui.RotaEndpoints,
-			campos:     url.Values{"nome": {"x"}},
-			querTrecho: "Escolha um slug",
+			campos:     url.Values{"nome": {""}},
+			querTrecho: "Dê um nome ao endpoint",
 		},
 		"chave sem endpoint": {
 			rota:       webui.RotaChaves,

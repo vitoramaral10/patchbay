@@ -17,11 +17,14 @@ import (
 // camadas de configuração que a proposta 08.9 do estudo elimina — o YAML é
 // artefato de export/import e nunca é lido no boot.
 type Config struct {
-	Listen     string
-	DataDir    string
-	PublicURL  string
-	NivelLog   slog.Level
-	LogEmTexto bool
+	Listen    string
+	DataDir   string
+	PublicURL string
+	// PublicURLExplicita diz se a URL veio de flag ou ambiente. Sem ela, vale
+	// a gravada em Ajustes (chaveURLPublica), e na falta dessa, a da escuta.
+	PublicURLExplicita bool
+	NivelLog           slog.Level
+	LogEmTexto         bool
 }
 
 // Padrões de desenvolvimento: só loopback, para que a instalação nova não fique
@@ -76,6 +79,7 @@ func (c *Config) normalizar() error {
 	if c.DataDir == "" {
 		return errors.New("config: diretório de dados vazio")
 	}
+	c.PublicURLExplicita = c.PublicURL != ""
 	if c.PublicURL == "" {
 		// Derivar da escuta é o certo para desenvolvimento e errado atrás de
 		// proxy: o authorization server da fatia 10 anuncia o issuer com esta

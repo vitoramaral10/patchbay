@@ -5,8 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,12 +41,15 @@ const intervaloLimpezaSessao = time.Hour
 // Aplicacao é o grafo de dependências montado. Só este arquivo o conhece
 // inteiro — as features não se importam entre si.
 type Aplicacao struct {
-	cfg   Config
-	log   *slog.Logger
-	st    *store.Store
-	chave *apikey.Servico
-	adm   *admin.Servico
-	oauth *authsrv.Servico
+	// reiniciar, fechado, pede ao servirUmaVez outra volta com a config nova.
+	reiniciar    chan struct{}
+	reiniciarUma sync.Once
+	cfg          Config
+	log          *slog.Logger
+	st           *store.Store
+	chave        *apikey.Servico
+	adm          *admin.Servico
+	oauth        *authsrv.Servico
 
 	gerente   *upstream.Gerente
 	oauthUp   *upstream.BrokerOAuth
@@ -193,7 +200,21 @@ func montar(
 		return nil, err
 	}
 
-	a := &Aplicacao{cfg: cfg, log: log, st: st, hub: hub, pararTrilha: make(chan struct{})}
+	if !cfg.PublicURLExplicita {
+		gravada, ok, err := store.NovasConfiguracoes(st.Leitura(), st.Escrita()).Ler(ctx, chaveURLPublica)
+		if err != nil {
+			_ = st.Close()
+			return nil, err
+		}
+		if ok {
+			cfg.PublicURL = gravada
+		}
+	}
+
+	a := &Aplicacao{
+		cfg: cfg, log: log, st: st, hub: hub, pararTrilha: make(chan struct{}),
+		reiniciar: make(chan struct{}),
+	}
 	leitura, escrita := st.Leitura(), st.Escrita()
 
 	// Antes de qualquer componente: se o canário não confere, a chave mestra
@@ -208,6 +229,11 @@ func montar(
 	a.repoChave = apikey.NovoRepositorioSQLite(leitura, escrita)
 	a.repoOAuth = authsrv.NovoRepositorioSQLite(leitura, escrita)
 	a.repoTrilha = trilha.NovoRepositorioSQLite(leitura, escrita)
+
+	if err := criarEndpointInicial(ctx, a.repoEndpoint, a.repoUpstream); err != nil {
+		_ = st.Close()
+		return nil, err
+	}
 
 	// A fila da trilha é montada antes dos endpoints porque é ela que o gancho de
 	// captura recebe. Nada aqui é opcional por configuração: a trilha é a única
@@ -297,6 +323,17 @@ func montar(
 		a.endpoints.Sincronizar, nomeExpostoDe,
 		log.With("componente", "admin_upstream"),
 	)
+	// MCP novo entra em todo endpoint: adicionar e já aparecer no cliente.
+	// Tirar de um endpoint é um clique na tela dele.
+	a.adminUp.AoCriar(func(ctx context.Context, id int64, nome string) {
+		prefixo := nome + "_"
+		if !catalogo.PrefixoValido(prefixo) {
+			prefixo = ""
+		}
+		if err := a.repoEndpoint.IncluirEmTodos(ctx, id, prefixo); err != nil {
+			log.Error("MCP criado mas fora dos endpoints", "upstream_id", id, "erro", err)
+		}
+	})
 	// A biblioteca tem cópia local da lista oficial do mcpservers.org, mantida
 	// por uma goroutine de fundo. A tela lê o banco e nunca a rede: é o que
 	// faz a busca digitada responder na hora, e o que mantém a tela de pé com
@@ -526,7 +563,9 @@ func (a *Aplicacao) Handler() http.Handler {
 	a.adminEnd.Rotas(protegido)
 	a.adminChave.Rotas(protegido)
 	a.adminOAuth.Rotas(protegido)
+	a.adminConfig.ComURLPublica(a.infoURLPublica)
 	a.adminConfig.Rotas(protegido)
+	protegido.HandleFunc("POST "+rotaURLPublica, a.salvarURLPublica)
 	a.adminTrilha.Rotas(protegido)
 	mux.Handle(webui.RotaPainel, a.admHTTP.Proteger(protegido))
 
@@ -605,14 +644,26 @@ func (a *Aplicacao) painel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	clientes, err := a.repoOAuth.TodosClientes(r.Context())
+	if err != nil {
+		webui.ErroInterno(w, r, a.log, err)
+		return
+	}
+	d.ClientesOAuth = len(clientes)
+	d.URLLocal = urlLocal(a.cfg.PublicURL)
+	d.PrimeiroEndpoint = webui.RotaEndpoints
+	if eps, err := a.repoEndpoint.Todos(r.Context()); err == nil && len(eps) > 0 {
+		d.PrimeiroEndpoint = webui.RotaEndpoints + "/" + strconv.FormatInt(eps[0].ID, 10)
+	}
+
 	webui.Renderizar(w, r, http.StatusOK, a.log, telaPainel(d, webui.Avisos(r, avisosDoPainel)))
 }
 
 var avisosDoPainel = map[string]webui.Alerta{
 	"setup": {
 		Tom:    webui.TomSucesso,
-		Titulo: "Administrador criado e sessão aberta.",
-		Texto:  "O próximo passo é cadastrar um upstream.",
+		Titulo: "Tudo pronto para começar.",
+		Texto:  "Siga os passos abaixo: em dois minutos o seu cliente de IA já vê as ferramentas.",
 	},
 }
 
@@ -664,10 +715,29 @@ func (a *Aplicacao) sincronizar(ctx context.Context) {
 
 // servir sobe o servidor HTTP e desliga limpo no cancelamento do ctx.
 func servir(ctx context.Context, cfg Config, log *slog.Logger) error {
-	cofre, err := cofreDoAmbiente()
+	// A chave é lida uma vez: o boot tira a variável do ambiente, e reler no
+	// reinício sortearia uma chave nova em <dados>/chave-mestra.
+	cofre, err := cofreDoBoot(cfg.DataDir)
 	if err != nil {
 		return err
 	}
+	for {
+		err := servirUmaVez(ctx, cfg, cofre, log)
+		if !errors.Is(err, errReiniciar) {
+			return err
+		}
+		log.Info("reiniciando a aplicação para aplicar os ajustes")
+	}
+}
+
+// errReiniciar é a saída de servirUmaVez que pede outra volta do laço.
+var errReiniciar = errors.New("reiniciar")
+
+func servirUmaVez(raiz context.Context, cfg Config, cofre *cripto.Cofre, log *slog.Logger) error {
+	// Contexto próprio desta volta: os componentes de fundo param pelo
+	// cancelamento dele, e no reinício quem cancela é a própria aplicação.
+	ctx, cancelar := context.WithCancel(raiz)
+	defer cancelar()
 	a, err := montar(ctx, cfg, cofre, log)
 	if err != nil {
 		return err
@@ -691,8 +761,8 @@ func servir(ctx context.Context, cfg Config, log *slog.Logger) error {
 		// a.log e não log: daqui em diante o logger é o que redige segredo e
 		// replica para a tela de log ao vivo.
 		a.log.Info("patchbay escutando",
-			"listen", cfg.Listen, "url_publica", cfg.PublicURL, "banco", a.st.Caminho(),
-			"administracao", cfg.PublicURL+webui.RotaPainel)
+			"listen", cfg.Listen, "url_publica", a.cfg.PublicURL, "banco", a.st.Caminho(),
+			"administracao", a.cfg.PublicURL+webui.RotaPainel)
 		erros <- srv.ListenAndServe()
 	}()
 
@@ -706,6 +776,13 @@ func servir(ctx context.Context, cfg Config, log *slog.Logger) error {
 			return fmt.Errorf("servir: %w", err)
 		}
 		return nil
+	case <-a.reiniciar:
+		cancelar()
+		ctxDesligar, cancelarDesligar := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancelarDesligar()
+		_ = srv.Shutdown(ctxDesligar)
+		a.PararConsumoDaTrilha()
+		return errReiniciar
 	case <-ctx.Done():
 		a.log.Info("desligando")
 		ctxDesligar, cancelar := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -721,4 +798,35 @@ func servir(ctx context.Context, cfg Config, log *slog.Logger) error {
 		}
 		return nil
 	}
+}
+
+// criarEndpointInicial dá à instalação nova o endpoint "principal": sem ele o
+// primeiro MCP não teria onde aparecer, e criar endpoint antes de saber o que
+// é um era o passo que ninguém entendia. Só age com o banco vazio dos dois
+// lados, para não ressuscitar um endpoint que o admin apagou.
+func criarEndpointInicial(
+	ctx context.Context, eps *endpoint.RepositorioSQLite, ups *upstream.RepositorioSQLite,
+) error {
+	todosEps, err := eps.Todos(ctx)
+	if err != nil || len(todosEps) > 0 {
+		return err
+	}
+	todosUps, err := ups.Todos(ctx)
+	if err != nil || len(todosUps) > 0 {
+		return err
+	}
+	_, err = eps.Criar(ctx, endpoint.Form{Slug: "principal", Nome: "Principal"})
+	return err
+}
+
+// urlLocal diz se a URL pública só serve nesta máquina ou na rede de casa.
+func urlLocal(u string) bool {
+	p, err := url.Parse(u)
+	if err != nil {
+		return true
+	}
+	h := p.Hostname()
+	ip := net.ParseIP(h)
+	return h == "localhost" || strings.HasSuffix(h, ".local") ||
+		(ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()))
 }

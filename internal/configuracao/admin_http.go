@@ -22,8 +22,9 @@ const tamanhoMaximoDoYAML = 1 << 20
 // clicar o botão pode ter passado um dia, e aplicar um plano velho seria aplicar
 // uma decisão tomada sobre um estado que já não existe.
 type Admin struct {
-	servico *Servico
-	log     *slog.Logger
+	servico    *Servico
+	log        *slog.Logger
+	urlPublica func() (string, bool)
 }
 
 // NovoAdmin monta a borda da tela de configuração.
@@ -39,12 +40,28 @@ func (a *Admin) Rotas(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+RotaAplicar, a.aplicar)
 }
 
+// ComURLPublica injeta a leitura da URL pública, que mora na borda (main).
+func (a *Admin) ComURLPublica(fn func() (valor string, travada bool)) { a.urlPublica = fn }
+
 func (a *Admin) tela(w http.ResponseWriter, r *http.Request) {
-	aviso := webui.Avisos(r, avisosDaConfiguracao)
-	webui.Renderizar(w, r, http.StatusOK, a.log, TelaConfiguracao(DadosTela{Alerta: aviso}))
+	d := DadosTela{Alerta: webui.Avisos(r, avisosDaConfiguracao)}
+	if a.urlPublica != nil {
+		d.URLPublica, d.URLTravada = a.urlPublica()
+	}
+	webui.Renderizar(w, r, http.StatusOK, a.log, TelaConfiguracao(d))
 }
 
 var avisosDaConfiguracao = map[string]webui.Alerta{
+	"url_salva": {
+		Tom:    webui.TomSucesso,
+		Titulo: "Endereço salvo.",
+		Texto:  "O patchbay reiniciou por dentro para usar o endereço novo. Clientes conectados reconectam sozinhos.",
+	},
+	"url_invalida": {
+		Tom:    webui.TomPerigo,
+		Titulo: "Esse endereço não serve.",
+		Texto:  "Use só o começo da URL, com http:// ou https://, sem caminho no fim: https://patchbay.seudominio.com",
+	},
 	"vazio": {
 		Tom:    webui.TomAlerta,
 		Titulo: "Cole o YAML antes de pedir o plano.",
