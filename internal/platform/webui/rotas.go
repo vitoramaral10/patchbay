@@ -82,20 +82,68 @@ const (
 	SecaoLogs         = "logs"
 )
 
+// itemNav é uma entrada do menu lateral. Secoes são as telas que acendem o
+// item; Abas, quando há mais de uma tela no item, viram as abas do topo da
+// página — é assim que nove telas cabem em cinco entradas sem sumir nenhuma.
 type itemNav struct {
+	Rota   string
+	Rotulo string
+	Icone  string
+	Secoes []string
+	Abas   []abaNav
+}
+
+type abaNav struct {
 	Rota   string
 	Rotulo string
 	Secao  string
 }
 
+func (i itemNav) ativo(secao string) bool {
+	for _, s := range i.Secoes {
+		if s == secao {
+			return true
+		}
+	}
+	return false
+}
+
+// itemAtivo devolve o item do menu que contém a seção.
+func itemAtivo(secao string) (itemNav, bool) {
+	for _, i := range navegacao {
+		if i.ativo(secao) {
+			return i, true
+		}
+	}
+	return itemNav{}, false
+}
+
 var navegacao = []itemNav{
-	{Rota: RotaPainel, Rotulo: "Painel", Secao: SecaoPainel},
-	{Rota: RotaUpstreams, Rotulo: "MCPs", Secao: SecaoUpstreams},
-	{Rota: RotaBiblioteca, Rotulo: "Biblioteca", Secao: SecaoBiblioteca},
-	{Rota: RotaEndpoints, Rotulo: "Endpoints", Secao: SecaoEndpoints},
-	{Rota: RotaChaves, Rotulo: "Chaves de API", Secao: SecaoChaves},
-	{Rota: RotaClientesOAuth, Rotulo: "Clientes OAuth", Secao: SecaoOAuth},
-	{Rota: RotaConfiguracao, Rotulo: "Configuração", Secao: SecaoConfiguracao},
-	{Rota: RotaTrilha, Rotulo: "Trilha", Secao: SecaoTrilha},
-	{Rota: RotaLogsAoVivo, Rotulo: "Logs", Secao: SecaoLogs},
+	{Rota: RotaPainel, Rotulo: "Início", Icone: "inicio", Secoes: []string{SecaoPainel}},
+	{
+		Rota: RotaEndpoints, Rotulo: "Endpoints", Icone: "endpoint",
+		Secoes: []string{SecaoEndpoints, SecaoChaves, SecaoOAuth},
+		Abas: []abaNav{
+			{Rota: RotaEndpoints, Rotulo: "Endpoints", Secao: SecaoEndpoints},
+			{Rota: RotaChaves, Rotulo: "Chaves de API", Secao: SecaoChaves},
+			{Rota: RotaClientesOAuth, Rotulo: "Apps conectados", Secao: SecaoOAuth},
+		},
+	},
+	{
+		Rota: RotaUpstreams, Rotulo: "MCPs", Icone: "mcp",
+		Secoes: []string{SecaoUpstreams, SecaoBiblioteca},
+		Abas: []abaNav{
+			{Rota: RotaUpstreams, Rotulo: "Meus MCPs", Secao: SecaoUpstreams},
+			{Rota: RotaBiblioteca, Rotulo: "Biblioteca", Secao: SecaoBiblioteca},
+		},
+	},
+	{
+		Rota: RotaTrilha, Rotulo: "Atividade", Icone: "atividade",
+		Secoes: []string{SecaoTrilha, SecaoLogs},
+		Abas: []abaNav{
+			{Rota: RotaTrilha, Rotulo: "Chamadas", Secao: SecaoTrilha},
+			{Rota: RotaLogsAoVivo, Rotulo: "Ao vivo", Secao: SecaoLogs},
+		},
+	},
+	{Rota: RotaConfiguracao, Rotulo: "Ajustes", Icone: "ajustes", Secoes: []string{SecaoConfiguracao}},
 }
