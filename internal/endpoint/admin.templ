@@ -148,33 +148,11 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 		Alerta:    alerta,
 	}) {
 		<div class="flex flex-col gap-6">
-			@webui.Cartao("Como conectar") {
-				<dl class="grid gap-x-6 gap-y-4 px-4 py-4 sm:grid-cols-2">
-					@dado("Slug") {
-						<code class="font-mono">{ d.Slug }</code>
-						<p class="mt-1 text-xs text-conteudo-tenue">
-							O slug entra na URL e no público-alvo de todo token deste endpoint: ele não muda depois de criado.
-						</p>
-					}
-					@dado("URL MCP") {
-						<code class="font-mono break-all">{ d.URL }</code>
-					}
-					@dado("Ferramentas expostas") {
-						<span data-numero>{ strconv.Itoa(len(d.Ferramentas)) }</span>
-						if len(d.Lapides) > 0 {
-							<span class="text-conteudo-tenue">+{ strconv.Itoa(len(d.Lapides)) } lápide(s)</span>
-						}
-					}
-					@dado("MCPs na composição") {
-						<span data-numero>{ strconv.Itoa(len(d.Composicao)) }</span>
-					}
-				</dl>
-			}
-			@webui.Cartao("Composição") {
+			@cartaoConectar(d)
+			@webui.Cartao("MCPs neste endpoint") {
 				if len(d.Composicao) == 0 {
 					<p class="px-4 py-6 text-conteudo-suave">
-						Nenhum MCP compõe este endpoint, então ele responde <code class="font-mono">tools/list</code> vazio.
-						Edite o endpoint para escolher os MCPs.
+						Nenhum MCP ainda. Os que você adicionar entram aqui sozinhos; para escolher à mão, clique em Editar.
 					</p>
 				} else {
 					<ul class="divide-y divide-borda">
@@ -189,22 +167,6 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 										@webui.Selo(tomDoEstado(u.Estado, u.Habilitado), rotuloDoEstado(u.Estado, u.Habilitado))
 									</span>
 								</div>
-								if u.Prefixo != "" || u.Regras != "" {
-									<dl class="flex flex-col gap-1 text-xs text-conteudo-suave">
-										if u.Prefixo != "" {
-											<div class="flex gap-2">
-												<dt class="text-conteudo-tenue">prefixo</dt>
-												<dd><code class="font-mono">{ u.Prefixo }</code></dd>
-											</div>
-										}
-										if u.Regras != "" {
-											<div class="flex gap-2">
-												<dt class="text-conteudo-tenue">regras</dt>
-												<dd><pre class="whitespace-pre-wrap font-mono">{ u.Regras }</pre></dd>
-											</div>
-										}
-									</dl>
-								}
 							</li>
 						}
 					</ul>
@@ -234,6 +196,61 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 			}
 		</div>
 	}
+}
+
+// cartaoConectar diz, por cliente, o que copiar para onde. Os clientes que
+// fazem login OAuth só precisam da URL; os outros levam uma chave, gerada aqui.
+templ cartaoConectar(d Detalhe) {
+	@webui.Cartao("Conectar um cliente") {
+		<div class="flex flex-col gap-4 px-5 py-5">
+			<div class="flex flex-col gap-1.5">
+				<span class="text-xs font-semibold uppercase tracking-wide text-conteudo-suave">URL deste endpoint</span>
+				<code class="select-all break-all rounded-md bg-acento-fraco px-3 py-2 font-mono text-sm text-acento">{ d.URL }</code>
+				<span class="text-xs text-conteudo-tenue">{ strconv.Itoa(len(d.Ferramentas)) } ferramentas de { strconv.Itoa(len(d.Composicao)) } MCPs</span>
+			</div>
+			<div class="flex flex-col divide-y divide-borda rounded-lg border border-borda">
+				@passoCliente("claude.ai, Claude Desktop ou ChatGPT", true) {
+					<ol class="flex list-decimal flex-col gap-1.5 pl-5">
+						<li>Abra <strong>Configurações → Conectores → Adicionar conector personalizado</strong>.</li>
+						<li>Cole a URL acima e salve.</li>
+						<li>Na tela que abrir, entre com o usuário do patchbay e clique em <strong>Permitir</strong>.</li>
+					</ol>
+				}
+				@passoCliente("Claude Code", false) {
+					<p>Rode no terminal e depois use <code class="font-mono">/mcp</code> para entrar:</p>
+					<pre class="select-all overflow-x-auto rounded-md bg-superficie-alta px-3 py-2 font-mono text-xs">claude mcp add --transport http { d.Slug } { d.URL }</pre>
+				}
+				@passoCliente("Cursor, VS Code e outros", false) {
+					<p>Cole no arquivo de MCPs do cliente. Se ele não abrir a tela de login, gere uma chave abaixo.</p>
+					<pre class="select-all overflow-x-auto rounded-md bg-superficie-alta px-3 py-2 font-mono text-xs">{ jsonDoCliente(d.Slug, d.URL) }</pre>
+				}
+				@passoCliente("Cliente sem login (chave de API)", false) {
+					<p>A chave vale só para este endpoint e aparece uma vez, já com o comando pronto.</p>
+					<form method="post" action={ templ.SafeURL(webui.RotaChaves) } class="flex flex-wrap items-end gap-2">
+						<input type="hidden" name="endpoint" value={ strconv.FormatInt(d.ID, 10) }/>
+						<div class="flex flex-col gap-1">
+							<label for="nome-chave" class="text-xs font-medium text-conteudo">Para quem é</label>
+							<input id="nome-chave" name="nome" required class="pb-campo w-56" placeholder="codex no notebook"/>
+						</div>
+						<button type="submit" class="pb-botao pb-botao-primario">Gerar chave</button>
+					</form>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ passoCliente(titulo string, aberto bool) {
+	<details class="group px-4 py-3" open?={ aberto }>
+		<summary class="cursor-pointer select-none font-medium text-conteudo group-open:text-acento">{ titulo }</summary>
+		<div class="mt-3 flex flex-col gap-2 text-sm text-conteudo-suave">
+			{ children... }
+		</div>
+	</details>
+}
+
+func jsonDoCliente(slug, url string) string {
+	return "{\n  \"mcpServers\": {\n    \"" + slug + "\": { \"url\": \"" + url + "\" }\n  }\n}"
 }
 
 templ acoesDoDetalhe(d Detalhe) {
@@ -300,26 +317,35 @@ templ TelaForm(f Form, opcoes []UpstreamOpcao) {
 								Para trocar o slug, crie outro endpoint e emita chaves novas.
 							</p>
 						</div>
+						@webui.Campo(webui.DadosCampo{
+							Nome:        "nome",
+							Rotulo:      "Nome",
+							Valor:       f.Nome,
+							Erro:        f.Erros["nome"],
+							Obrigatorio: true,
+						})
 					} else {
 						@webui.Campo(webui.DadosCampo{
+							Nome:        "nome",
+							Rotulo:      "Nome",
+							Valor:       f.Nome,
+							Ajuda:       "Por exemplo Trabalho ou Pessoal. Cada endpoint é uma URL com o seu conjunto de MCPs.",
+							Erro:        f.Erros["nome"],
+							Obrigatorio: true,
+						})
+						@webui.Campo(webui.DadosCampo{
 							Nome:         "slug",
-							Rotulo:       "Slug",
+							Rotulo:       "Endereço (opcional)",
 							Valor:        f.Slug,
-							Ajuda:        "Vai na URL: /mcp/<slug>. Minúsculas, números e hífen. Não muda depois de criado.",
+							Ajuda:        "Vai na URL: /mcp/<endereço>. Em branco, sai do nome. Não muda depois de criado.",
 							Erro:         f.Erros["slug"],
-							Obrigatorio:  true,
 							Monoespacado: true,
-							Placeholder:  "pessoal",
+							Placeholder:  "trabalho",
 						})
 					}
-					@webui.Campo(webui.DadosCampo{
-						Nome:        "nome",
-						Rotulo:      "Nome",
-						Valor:       f.Nome,
-						Ajuda:       "Como o endpoint aparece nesta administração.",
-						Erro:        f.Erros["nome"],
-						Obrigatorio: true,
-					})
+					<details open?={ f.Descricao != "" || f.Instrucoes != "" }>
+						<summary class="cursor-pointer select-none text-sm font-medium text-conteudo-suave">Texto para o cliente de IA (opcional)</summary>
+						<div class="mt-4 flex flex-col gap-6">
 					@webui.CampoTexto(webui.DadosCampo{
 						Nome:   "descricao",
 						Rotulo: "Descrição",
@@ -332,9 +358,11 @@ templ TelaForm(f Form, opcoes []UpstreamOpcao) {
 						Valor:  f.Instrucoes,
 						Ajuda:  "Texto enviado no initialize. Alterar nome, descrição ou instruções recria o servidor MCP e encerra as sessões abertas deste endpoint; mudar só a composição não encerra nada.",
 					})
+						</div>
+					</details>
 				</div>
 			}
-			@webui.Cartao("Composição") {
+			@webui.Cartao("MCPs e ferramentas") {
 				if len(opcoes) == 0 {
 					<p class="px-4 py-6 text-conteudo-suave">
 						Nenhum MCP cadastrado. Crie um MCP primeiro — um endpoint sem MCP
@@ -344,9 +372,7 @@ templ TelaForm(f Form, opcoes []UpstreamOpcao) {
 					<fieldset class="flex flex-col gap-2 px-4 py-4">
 						<legend class="sr-only">MCPs deste endpoint</legend>
 						<p class="text-sm text-conteudo-tenue">
-							O prefixo e as regras valem só neste endpoint: o mesmo MCP pode entrar em
-							outro com outra composição. A ordem é filtro, renome e prefixo — e o filtro casa
-							contra o nome original no MCP, nunca contra o nome já prefixado.
+							Marque os MCPs que este endpoint entrega. O que você escolher aqui vale só para ele.
 						</p>
 						<ul class="flex flex-col gap-1">
 							for _, o := range opcoes {
@@ -370,49 +396,77 @@ templ TelaForm(f Form, opcoes []UpstreamOpcao) {
 	}
 }
 
-// itemDaComposicao é um upstream no formulário: entra ou não, com que prefixo e
-// com que regras.
-//
-// Os três campos ficam sempre visíveis, sem JavaScript escondendo o que está
-// desmarcado: o servidor já ignora prefixo e regra de upstream não marcado, e um
-// campo que some é um campo que a pessoa não sabe que existe.
+// itemDaComposicao é um MCP no formulário: entra ou não, e quais ferramentas
+// dele o cliente vê, com que nome. Prefixo e regras com glob ficam em
+// "Ajustes finos", fechado.
 templ itemDaComposicao(o UpstreamOpcao) {
-	<li class="rounded-md border border-borda px-3 py-3">
-		<label class="flex cursor-pointer flex-wrap items-center gap-3">
+	<li class="rounded-lg border border-borda">
+		<label class="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3">
 			<input
 				type="checkbox"
 				name="upstream"
 				value={ strconv.FormatInt(o.ID, 10) }
-				class="h-4 w-4 accent-[var(--pb-acento)]"
+				class="h-5 w-5 accent-[var(--pb-acento)]"
 				checked?={ o.Escolhido }
 			/>
-			<span class="flex-1 font-medium">{ o.Nome }</span>
-			<span class="text-sm text-conteudo-suave" data-numero>
-				{ strconv.Itoa(o.Ferramentas) } ferramentas
-			</span>
+			<span class="flex-1 font-semibold text-conteudo">{ o.Nome }</span>
 			@webui.Selo(tomDoEstado(o.Estado, o.Habilitado), rotuloDoEstado(o.Estado, o.Habilitado))
 		</label>
-		<div class="mt-3 flex flex-col gap-4 pl-7">
-			@webui.Campo(webui.DadosCampo{
-				Nome:         ChavePrefixo(o.ID),
-				Rotulo:       "Prefixo",
-				Valor:        o.Prefixo,
-				Erro:         o.ErroPrefixo,
-				Ajuda:        "Entra no nome que o cliente vê, nunca no nome chamado no MCP. Resolve colisão entre dois MCPs que expõem search.",
-				Placeholder:  "nt_",
-				Monoespacado: true,
-			})
-			@webui.CampoTexto(webui.DadosCampo{
-				Nome:        ChaveRegras(o.ID),
-				Rotulo:      "Regras",
-				Valor:       o.Regras,
-				Erro:        o.ErroRegras,
-				Ajuda:       "Uma por linha: \"excluir write_*\", \"incluir search\", \"renomear buscar_no_notion buscar\". Vale a primeira regra que casa; o que não casa com nenhuma entra. Para deixar só um conjunto, feche a lista com \"excluir *\" no fim. O * casa qualquer trecho, inclusive vazio, e pode ser reusado no nome novo — mas padrão não aceita espaço. Comentários (#) e linhas em branco não são salvos: ao reabrir, a tela reexibe só as regras.",
-				Placeholder: "excluir write_*",
-			})
-			if o.AvisoRegras != "" {
-				<p class="text-xs text-alerta">{ o.AvisoRegras }</p>
+		<div class="flex flex-col gap-4 border-t border-borda px-4 py-4 pl-12">
+			if len(o.Itens) == 0 {
+				<p class="text-sm text-conteudo-tenue">As ferramentas aparecem aqui quando o MCP conectar.</p>
+			} else {
+				<details open?={ o.Escolhido && o.Ligadas() < len(o.Itens) }>
+					<summary class="cursor-pointer select-none text-sm font-medium text-conteudo">
+						Ferramentas: { strconv.Itoa(o.Ligadas()) } de { strconv.Itoa(len(o.Itens)) } ligadas
+					</summary>
+					<p class="mt-2 text-xs text-conteudo-tenue">Desmarque o que o cliente não deve ver. O campo ao lado troca o nome que ele vê.</p>
+					<ul class="mt-3 grid gap-x-6 gap-y-1.5 md:grid-cols-2">
+						for _, it := range o.Itens {
+							<li class="flex items-center gap-2">
+								<input type="hidden" name={ chaveNomes(o.ID) } value={ it.Nome }/>
+								<label class="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+									<input type="checkbox" name={ chaveLigada(o.ID) } value={ it.Nome } checked?={ it.Ligada } class="h-4 w-4 shrink-0 accent-[var(--pb-acento)]"/>
+									<span class="truncate font-mono text-xs text-conteudo" title={ it.Nome }>{ it.Nome }</span>
+								</label>
+								<input
+									type="text"
+									name={ chaveRenome(o.ID) }
+									value={ it.Renome }
+									placeholder="renomear…"
+									aria-label={ "Novo nome para " + it.Nome }
+									class="pb-campo w-32 shrink-0 px-2 py-1 font-mono text-xs"
+								/>
+							</li>
+						}
+					</ul>
+				</details>
 			}
+			<details open?={ o.ErroPrefixo != "" || o.ErroRegras != "" || o.RegrasAvancadas != "" }>
+				<summary class="cursor-pointer select-none text-sm font-medium text-conteudo-suave">Ajustes finos</summary>
+				<div class="mt-3 flex flex-col gap-4">
+					@webui.Campo(webui.DadosCampo{
+						Nome:         ChavePrefixo(o.ID),
+						Rotulo:       "Prefixo dos nomes",
+						Valor:        o.Prefixo,
+						Erro:         o.ErroPrefixo,
+						Ajuda:        "Vai na frente do nome de cada ferramenta deste MCP. Evita que dois MCPs com uma ferramenta \"search\" se confundam.",
+						Placeholder:  "github_",
+						Monoespacado: true,
+					})
+					@webui.CampoTexto(webui.DadosCampo{
+						Nome:        ChaveRegras(o.ID),
+						Rotulo:      "Regras avançadas",
+						Valor:       o.RegrasAvancadas,
+						Erro:        o.ErroRegras,
+						Ajuda:       "Para grupos de ferramentas, com * : \"excluir write_*\" desliga todas que começam com write_; \"excluir *\" no fim desliga as que o MCP ganhar no futuro. A lista acima vence estas regras.",
+						Placeholder: "excluir write_*",
+					})
+					if o.AvisoRegras != "" {
+						<p class="text-xs text-alerta">{ o.AvisoRegras }</p>
+					}
+				</div>
+			</details>
 		</div>
 	</li>
 }
@@ -428,7 +482,7 @@ func subtituloDoForm(f Form) string {
 	if f.SlugFixo {
 		return "A mudança entra em vigor na hora, sem reiniciar o patchbay."
 	}
-	return "O slug entra na URL e é contrato: escolha com cuidado, porque ele não muda depois."
+	return "Um endpoint é uma URL com o seu conjunto de MCPs. Útil para separar trabalho e pessoal."
 }
 
 func acaoDoForm(f Form) string {

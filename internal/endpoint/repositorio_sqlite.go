@@ -235,6 +235,22 @@ UPDATE endpoint SET nome = ?, descricao = ?, instrucoes = ? WHERE id = ?`,
 	return nil
 }
 
+// IncluirEmTodos liga um upstream a todo endpoint que ainda não o tem, no fim
+// da ordem e sem regra. É o que faz um MCP recém-adicionado aparecer no
+// cliente sem passar pela tela de endpoint.
+func (r *RepositorioSQLite) IncluirEmTodos(ctx context.Context, upstreamID int64, prefixo string) error {
+	_, err := r.escrita.ExecContext(ctx, `
+INSERT INTO endpoint_upstream (endpoint_id, upstream_id, prefixo, ordem)
+SELECT e.id, ?, ?, COALESCE((SELECT MAX(eu.ordem) + 1 FROM endpoint_upstream eu WHERE eu.endpoint_id = e.id), 0)
+FROM endpoint e
+WHERE NOT EXISTS (SELECT 1 FROM endpoint_upstream x WHERE x.endpoint_id = e.id AND x.upstream_id = ?)`,
+		upstreamID, prefixo, upstreamID)
+	if err != nil {
+		return fmt.Errorf("incluir upstream %d nos endpoints: %w", upstreamID, err)
+	}
+	return nil
+}
+
 // Remover apaga o endpoint. As linhas de composição e de escopo de chave saem
 // por ON DELETE CASCADE.
 func (r *RepositorioSQLite) Remover(ctx context.Context, id int64) error {

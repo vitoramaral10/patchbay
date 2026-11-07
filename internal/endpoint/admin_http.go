@@ -246,7 +246,11 @@ func (a *Admin) lerForm(r *http.Request, slugFixo bool) (Form, error) {
 		// marcado entram: campo de upstream desmarcado é sobra de formulário, e
 		// gravá-lo faria uma composição que a tela não mostra.
 		form.Prefixos[id] = strings.TrimSpace(r.PostFormValue(ChavePrefixo(id)))
-		form.RegrasTexto[id] = r.PostFormValue(ChaveRegras(id))
+		// A lista de ferramentas e o avançado viram um texto de regras só; a
+		// validação e a gravação continuam as de antes (ferramentas_form.go).
+		form.RegrasTexto[id] = montarRegras(r.PostForm[chaveNomes(id)],
+			r.PostForm[chaveLigada(id)], r.PostForm[chaveRenome(id)],
+			r.PostFormValue(ChaveRegras(id)))
 	}
 	return form, nil
 }
@@ -272,6 +276,7 @@ func (a *Admin) opcoesDoForm(ctx context.Context, form Form) ([]UpstreamOpcao, e
 		opcoes[i].Escolhido = slices.Contains(form.UpstreamIDs, id)
 		opcoes[i].Prefixo = form.Prefixo(id)
 		opcoes[i].Regras = form.RegrasDe(id)
+		opcoes[i].Itens, opcoes[i].RegrasAvancadas = separarRegras(opcoes[i].Regras, opcoes[i].NomesOriginais)
 		opcoes[i].ErroPrefixo = form.Erros[ChavePrefixo(id)]
 		opcoes[i].ErroRegras = form.Erros[ChaveRegras(id)]
 		// O aviso de regra que não casou nada só faz sentido para quem está
