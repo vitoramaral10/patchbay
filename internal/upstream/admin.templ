@@ -663,8 +663,11 @@ func situacao(d Detalhe) (webui.Tom, string, string) {
 	switch {
 	case !d.Habilitado:
 		return webui.TomNeutro, "Desligado", "As ferramentas dele estão fora de todos os endpoints. Ligue de novo em Editar."
+	case (d.Estado == EstadoSemConsentimento || (d.PodeAutorizar() && !d.OAuth.Consentido)) &&
+		strings.Contains(d.UltimoErro, "no prazo"):
+		return webui.TomAlerta, "O login expirou antes de terminar", "Clique em Conectar conta de novo e termine em até 10 minutos, neste mesmo navegador. Depois disso o pedido vence, aqui e no site do servidor."
 	case d.Estado == EstadoSemConsentimento || (d.PodeAutorizar() && !d.OAuth.Consentido):
-		return webui.TomAlerta, "Falta conectar a sua conta", "Este servidor pede login. Clique em Conectar conta, entre no site dele e autorize: o patchbay guarda e renova o acesso sozinho."
+		return webui.TomAlerta, "Falta conectar a sua conta", "Este servidor pede login. Clique em Conectar conta, entre no site dele e autorize em até 10 minutos, neste mesmo navegador: o patchbay guarda e renova o acesso sozinho."
 	case d.Estado == EstadoPronto:
 		return webui.TomSucesso, "Funcionando", n + " ferramentas disponíveis nos endpoints."
 	case d.Estado == EstadoSondaFalhou:
