@@ -214,6 +214,7 @@ func (a *Admin) colar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	form.ID = id
+	a.avisarCriado(r.Context(), id, form.Nome)
 	a.aplicarNoAr(r.Context(), registroDoForm(id, form))
 	a.log.Info("upstream criado por comando colado",
 		"upstream", form.Nome, "upstream_id", id, "tipo", form.TipoEfetivo(),
@@ -236,8 +237,8 @@ func (a *Admin) colar(w http.ResponseWriter, r *http.Request) {
 // motivo em cima dela.
 func (a *Admin) recusarColagem(w http.ResponseWriter, r *http.Request, texto string, err error) {
 	a.log.Info("comando de instalação recusado pela ui", "erro", err)
-	a.renderizarLista(w, r, http.StatusUnprocessableEntity,
-		DadosColar{Texto: texto, Erro: err.Error()})
+	webui.Renderizar(w, r, http.StatusUnprocessableEntity, a.log,
+		TelaAdicionar(DadosColar{Texto: texto, Erro: err.Error()}))
 }
 
 // primeiroErro escolhe uma mensagem entre as do formulário recusado.

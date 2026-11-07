@@ -57,6 +57,12 @@ type DetectorDeOAuth func(ctx context.Context, urlDoMCP string) bool
 // não consegue completar.
 func novoDetectorPorMetadados(cliente *http.Client) DetectorDeOAuth {
 	return func(ctx context.Context, urlDoMCP string) bool {
+		// Servidor que atende sem credencial não precisa de login, mesmo
+		// publicando metadado OAuth (o Context7 publica e aceita anônimo).
+		// Mandá-lo para o consentimento travava a pessoa num passo inútil.
+		if atendeSemCredencial(ctx, cliente, urlDoMCP) {
+			return false
+		}
 		for _, candidata := range metadadosProtegidosDe(urlDoMCP) {
 			if publicaAuthorizationServer(ctx, cliente, candidata) {
 				return true
@@ -64,6 +70,51 @@ func novoDetectorPorMetadados(cliente *http.Client) DetectorDeOAuth {
 		}
 		return false
 	}
+}
+
+// initializeAnonimo é o primeiro pedido de todo cliente MCP Streamable HTTP.
+const initializeAnonimo = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{` +
+	`"protocolVersion":"2025-06-18","capabilities":{},` +
+	`"clientInfo":{"name":"patchbay-deteccao","version":"2"}}}`
+
+// atendeSemCredencial manda um initialize sem Authorization e diz se veio 2xx.
+// Qualquer outra coisa (401, 405 de servidor SSE, rede) cai na leitura do
+// metadado, que é o comportamento de antes.
+func atendeSemCredencial(ctx context.Context, cliente *http.Client, urlDoMCP string) bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, urlDoMCP,
+		strings.NewReader(initializeAnonimo))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	res, err := cliente.Do(req)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		return false
+	}
+	// 2xx não basta: proxy com página de login também responde 200. Só conta
+	// uma resposta JSON-RPC com result, em JSON puro ou num evento SSE.
+	corpo, _ := io.ReadAll(io.LimitReader(res.Body, limiteDoMetadado))
+	tipo := res.Header.Get("Content-Type")
+	if strings.HasPrefix(tipo, "text/event-stream") {
+		for linha := range strings.Lines(string(corpo)) {
+			if dado, ok := strings.CutPrefix(strings.TrimSpace(linha), "data:"); ok {
+				corpo = []byte(dado)
+				break
+			}
+		}
+	} else if !strings.HasPrefix(tipo, "application/json") {
+		return false
+	}
+	var msg struct {
+		JSONRPC string          `json:"jsonrpc"`
+		Result  json.RawMessage `json:"result"`
+	}
+	return json.Unmarshal(corpo, &msg) == nil && msg.JSONRPC == "2.0" && len(msg.Result) > 0
 }
 
 // metadadosProtegidosDe monta as URLs do documento, na ordem em que o RFC 9728
@@ -129,9 +180,7 @@ func publicaAuthorizationServer(ctx context.Context, cliente *http.Client, ender
 // decisão. Vai pela guarda de notas, junto com os outros ajustes do comando:
 // modo escolhido sem o admin digitar precisa aparecer para ele, senão a
 // detecção vira mágica que ninguém consegue auditar depois.
-const avisoModoOAuthDetectado = "O servidor publica metadados de recurso protegido (RFC 9728), " +
-	"então cadastrei em modo OAuth em vez de credencial estática. " +
-	"Clique em Autorizar para consentir."
+const avisoModoOAuthDetectado = "Este servidor pede login: clique em Conectar conta."
 
 // ajustarModoPorDescoberta grava o modo oauth quando o servidor se declara
 // recurso protegido, e devolve o aviso para a tela. Devolve vazio quando não

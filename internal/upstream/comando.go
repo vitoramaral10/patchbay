@@ -71,6 +71,9 @@ type Importacao struct {
 // diz isso. Nenhum erro daqui repete o valor de uma credencial — a mensagem
 // nomeia o header, nunca o token.
 func LerComandoDeInstalacao(texto string) (Importacao, error) {
+	if imp, ok, err := lerFormaLivre(texto); ok {
+		return imp, err
+	}
 	tokens, err := tokenizarComando(texto)
 	if err != nil {
 		return Importacao{}, err
@@ -119,8 +122,9 @@ func pularPrefixoDoComando(tokens []string) ([]string, string, error) {
 			if ehPrefixoDePrompt(t) {
 				continue
 			}
-			return nil, "", errors.New("Não reconheci este comando. Cole a linha inteira de " +
-				"`claude mcp add` ou de `npx add-mcp`, como aparece na documentação do servidor.")
+			return nil, "", errors.New("Não reconheci este texto. Cole a URL do servidor, o " +
+				"comando que o inicia (npx, uvx, docker…), o JSON de mcpServers ou a linha de " +
+				"`claude mcp add`, como aparece na documentação.")
 		}
 	}
 	return nil, "", ErrComandoVazio
