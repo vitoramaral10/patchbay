@@ -32,7 +32,7 @@
 # numérico, arquivos da aplicação pertencendo a root, bits setuid removidos,
 # rootfs somente leitura no compose e nenhum segredo em camada.
 #
-# Base do builder fixada por digest (golang:1.26-bookworm em 2026-09-08);
+# Base do builder fixada por digest (golang:1.26-bookworm em 2026-11-10, Go 1.26.11);
 # atualize o digest ao trocar de versão do Go, não a esmo.
 #
 # `--platform=$BUILDPLATFORM` prende o builder à arquitetura de quem compila, e
@@ -44,7 +44,7 @@
 #
 # QEMU continua no workflow, mas só o estágio de runtime passa por ele: lá há
 # groupadd e chmod de verdade, que precisam rodar como o alvo.
-FROM --platform=$BUILDPLATFORM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm@sha256:dc40a13b61304647ed7e5d581d246b86413dfc29d63c6d018310feb93cd98fc0 AS builder
 WORKDIR /src
 
 # Só os manifestos primeiro: `go mod download` fica numa camada que só muda
@@ -89,7 +89,7 @@ FROM ghcr.io/astral-sh/uv:bookworm-slim@sha256:22334efe746f1b69217d455049b484d7b
 # nativo pré-compilado para glibc, e no musl o npm cairia para compilar da
 # fonte — que exigiria python3, make e g++ aqui dentro, trocando 200 MB de base
 # por um compilador na imagem de runtime. É o pior dos dois lados.
-FROM node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS runtime
+FROM node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS runtime
 
 # Raízes de CA. A `node:*-slim` **não** tem o pacote `ca-certificates`: a base é
 # `debian:bookworm-slim`, que não o traz, e o Dockerfile do Node o instala só
