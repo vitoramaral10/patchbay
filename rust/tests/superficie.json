@@ -1,0 +1,193 @@
+[
+  {
+    "description": "nomes das variáveis de ambiente que o processo recebeu",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "local_stdio_ambiente"
+  },
+  {
+    "description": "eco pelo processo local",
+    "inputSchema": {
+      "properties": {
+        "texto": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "local_stdio_eco"
+  },
+  {
+    "description": "eco pelo SSE de 2024-11-05",
+    "inputSchema": {
+      "properties": {
+        "texto": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "sse_sse_eco"
+  },
+  {
+    "description": "eco na 2025-11-25",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u25_eco_antigo"
+  },
+  {
+    "description": "soma dois inteiros",
+    "inputSchema": {
+      "properties": {
+        "a": {
+          "type": "integer"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
+    },
+    "name": "u25_somar"
+  },
+  {
+    "description": "pede confirmação por elicitação quando o cliente sabe",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_apagar"
+  },
+  {
+    "description": "pede confirmação sempre",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_apagar_teimoso"
+  },
+  {
+    "description": "anotação x-mcp-header bem formada",
+    "inputSchema": {
+      "properties": {
+        "regiao": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "u26_cabecalho_valido"
+  },
+  {
+    "description": "devolve os argumentos e o _meta que chegaram",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_eco_args"
+  },
+  {
+    "description": "devolve eco",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_eco_com_espaco"
+  },
+  {
+    "description": "erro JSON-RPC de propósito",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_erro_protocolo"
+  },
+  {
+    "description": "inputSchema que não é objeto",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_esquema_ruim"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "resultado com outputSchema",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "name": "u26_estruturada",
+    "outputSchema": {
+      "properties": {
+        "total": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total"
+      ],
+      "type": "object"
+    },
+    "title": "Estruturada"
+  },
+  {
+    "description": "isError de propósito",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_falha"
+  },
+  {
+    "description": "nome de 140 caracteres",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_ferramenta_com_nome_comprido_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "description": "resultado de 300 kB",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_grande"
+  },
+  {
+    "description": "imagem e áudio",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_midia"
+  },
+  {
+    "description": "nunca responde",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "u26_pendurar"
+  },
+  {
+    "description": "soma dois inteiros",
+    "inputSchema": {
+      "properties": {
+        "a": {
+          "type": "integer"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
+    },
+    "name": "u26_somar"
+  }
+]
