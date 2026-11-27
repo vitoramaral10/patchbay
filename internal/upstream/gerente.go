@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -1008,7 +1009,18 @@ func (s *servidor) situacao() Situacao {
 	if s.estado == EstadoPronto {
 		noCatalogo = len(s.ferramentas)
 	}
+	var protocolo, servidor string
+	if s.sessao != nil {
+		if ir := s.sessao.InitializeResult(); ir != nil {
+			protocolo = ir.ProtocolVersion
+			if ir.ServerInfo != nil {
+				servidor = strings.TrimSpace(ir.ServerInfo.Name + " " + ir.ServerInfo.Version)
+			}
+		}
+	}
 	return Situacao{
+		Protocolo:       protocolo,
+		Servidor:        servidor,
 		Config:          s.cfg,
 		Estado:          s.estado,
 		UltimoErro:      s.ultimoErro,

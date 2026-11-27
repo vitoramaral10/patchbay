@@ -243,6 +243,11 @@ type Situacao struct {
 	// upstream que alguém apagou.
 	Motivo string
 
+	// Protocolo é a revisão da MCP negociada com o upstream, e Servidor o nome e
+	// a versão que ele declarou. Vazios sem sessão viva.
+	Protocolo string
+	Servidor  string
+
 	// Sonda é a última sondagem funcional, e vive inteira em memória — o banco
 	// guarda a configuração da sonda, nunca o resultado dela.
 	Sonda SituacaoSonda

@@ -130,6 +130,9 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta, colar DadosColar) {
 									if !l.ProximaEm.IsZero() {
 										<p class="mt-0.5 text-xs text-conteudo-tenue">nova tentativa { proximaTentativa(l.ProximaEm) }</p>
 									}
+									if l.Protocolo != "" {
+										<p class="mt-0.5 font-mono text-xs text-conteudo-tenue">MCP { l.Protocolo }</p>
+									}
 								</td>
 								<td class="px-5 py-3.5" data-numero>{ strconv.Itoa(l.Ferramentas) }</td>
 								<td class="px-5 py-3.5" data-numero>{ strconv.Itoa(l.Endpoints) }</td>
@@ -194,6 +197,18 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 					@dado("Situação") {
 						@webui.Selo(tomDoEstado(d.Estado, d.Habilitado, d.Supervisionado),
 							rotuloDoEstado(d.Estado, d.Habilitado, d.Supervisionado))
+					}
+					@dado("Revisão da MCP") {
+						if d.Protocolo != "" {
+							<span class="font-mono">{ d.Protocolo }</span>
+						} else {
+							sem sessão
+						}
+					}
+					if d.Servidor != "" {
+						@dado("Servidor declarado") {
+							<span class="font-mono">{ d.Servidor }</span>
+						}
 					}
 					@dado("Ferramentas descobertas") {
 						<span data-numero>{ strconv.Itoa(len(d.Ferramentas)) }</span>

@@ -949,6 +949,8 @@ type Linha struct {
 	Motivo          string
 	Endpoints       int
 	Supervisionado  bool
+	// Protocolo é a revisão da MCP negociada; vazio sem sessão viva.
+	Protocolo string
 }
 
 // FerramentaDescoberta é uma ferramenta do último tools/list do upstream, do
@@ -996,6 +998,10 @@ type Detalhe struct {
 	// agora. Divergir de len(Ferramentas) é o sintoma de sonda_falhou, e é
 	// exatamente isso que a tela precisa mostrar.
 	NoCatalogo int
+	// Protocolo e Servidor vêm da sessão viva: a revisão da MCP negociada e o
+	// nome e a versão que o upstream declarou.
+	Protocolo string
+	Servidor  string
 }
 
 // SondaLigada informa se a supervisão está sondando este upstream.
