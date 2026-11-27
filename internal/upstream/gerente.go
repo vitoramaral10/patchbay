@@ -617,6 +617,16 @@ func (g *Gerente) conectar(ctx context.Context, cfg Config) (*mcp.ClientSession,
 
 	cliente := mcp.NewClient(&mcp.Implementation{Name: "patchbay", Version: versao.Numero}, &mcp.ClientOptions{
 		Logger: g.log.With("componente", "cliente_upstream", "upstream", cfg.Nome),
+		// Elicitação sobe ao cliente pelo MRTR: com o automático desligado, o
+		// input_required do upstream volta de CallTool intacto e Encaminhar o
+		// repassa, sem estado no gateway. A sessão não declara elicitação: quem
+		// declara é cada chamada, com a capacidade do cliente que a fez.
+		MultiRoundTrip: &mcp.MultiRoundTripOptions{Disabled: true},
+		// Sem isto o catálogo só via ferramenta nova do upstream na próxima
+		// reconexão. Em 2026-07-28 ter o handler já abre o subscriptions/listen.
+		ToolListChangedHandler: func(_ context.Context, req *mcp.ToolListChangedRequest) {
+			go g.relistar(ctx, cfg, req.Session)
+		},
 	})
 
 	ctxConexao, cancelar := context.WithTimeout(ctx, g.prazoDeConexao(cfg))
@@ -864,6 +874,16 @@ func (semValoresDoCliente) Value(any) any { return nil }
 // borda entre a sessão do cliente e a do upstream: o contexto que desce é o de
 // semValoresDoCliente, pela razão registrada lá.
 func (g *Gerente) Chamar(ctx context.Context, upstreamID int64, nome string, args json.RawMessage) (*mcp.CallToolResult, error) {
+	return g.Encaminhar(ctx, upstreamID, &mcp.CallToolParams{Name: nome, Arguments: args})
+}
+
+// protocoloComMRTR é a revisão que trouxe a capacidade do cliente por requisição.
+const protocoloComMRTR = "2026-07-28"
+
+// Encaminhar é Chamar com os campos de ida e volta do MRTR (inputResponses e
+// requestState), que o cliente devolve ao repetir uma chamada que pediu
+// confirmação. p.Name já é o nome original no upstream.
+func (g *Gerente) Encaminhar(ctx context.Context, upstreamID int64, p *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 	g.mu.RLock()
 	s, ok := g.servidores[upstreamID]
 	var (
@@ -886,9 +906,14 @@ func (g *Gerente) Chamar(ctx context.Context, upstreamID int64, nome string, arg
 	ctxChamada, cancelar := context.WithTimeout(semValoresDoCliente{Context: ctx}, timeout)
 	defer cancelar()
 
-	res, err := sessao.CallTool(ctxChamada, &mcp.CallToolParams{Name: nome, Arguments: args})
+	// A capacidade por requisição só existe a partir da 2026-07-28. Antes dela
+	// vale a da sessão, que não tem elicitação: upstream antigo segue como antes.
+	if ir := sessao.InitializeResult(); ir == nil || ir.ProtocolVersion < protocoloComMRTR {
+		p.Meta = nil
+	}
+	res, err := sessao.CallTool(ctxChamada, p)
 	if err != nil {
-		return nil, fmt.Errorf("upstream %s: chamar %s: %w", upNome, nome, err)
+		return nil, fmt.Errorf("upstream %s: chamar %s: %w", upNome, p.Name, err)
 	}
 	return res, nil
 }
@@ -1216,6 +1241,33 @@ func (g *Gerente) esquecerSessao(id int64) {
 	if s, ok := g.servidores[id]; ok {
 		s.sessao = nil
 	}
+}
+
+// relistar relê o tools/list depois do aviso de lista alterada do upstream.
+//
+// Só mexe nas ferramentas, e só se aquela sessão ainda é a do upstream e ele está
+// pronto: o resto do estado (falhas, sonda) é da supervisão, e um aviso que chega
+// de uma sessão já trocada não pode publicar o catálogo dela.
+func (g *Gerente) relistar(ctxSupervisao context.Context, cfg Config, sessao *mcp.ClientSession) {
+	ctx, cancelar := context.WithTimeout(ctxSupervisao, cfg.Timeout)
+	defer cancelar()
+	res, err := sessao.ListTools(ctx, nil)
+	if err != nil {
+		g.log.Warn("relistar ferramentas do upstream falhou", "upstream", cfg.Nome, "erro", err)
+		return
+	}
+	g.mu.Lock()
+	s, ok := g.servidores[cfg.ID]
+	atual := ok && s.sessao == sessao && s.estado == EstadoPronto
+	if atual {
+		s.ferramentas = res.Tools
+	}
+	g.mu.Unlock()
+	if !atual {
+		return
+	}
+	g.log.Info("lista de ferramentas do upstream mudou", "upstream", cfg.Nome, "ferramentas", len(res.Tools))
+	g.notificarMudanca(ctx)
 }
 
 func (g *Gerente) notificarMudanca(ctx context.Context) {
