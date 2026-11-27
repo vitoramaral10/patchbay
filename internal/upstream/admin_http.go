@@ -140,7 +140,12 @@ func (a *Admin) renderizarLista(
 		}
 		linhas = append(linhas, l)
 	}
-	webui.Renderizar(w, r, status, a.log, TelaLista(linhas, webui.Avisos(r, avisos), colar))
+	// O resultado de uma ação vem primeiro; sem ele, o aviso de revisão antiga.
+	alerta := webui.Avisos(r, avisos)
+	if alerta == nil {
+		alerta = avisoDeRevisao(linhas)
+	}
+	webui.Renderizar(w, r, status, a.log, TelaLista(linhas, alerta, colar))
 }
 
 // formNovo abre o formulário do tipo pedido na query.

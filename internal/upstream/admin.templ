@@ -105,6 +105,7 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta, colar DadosColar) {
 						<tr>
 							<th scope="col" class="px-5 py-3 font-semibold">MCP</th>
 							<th scope="col" class="px-5 py-3 font-semibold">Estado</th>
+							<th scope="col" class="px-5 py-3 font-semibold">Revisão da MCP</th>
 							<th scope="col" class="px-5 py-3 font-semibold" data-numero>Ferramentas</th>
 							<th scope="col" class="px-5 py-3 font-semibold" data-numero>Endpoints</th>
 						</tr>
@@ -130,9 +131,9 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta, colar DadosColar) {
 									if !l.ProximaEm.IsZero() {
 										<p class="mt-0.5 text-xs text-conteudo-tenue">nova tentativa { proximaTentativa(l.ProximaEm) }</p>
 									}
-									if l.Protocolo != "" {
-										<p class="mt-0.5 font-mono text-xs text-conteudo-tenue">MCP { l.Protocolo }</p>
-									}
+								</td>
+								<td class="px-5 py-3.5">
+									@revisaoDaMCP(l.Protocolo, l.Desatualizado())
 								</td>
 								<td class="px-5 py-3.5" data-numero>{ strconv.Itoa(l.Ferramentas) }</td>
 								<td class="px-5 py-3.5" data-numero>{ strconv.Itoa(l.Endpoints) }</td>
@@ -199,11 +200,7 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 							rotuloDoEstado(d.Estado, d.Habilitado, d.Supervisionado))
 					}
 					@dado("Revisão da MCP") {
-						if d.Protocolo != "" {
-							<span class="font-mono">{ d.Protocolo }</span>
-						} else {
-							sem sessão
-						}
+						@revisaoDaMCP(d.Protocolo, d.Desatualizado())
 					}
 					if d.Servidor != "" {
 						@dado("Servidor declarado") {
@@ -1483,4 +1480,18 @@ func acaoDoForm(f Form) string {
 		return webui.RotaUpstreams
 	}
 	return rotaDo(f.ID)
+}
+
+// revisaoDaMCP mostra a revisão negociada e acusa a que está atrás da mais nova.
+templ revisaoDaMCP(revisao string, desatualizada bool) {
+	if revisao == "" {
+		<span class="text-xs text-conteudo-tenue">sem sessão</span>
+	} else {
+		<span class="font-mono text-sm">{ revisao }</span>
+		if desatualizada {
+			<span class="ml-1.5">
+				@webui.Selo(webui.TomAlerta, "desatualizada")
+			</span>
+		}
+	}
 }

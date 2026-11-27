@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"os/exec"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/vitoramaral10/patchbay/internal/platform/cripto"
+	"github.com/vitoramaral10/patchbay/internal/platform/webui"
 )
 
 // TimeoutPadraoMS é o timeout sugerido no formulário de upstream.
@@ -933,6 +935,40 @@ func TextoDeEnv(env map[string]string) string {
 		b.WriteString(env[nome])
 	}
 	return b.String()
+}
+
+// RevisaoMaisNova é a revisão da MCP mais nova que o patchbay sabe falar: o
+// upstream abaixo dela está numa spec antiga e precisa atualizar o SDK.
+func RevisaoMaisNova() string { return slices.Max(mcp.SupportedProtocolVersions()) }
+
+// desatualizada diz se a revisão negociada é anterior à mais nova. Sem sessão
+// (revisão vazia) não dá para saber, e a tela não acusa.
+func desatualizada(revisao string) bool { return revisao != "" && revisao < RevisaoMaisNova() }
+
+// Desatualizado diz se o upstream negociou uma revisão anterior à mais nova.
+func (l Linha) Desatualizado() bool { return desatualizada(l.Protocolo) }
+
+// Desatualizado diz se o upstream negociou uma revisão anterior à mais nova.
+func (d Detalhe) Desatualizado() bool { return desatualizada(d.Protocolo) }
+
+// avisoDeRevisao resume na lista quem está numa revisão antiga, para o admin
+// saber quais servidores atualizar sem abrir um por um.
+func avisoDeRevisao(linhas []Linha) *webui.Alerta {
+	var nomes []string
+	for _, l := range linhas {
+		if l.Desatualizado() {
+			nomes = append(nomes, l.Nome+" ("+l.Protocolo+")")
+		}
+	}
+	if len(nomes) == 0 {
+		return nil
+	}
+	titulo := "1 MCP numa revisão antiga da spec"
+	if len(nomes) > 1 {
+		titulo = strconv.Itoa(len(nomes)) + " MCPs numa revisão antiga da spec"
+	}
+	return &webui.Alerta{Tom: webui.TomAlerta, Titulo: titulo,
+		Texto: "A mais nova é a " + RevisaoMaisNova() + ". Atualize o SDK de: " + strings.Join(nomes, ", ") + "."}
 }
 
 // Linha é um upstream na lista da UI.
