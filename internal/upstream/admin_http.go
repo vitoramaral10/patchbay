@@ -130,7 +130,7 @@ func (a *Admin) renderizarLista(
 			// guardado em memória.
 			l.Estado, l.Ferramentas, l.TentativaEm = s.Estado, s.NoCatalogo, s.TentativaEm
 			l.ProximaEm, l.Abandonos, l.Motivo = s.ProximaEm, s.Abandonos, s.Motivo
-			l.AbandonosTotais = s.AbandonosTotais
+			l.AbandonosTotais, l.Protocolo = s.AbandonosTotais, s.Protocolo
 			l.Supervisionado = true
 			// O último erro em memória é mais novo que o do banco: é o da
 			// tentativa em curso, e é o que o admin precisa ver.
@@ -398,6 +398,7 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 		d.ProximaEm, d.Falhas, d.Abandonos, d.Motivo = s.ProximaEm, s.Falhas, s.Abandonos, s.Motivo
 		d.AbandonosTotais = s.AbandonosTotais
 		d.SondaAtual, d.NoCatalogo = s.Sonda, s.NoCatalogo
+		d.Protocolo, d.Servidor = s.Protocolo, s.Servidor
 		if s.UltimoErro != "" {
 			d.UltimoErro = s.UltimoErro
 		}
