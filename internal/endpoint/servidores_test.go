@@ -2,7 +2,6 @@ package endpoint_test
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"slices"
 	"sync"
@@ -78,7 +77,7 @@ func ferramentasChamadas(nomes ...string) []catalogo.Ferramenta {
 // testado na integração, não aqui.
 type executorFake struct{}
 
-func (executorFake) Chamar(context.Context, int64, string, json.RawMessage) (*mcp.CallToolResult, error) {
+func (executorFake) Encaminhar(context.Context, int64, *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil
 }
 

@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/a-h/templ v0.3.1020
 	github.com/google/jsonschema-go v0.4.3
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pressly/goose/v3 v3.28.0
 	golang.org/x/crypto v0.56.0
 	golang.org/x/oauth2 v0.35.0

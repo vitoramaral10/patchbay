@@ -336,11 +336,26 @@ func (s *Servidores) encaminhar(reg Registro, f catalogo.Ferramenta) mcp.ToolHan
 	}
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var args json.RawMessage
+		p := &mcp.CallToolParams{Name: nomeOriginal}
 		if req != nil && req.Params != nil {
 			args = req.Params.Arguments
+			p.InputResponses = req.Params.InputResponses
+			p.RequestState = req.Params.RequestState
 		}
+		p.Arguments = args
+		// A sessão upstream é de todos os clientes; em 2026-07-28 a capacidade
+		// vai por requisição, então o upstream vê a elicitação deste cliente e
+		// não a do patchbay. Só elicitação: o resto o gateway não repassa.
+		caps := map[string]any{}
+		if e := elicitacaoDoCliente(req); e != nil {
+			caps["elicitation"] = e
+		}
+		p.Meta = mcp.Meta{mcp.MetaKeyClientCapabilities: caps}
 		inicio := time.Now()
-		res, err := s.exec.Chamar(ctx, upstreamID, nomeOriginal, args)
+		res, err := s.exec.Encaminhar(ctx, upstreamID, p)
+		if err == nil {
+			res = semPedidoQueOClienteNaoAtende(req, res, upstreamNome)
+		}
 		// A trilha é gravada depois de responder ao upstream e antes de devolver
 		// ao cliente, e o que acontece aqui é um envio não bloqueante numa fila
 		// (seção 08.8). É o único ponto de captura do caminho da requisição.
@@ -456,4 +471,52 @@ func diferenca(antes, depois []string) []string {
 		}
 	}
 	return sumiram
+}
+
+// semPedidoQueOClienteNaoAtende troca por erro de ferramenta o input_required
+// que o cliente não declarou saber responder.
+//
+// Defesa: Encaminhar já manda ao upstream a capacidade deste cliente, mas um
+// upstream que a ignore ainda pode pedir. Sem isto a confirmação viraria erro de protocolo na go-sdk,
+// e o modelo não saberia que faltou o usuário.
+func semPedidoQueOClienteNaoAtende(req *mcp.CallToolRequest, res *mcp.CallToolResult, upstreamNome string) *mcp.CallToolResult {
+	if res == nil || len(res.InputRequests) == 0 {
+		return res
+	}
+	cap := elicitacaoDoCliente(req)
+	for _, ir := range res.InputRequests {
+		if !clienteAtende(cap, ir) {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(
+					"patchbay: %q precisa de uma confirmação do usuário que este cliente não sabe pedir; "+
+						"a ação não foi executada", upstreamNome)}},
+			}
+		}
+	}
+	return res
+}
+
+func elicitacaoDoCliente(req *mcp.CallToolRequest) *mcp.ElicitationCapabilities {
+	if req == nil {
+		return nil
+	}
+	if c := req.ClientCapabilities(); c != nil {
+		return c.Elicitation
+	}
+	return nil
+}
+
+func clienteAtende(cap *mcp.ElicitationCapabilities, ir mcp.InputRequest) bool {
+	e, ok := ir.(*mcp.ElicitParams)
+	if !ok || cap == nil {
+		// shortcut: sampling e roots não sobem; abrir quando um upstream precisar.
+		return false
+	}
+	// A go-sdk infere url quando o modo vem vazio com URL ou ElicitationID.
+	if e.Mode == "url" || (e.Mode == "" && (e.URL != "" || e.ElicitationID != "")) {
+		return cap.URL != nil
+	}
+	// elicitation {} sem modos vale como form (compatibilidade da spec).
+	return cap.Form != nil || cap.URL == nil
 }

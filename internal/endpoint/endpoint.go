@@ -9,7 +9,6 @@ package endpoint
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -61,9 +60,9 @@ type Catalogo interface {
 }
 
 // Executor é o que este pacote precisa do gerente de upstreams: executar a
-// chamada numa sessão já aberta.
+// chamada numa sessão já aberta. p.Name é o nome original no upstream.
 type Executor interface {
-	Chamar(ctx context.Context, upstreamID int64, nome string, args json.RawMessage) (*mcp.CallToolResult, error)
+	Encaminhar(ctx context.Context, upstreamID int64, p *mcp.CallToolParams) (*mcp.CallToolResult, error)
 }
 
 // Repositorio é o que este pacote precisa da persistência para servir MCP.
