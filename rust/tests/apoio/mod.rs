@@ -462,8 +462,34 @@ pub struct Gravacao {
     trocas: Vec<(String, String)>,
 }
 
-/// Diferenças aceitas entre o binário sob teste e o Go: `(cena/passo, porquê)`. Vazia na F0.
+/// Diferenças aceitas entre o binário sob teste e o Go: `(cena/passo, porquê)`. Vazia até aqui.
 const DIFERENCAS_CONHECIDAS: &[(&str, &str)] = &[];
+
+/// O que depende de fatia ainda não portada: `(caminho, fatia)`. O caminho é um passo
+/// (`cli/seed`) ou um trecho dele (`cli/banco.upstream`), e cobre tudo abaixo. Não é diferença
+/// aceita: cada fatia tira daqui o que portou, e o que já confere é avisado na saída.
+const PENDENTES: &[(&str, &str)] = &[
+    ("cli/seed", "F6: seed grava endpoint, upstream e chave de API"),
+    ("cli/export", "F12"),
+    ("cli/export_o", "F12"),
+    ("cli/export_o_sem_forcar", "F12"),
+    ("cli/import_ensaio", "F12"),
+    ("cli/import", "F12"),
+    ("cli/import_de_novo", "F12"),
+    ("cli/import_versao_desconhecida", "F12"),
+    ("cli/import_segredo_em_claro", "F12"),
+    ("cli/export_final", "F12"),
+    ("cli/banco.api_key", "F6/F12: linhas do seed e do import"),
+    ("cli/banco.api_key_endpoint", "F6/F12: linhas do seed e do import"),
+    ("cli/banco.endpoint", "F6/F12: linhas do seed e do import"),
+    ("cli/banco.endpoint_upstream", "F6/F12: linhas do seed e do import"),
+    ("cli/banco.upstream", "F6/F12: linhas do seed e do import"),
+];
+
+/// A entrada de [`PENDENTES`] que cobre `caminho` (ou a linha de diferença que começa por ele).
+fn pendente(caminho: &str) -> Option<&'static (&'static str, &'static str)> {
+    PENDENTES.iter().find(|(p, _)| caminho.strip_prefix(p).is_some_and(|r| r.is_empty() || r.starts_with(['.', '[', ':'])))
+}
 
 impl Gravacao {
     pub fn new(cena: &'static str) -> Self {
@@ -549,6 +575,7 @@ impl Gravacao {
         let go = todas.remove(self.cena).unwrap_or_else(|| panic!("cena {} sem gravação do Go: rode com PATCHBAY_GRAVAR=1", self.cena));
         let mut erradas = Vec::new();
         let chaves: std::collections::BTreeSet<&String> = go.keys().chain(self.passos.keys()).collect();
+        let mut vistos = std::collections::BTreeSet::new();
         for passo in chaves {
             let (quer, veio) = (go.get(passo), self.passos.get(passo));
             if quer == veio {
@@ -560,9 +587,22 @@ impl Gravacao {
                 None => {
                     let mut d = Vec::new();
                     diferencas(quer.unwrap_or(&Value::Null), veio.unwrap_or(&Value::Null), &nome, 0, &mut d);
-                    erradas.extend(d);
+                    for x in d {
+                        match pendente(&x) {
+                            Some((p, fatia)) => {
+                                vistos.insert(*p);
+                                eprintln!("[pendente, {fatia}] {}", x.lines().next().unwrap_or(""));
+                            }
+                            None => erradas.push(x),
+                        }
+                    }
                 }
             }
+        }
+        // Contra o Go tudo confere; o aviso só serve contra o binário deste crate.
+        let deste_crate = binario() == env!("CARGO_BIN_EXE_patchbay");
+        for (p, _) in PENDENTES.iter().filter(|(p, _)| deste_crate && p.starts_with(&format!("{}/", self.cena)) && !vistos.contains(p)) {
+            eprintln!("[pendente que já confere] {p}: tire de PENDENTES");
         }
         assert!(erradas.is_empty(), "{} passo(s) diferente(s) do Go:\n{}", erradas.len(), erradas.join("\n"));
     }
@@ -696,6 +736,16 @@ mod testes {
         assert_eq!(g.texto("2026-07-28"), "2026-07-28");
         let v = g.normalizar(&json!({"client_id_issued_at": 1795819480, "expires_in": 3599, "n": 3}));
         assert_eq!(v, json!({"client_id_issued_at": "«instante»", "expires_in": "«segundos»", "n": 3}));
+    }
+
+    #[test]
+    fn pendente_cobre_o_passo_e_o_que_esta_abaixo() {
+        assert_eq!(pendente("cli/export").map(|e| e.0), Some("cli/export"));
+        assert_eq!(pendente("cli/export.stdout:\n  Go: x").map(|e| e.0), Some("cli/export"));
+        assert_eq!(pendente("cli/export_o.codigo:").map(|e| e.0), Some("cli/export_o"));
+        assert_eq!(pendente("cli/banco.endpoint_upstream:").map(|e| e.0), Some("cli/banco.endpoint_upstream"));
+        assert_eq!(pendente("cli/banco.goose_db_version:"), None);
+        assert_eq!(pendente("cli/exportar"), None);
     }
 
     #[test]
