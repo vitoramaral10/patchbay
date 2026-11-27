@@ -24,6 +24,7 @@ import (
 	"github.com/vitoramaral10/patchbay/internal/platform/cripto"
 	"github.com/vitoramaral10/patchbay/internal/platform/store"
 	"github.com/vitoramaral10/patchbay/internal/platform/webui"
+	"github.com/vitoramaral10/patchbay/internal/spec"
 	"github.com/vitoramaral10/patchbay/internal/trilha"
 	"github.com/vitoramaral10/patchbay/internal/upstream"
 )
@@ -75,6 +76,7 @@ type Aplicacao struct {
 	admHTTP     *admin.HTTP
 	oauthHTTP   *authsrv.HTTP
 	adminUp     *upstream.Admin
+	spec        *spec.Vigia
 	adminBib    *biblioteca.Admin
 	sincBib     *biblioteca.Sincronizador
 	adminEnd    *endpoint.Admin
@@ -325,6 +327,8 @@ func montar(
 	)
 	// MCP novo entra em todo endpoint: adicionar e já aparecer no cliente.
 	// Tirar de um endpoint é um clique na tela dele.
+	a.spec = spec.Nova(cfg.SitemapSpec, log.With("componente", "spec"))
+	a.adminUp.ComRevisaoPublicada(func() string { r, _ := a.spec.Publicada(); return r })
 	a.adminUp.AoCriar(func(ctx context.Context, id int64, nome string) {
 		prefixo := nome + "_"
 		if !catalogo.PrefixoValido(prefixo) {
@@ -442,6 +446,14 @@ func (a *Aplicacao) Iniciar(ctx context.Context) {
 	go func() {
 		defer a.wg.Done()
 		a.limparSessoes(ctx)
+	}()
+
+	// A revisão mais nova publicada da MCP, para a tela acusar quem ficou atrás.
+	// Com cfg.SitemapSpec vazio (testes, instalação sem internet) volta na hora.
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		a.spec.Rodar(ctx, spec.IntervaloPadrao)
 	}()
 
 	// A lápide de ferramenta vence sozinha, e a rematerialização só acontece

@@ -133,7 +133,7 @@ templ TelaLista(linhas []Linha, alerta *webui.Alerta, colar DadosColar) {
 									}
 								</td>
 								<td class="px-5 py-3.5">
-									@revisaoDaMCP(l.Protocolo, l.Desatualizado())
+									@revisaoDaMCP(l.Protocolo, l.Desatualizada)
 								</td>
 								<td class="px-5 py-3.5" data-numero>{ strconv.Itoa(l.Ferramentas) }</td>
 								<td class="px-5 py-3.5" data-numero>{ strconv.Itoa(l.Endpoints) }</td>
@@ -200,7 +200,7 @@ templ TelaDetalhe(d Detalhe, alerta *webui.Alerta) {
 							rotuloDoEstado(d.Estado, d.Habilitado, d.Supervisionado))
 					}
 					@dado("Revisão da MCP") {
-						@revisaoDaMCP(d.Protocolo, d.Desatualizado())
+						@revisaoDaMCP(d.Protocolo, d.Desatualizada)
 					}
 					if d.Servidor != "" {
 						@dado("Servidor declarado") {

@@ -937,38 +937,54 @@ func TextoDeEnv(env map[string]string) string {
 	return b.String()
 }
 
-// RevisaoMaisNova é a revisão da MCP mais nova que o patchbay sabe falar: o
-// upstream abaixo dela está numa spec antiga e precisa atualizar o SDK.
-func RevisaoMaisNova() string { return slices.Max(mcp.SupportedProtocolVersions()) }
+// Revisoes é o que a tela compara: a revisão mais nova publicada no site da
+// MCP (vazia enquanto não leu ou com a consulta desligada) e a mais nova que a
+// go-sdk do patchbay fala.
+type Revisoes struct {
+	Publicada string
+	DoSDK     string
+}
 
-// desatualizada diz se a revisão negociada é anterior à mais nova. Sem sessão
+// revisaoDoSDK é a revisão mais nova que a go-sdk deste binário fala.
+func revisaoDoSDK() string { return slices.Max(mcp.SupportedProtocolVersions()) }
+
+// MaisNova é a referência para acusar upstream desatualizado.
+func (r Revisoes) MaisNova() string { return max(r.Publicada, r.DoSDK) }
+
+// PatchbayAtras diz se já saiu uma spec que o próprio patchbay não fala: aí o
+// primeiro a atualizar é ele, senão nenhum upstream consegue negociá-la.
+func (r Revisoes) PatchbayAtras() bool { return r.Publicada > r.DoSDK }
+
+// Atras diz se a revisão negociada é anterior à mais nova. Sem sessão
 // (revisão vazia) não dá para saber, e a tela não acusa.
-func desatualizada(revisao string) bool { return revisao != "" && revisao < RevisaoMaisNova() }
-
-// Desatualizado diz se o upstream negociou uma revisão anterior à mais nova.
-func (l Linha) Desatualizado() bool { return desatualizada(l.Protocolo) }
-
-// Desatualizado diz se o upstream negociou uma revisão anterior à mais nova.
-func (d Detalhe) Desatualizado() bool { return desatualizada(d.Protocolo) }
+func (r Revisoes) Atras(negociada string) bool { return negociada != "" && negociada < r.MaisNova() }
 
 // avisoDeRevisao resume na lista quem está numa revisão antiga, para o admin
 // saber quais servidores atualizar sem abrir um por um.
-func avisoDeRevisao(linhas []Linha) *webui.Alerta {
+func avisoDeRevisao(linhas []Linha, r Revisoes) *webui.Alerta {
 	var nomes []string
 	for _, l := range linhas {
-		if l.Desatualizado() {
+		if l.Desatualizada {
 			nomes = append(nomes, l.Nome+" ("+l.Protocolo+")")
 		}
 	}
-	if len(nomes) == 0 {
+	if len(nomes) == 0 && !r.PatchbayAtras() {
 		return nil
 	}
-	titulo := "1 MCP numa revisão antiga da spec"
-	if len(nomes) > 1 {
-		titulo = strconv.Itoa(len(nomes)) + " MCPs numa revisão antiga da spec"
+	var partes []string
+	if r.PatchbayAtras() {
+		partes = append(partes, "A spec "+r.Publicada+" já saiu e o patchbay ainda fala até a "+r.DoSDK+": atualize o patchbay primeiro.")
 	}
-	return &webui.Alerta{Tom: webui.TomAlerta, Titulo: titulo,
-		Texto: "A mais nova é a " + RevisaoMaisNova() + ". Atualize o SDK de: " + strings.Join(nomes, ", ") + "."}
+	if len(nomes) > 0 {
+		partes = append(partes, "Atualize o SDK de: "+strings.Join(nomes, ", ")+".")
+	}
+	titulo := "Há uma spec da MCP mais nova: " + r.MaisNova()
+	if len(nomes) == 1 {
+		titulo = "1 MCP numa revisão antiga da spec (a mais nova é a " + r.MaisNova() + ")"
+	} else if len(nomes) > 1 {
+		titulo = strconv.Itoa(len(nomes)) + " MCPs numa revisão antiga da spec (a mais nova é a " + r.MaisNova() + ")"
+	}
+	return &webui.Alerta{Tom: webui.TomAlerta, Titulo: titulo, Texto: strings.Join(partes, " ")}
 }
 
 // Linha é um upstream na lista da UI.
@@ -987,6 +1003,8 @@ type Linha struct {
 	Supervisionado  bool
 	// Protocolo é a revisão da MCP negociada; vazio sem sessão viva.
 	Protocolo string
+	// Desatualizada diz se Protocolo é anterior à spec mais nova.
+	Desatualizada bool
 }
 
 // FerramentaDescoberta é uma ferramenta do último tools/list do upstream, do
@@ -1036,8 +1054,9 @@ type Detalhe struct {
 	NoCatalogo int
 	// Protocolo e Servidor vêm da sessão viva: a revisão da MCP negociada e o
 	// nome e a versão que o upstream declarou.
-	Protocolo string
-	Servidor  string
+	Protocolo     string
+	Servidor      string
+	Desatualizada bool
 }
 
 // SondaLigada informa se a supervisão está sondando este upstream.

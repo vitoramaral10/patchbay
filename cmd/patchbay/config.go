@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/vitoramaral10/patchbay/internal/spec"
 )
 
 // Config é a configuração de bootstrap, lida uma única vez aqui e passada
@@ -25,6 +27,9 @@ type Config struct {
 	PublicURLExplicita bool
 	NivelLog           slog.Level
 	LogEmTexto         bool
+	// SitemapSpec é de onde o patchbay lê a revisão mais nova publicada da
+	// MCP. Vazio desliga a consulta (instalação sem internet, e os testes).
+	SitemapSpec string
 }
 
 // Padrões de desenvolvimento: só loopback, para que a instalação nova não fique
@@ -48,6 +53,13 @@ func registrarFlags(fs *flag.FlagSet) (c *Config, resolver func() error) {
 		"URL pública do patchbay, sem barra final (PATCHBAY_PUBLIC_URL)")
 	fs.StringVar(&nivel, "log-level", ambiente("PATCHBAY_LOG_LEVEL", "info"),
 		"nível de log: debug, info, warn, error (PATCHBAY_LOG_LEVEL)")
+	// LookupEnv e não ambiente(): aqui a variável vazia quer dizer "desligado".
+	sitemap := spec.SitemapOficial
+	if v, ok := os.LookupEnv("PATCHBAY_SPEC_SITEMAP"); ok {
+		sitemap = v
+	}
+	fs.StringVar(&c.SitemapSpec, "spec-sitemap", sitemap,
+		"sitemap do site da MCP, para avisar de spec nova; vazio desliga (PATCHBAY_SPEC_SITEMAP)")
 	fs.BoolVar(&c.LogEmTexto, "log-texto", ambiente("PATCHBAY_LOG_TEXTO", "") != "",
 		"log em texto em vez de JSON (PATCHBAY_LOG_TEXTO)")
 

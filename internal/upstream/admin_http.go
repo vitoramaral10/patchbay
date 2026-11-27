@@ -33,6 +33,9 @@ type Admin struct {
 	// (deteccao.go).
 	detectarOAuth DetectorDeOAuth
 	aoCriar       func(ctx context.Context, id int64, nome string)
+	// revisaoPublicada é a revisão mais nova no site da MCP; nil ou vazia
+	// deixa a comparação só com a da go-sdk.
+	revisaoPublicada func() string
 }
 
 // NovoAdmin monta o CRUD de upstream.
@@ -57,6 +60,18 @@ func NovoAdmin(
 		// faria a caixa de colar pendurar junto com ele.
 		detectarOAuth: novoDetectorPorMetadados(&http.Client{Timeout: PrazoDeDeteccao}),
 	}
+}
+
+// ComRevisaoPublicada liga a tela à revisão mais nova publicada no site da
+// MCP. Injetado porque quem consulta o site é outra feature.
+func (a *Admin) ComRevisaoPublicada(f func() string) { a.revisaoPublicada = f }
+
+func (a *Admin) revisoes() Revisoes {
+	r := Revisoes{DoSDK: revisaoDoSDK()}
+	if a.revisaoPublicada != nil {
+		r.Publicada = a.revisaoPublicada()
+	}
+	return r
 }
 
 // AoCriar registra o que roda depois que um MCP novo é gravado e antes de ele
@@ -141,9 +156,13 @@ func (a *Admin) renderizarLista(
 		linhas = append(linhas, l)
 	}
 	// O resultado de uma ação vem primeiro; sem ele, o aviso de revisão antiga.
+	rev := a.revisoes()
+	for i := range linhas {
+		linhas[i].Desatualizada = rev.Atras(linhas[i].Protocolo)
+	}
 	alerta := webui.Avisos(r, avisos)
 	if alerta == nil {
-		alerta = avisoDeRevisao(linhas)
+		alerta = avisoDeRevisao(linhas, rev)
 	}
 	webui.Renderizar(w, r, status, a.log, TelaLista(linhas, alerta, colar))
 }
@@ -404,6 +423,7 @@ func (a *Admin) detalhe(w http.ResponseWriter, r *http.Request) {
 		d.AbandonosTotais = s.AbandonosTotais
 		d.SondaAtual, d.NoCatalogo = s.Sonda, s.NoCatalogo
 		d.Protocolo, d.Servidor = s.Protocolo, s.Servidor
+		d.Desatualizada = a.revisoes().Atras(s.Protocolo)
 		if s.UltimoErro != "" {
 			d.UltimoErro = s.UltimoErro
 		}

@@ -308,7 +308,7 @@ func TelaLista(linhas []Linha, alerta *webui.Alerta, colar DadosColar) templ.Com
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
-							templ_7745c5c3_Err = revisaoDaMCP(l.Protocolo, l.Desatualizado()).Render(ctx, templ_7745c5c3_Buffer)
+							templ_7745c5c3_Err = revisaoDaMCP(l.Protocolo, l.Desatualizada).Render(ctx, templ_7745c5c3_Buffer)
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
@@ -553,7 +553,7 @@ func TelaDetalhe(d Detalhe, alerta *webui.Alerta) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = revisaoDaMCP(d.Protocolo, d.Desatualizado()).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = revisaoDaMCP(d.Protocolo, d.Desatualizada).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
