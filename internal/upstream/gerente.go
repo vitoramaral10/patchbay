@@ -622,6 +622,11 @@ func (g *Gerente) conectar(ctx context.Context, cfg Config) (*mcp.ClientSession,
 		// repassa, sem estado no gateway. A sessão não declara elicitação: quem
 		// declara é cada chamada, com a capacidade do cliente que a fez.
 		MultiRoundTrip: &mcp.MultiRoundTripOptions{Disabled: true},
+		// Sem isto o catálogo só via ferramenta nova do upstream na próxima
+		// reconexão. Em 2026-07-28 ter o handler já abre o subscriptions/listen.
+		ToolListChangedHandler: func(_ context.Context, req *mcp.ToolListChangedRequest) {
+			go g.relistar(ctx, cfg, req.Session)
+		},
 	})
 
 	ctxConexao, cancelar := context.WithTimeout(ctx, g.prazoDeConexao(cfg))
@@ -1236,6 +1241,33 @@ func (g *Gerente) esquecerSessao(id int64) {
 	if s, ok := g.servidores[id]; ok {
 		s.sessao = nil
 	}
+}
+
+// relistar relê o tools/list depois do aviso de lista alterada do upstream.
+//
+// Só mexe nas ferramentas, e só se aquela sessão ainda é a do upstream e ele está
+// pronto: o resto do estado (falhas, sonda) é da supervisão, e um aviso que chega
+// de uma sessão já trocada não pode publicar o catálogo dela.
+func (g *Gerente) relistar(ctxSupervisao context.Context, cfg Config, sessao *mcp.ClientSession) {
+	ctx, cancelar := context.WithTimeout(ctxSupervisao, cfg.Timeout)
+	defer cancelar()
+	res, err := sessao.ListTools(ctx, nil)
+	if err != nil {
+		g.log.Warn("relistar ferramentas do upstream falhou", "upstream", cfg.Nome, "erro", err)
+		return
+	}
+	g.mu.Lock()
+	s, ok := g.servidores[cfg.ID]
+	atual := ok && s.sessao == sessao && s.estado == EstadoPronto
+	if atual {
+		s.ferramentas = res.Tools
+	}
+	g.mu.Unlock()
+	if !atual {
+		return
+	}
+	g.log.Info("lista de ferramentas do upstream mudou", "upstream", cfg.Nome, "ferramentas", len(res.Tools))
+	g.notificarMudanca(ctx)
 }
 
 func (g *Gerente) notificarMudanca(ctx context.Context) {
